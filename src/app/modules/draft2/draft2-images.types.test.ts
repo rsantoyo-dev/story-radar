@@ -259,3 +259,21 @@ test("the editor's presentation reaches the images: words set by the program, on
   assert.deepEqual([awaitsReview(words), slideSettled({ ...plain.slides[0], attempts: [words] })], [false, true]);
   assert.deepEqual(parseImagesAction({ action: "words" }), { action: "words" });
 });
+
+test("a panorama's scene cut again: centred, moved within the scene, smaller sections free to move; every version's files are names R2 takes", async () => {
+  const { cutSections, masterLayout, masterPlateFile, masterPlatePromptFile } = await import("./draft2-images.types");
+  const { DRAFT2_IMAGE_FILE_PATTERN } = await import("../stories/r2-retention");
+  const slides = ["cover", "slide2", "s1", "s2", "penultimate", "last"];
+  const plate = masterLayout(slides);
+  assert.deepEqual([plate.width, plate.height, plate.sections[0]], [3840, 1344, { slide: "cover", left: 3, top: 272, width: 639, height: 799 }], "six sections fill the width, in the middle band");
+  assert.deepEqual(cutSections(plate, {}).sections, plate.sections, "no offset: where they were");
+  const down = cutSections(plate, { x: 500, y: 1000 });
+  assert.deepEqual([down.offset, down.sections[0].top, down.sections[0].left], [{ x: 3, y: 273, scale: 1 }, 545, 6], "the full width barely moves sideways; down to the scene's bottom, no further");
+  const smaller = cutSections(plate, { x: -1000, scale: 0.8 });
+  assert.deepEqual([smaller.sections[0].width, smaller.sections[0].height, smaller.offset.x, smaller.sections[0].left], [511, 639, -387, 0], "smaller sections leave room to move them");
+  assert.equal(cutSections(plate, { scale: 0.2 }).offset.scale, 0.6, "never smaller than 60%");
+  assert.deepEqual([masterPlateFile(), masterPlateFile(1), masterPlateFile(3), masterPlatePromptFile(3)], ["master-scene.png", "master-scene.png", "master-scene-v3.png", "master-scene-v3-prompt.txt"]);
+  for (const name of [masterPlateFile(2), masterPlatePromptFile(2)]) assert.ok(DRAFT2_IMAGE_FILE_PATTERN.test(name), name);
+  assert.deepEqual(parseImagesAction({ action: "scene", instruction: "  Sin fondo ocre: un mesón crema. " }), { action: "scene", instruction: "Sin fondo ocre: un mesón crema." });
+  assert.deepEqual(parseImagesAction({ action: "cut", offset: { x: 12, y: "x", scale: 0.9 } }), { action: "cut", offset: { x: 12, y: 0, scale: 0.9 } });
+});

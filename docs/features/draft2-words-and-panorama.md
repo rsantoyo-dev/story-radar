@@ -131,3 +131,27 @@ from", and "eventually we take the words off the other images too".
   opacity). `autoWordsLayout` chooses it as before (the band, calm or card,
   sizes fit together); `drawWords` draws any layout. Words set again keep the
   layout of the version they come from.
+
+## Phase 2, 2026-10-17: the panorama's scene
+
+The editor: "show the first image, so we can regenerate it, adjust it and
+divide it again". The first real panorama (the coffee ring) showed why: Sol
+flagged all six slides for an ochre counter, and only a new scene fixes that;
+the scene also shows what the slides hide (Chispa left almost entirely
+outside the last cut).
+
+- **The scene on the Images screen** (`SceneEditor`): the one wide image, at
+  its own proportions, with its numbered cuts drawn on it
+  (`draft2SceneFile`, `GET /images/file?plate=master&version=n`, a 1920-wide
+  JPEG; sharp resizes before it composites, so the cuts are drawn first).
+- **Cut again, free** (`PATCH /images { action: "cut", offset }`): arrows move
+  the cuts, "Smaller"/"Larger" set the sections' size (60 % to 100 % of the
+  largest), and the scene shows each try (the offset clamped as the server
+  cuts it, `cutSections`). "Cut again" gives every slide a new version, its
+  section of the same scene with its words where they were (the layout is
+  kept) and the review of the version it replaces; no model, no cost.
+- **Make the scene again** (`{ action: "scene", instruction }`): a new
+  version of the scene (`master-scene-v2.png`, charged once as its own image)
+  with what the editor asks to change in its prompt, the earlier one in the
+  plate's history; every slide's next version waits as a section of it, and
+  the canvas continues the run. Nothing earlier is overwritten.

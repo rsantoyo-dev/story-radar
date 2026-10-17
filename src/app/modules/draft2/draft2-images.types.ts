@@ -220,9 +220,47 @@ export type Draft2MasterSection = { slide: string; left: number; top: number; wi
  * side; each slide is redrawn from its section, so the scene continues from
  * slide to slide. One that fails leaves each slide to be drawn on its own.
  */
-export type Draft2MasterPlate = Draft2AnchorPlate & { width: number; height: number; sections: Draft2MasterSection[] };
+export type Draft2MasterPlate = Draft2AnchorPlate & {
+  width: number; height: number; sections: Draft2MasterSection[];
+  /** The scene's version: 1 (absent) for the first, one more each time the editor has it made again. */
+  version?: number;
+  /** What the editor asked to change when the scene was made again. */
+  instruction?: string;
+  /** Where the editor moved the cuts from the centred layout, in the scene's pixels, and how large each section is (1 the largest). */
+  offset?: Draft2CutOffset;
+  /** The earlier versions of the scene, oldest first. */
+  previous?: Draft2MasterPlateRecord[];
+};
+export type Draft2MasterPlateRecord = Omit<Draft2MasterPlate, "previous">;
+export type Draft2CutOffset = { x: number; y: number; scale: number };
 export const MASTER_PLATE_FILE = "master-scene.png";
 export const MASTER_PLATE_PROMPT_FILE = "master-scene-prompt.txt";
+/** A scene version's files: the first keeps the names it always had. */
+export const masterPlateFile = (version = 1) => version <= 1 ? MASTER_PLATE_FILE : `master-scene-v${version}.png`;
+export const masterPlatePromptFile = (version = 1) => version <= 1 ? MASTER_PLATE_PROMPT_FILE : `master-scene-v${version}-prompt.txt`;
+/** The smallest a section may be, as a share of the largest the scene allows. */
+export const CUT_MIN_SCALE = 0.6;
+
+/**
+ * The sections of a panorama cut with the editor's offset (2026-10-17: "re
+ * divide it"): the largest sections the scene holds, scaled down when asked,
+ * centred and then moved, clamped inside the scene. Returns the offset as
+ * clamped, so what the editor sees is what is cut.
+ */
+export function cutSections(plate: Pick<Draft2MasterPlate, "width" | "height" | "sections">, asked: Partial<Draft2CutOffset>): { sections: Draft2MasterSection[]; offset: Draft2CutOffset } {
+  const slides = plate.sections.map((section) => section.slide);
+  const base = masterLayout(slides).sections[0];
+  const scale = Math.min(1, Math.max(CUT_MIN_SCALE, Number.isFinite(asked.scale) ? Number(asked.scale) : 1));
+  const height = Math.max(1, Math.floor(base.height * scale));
+  const width = Math.max(1, Math.floor(height * SLIDE_RATIO));
+  const total = width * slides.length;
+  const left = Math.floor((plate.width - total) / 2);
+  const top = Math.floor((plate.height - height) / 2);
+  const clamp = (value: unknown, min: number, max: number) => Math.round(Math.min(max, Math.max(min, Number.isFinite(value) ? Number(value) : 0)));
+  const x = clamp(asked.x, -left, plate.width - left - total);
+  const y = clamp(asked.y, -top, plate.height - top - height);
+  return { sections: slides.map((slide, index) => ({ slide, left: left + x + index * width, top: top + y, width, height })), offset: { x, y, scale: Math.round(scale * 100) / 100 } };
+}
 /** The master's height, and its widest width: under GPT Image's 3:1 ceiling, in multiples of 16. */
 const MASTER_HEIGHT = 1344;
 const MASTER_MAX_WIDTH = 3840;
@@ -535,6 +573,8 @@ export function imagesNote(slides: readonly Draft2SlideImage[]): string | undefi
 /** The editor's decisions: another image of a slide (optionally an edit of the one shown), or the version a slide shows. */
 export type Draft2ImagesAction =
   | { action: "words" }
+  | { action: "scene"; instruction?: string }
+  | { action: "cut"; offset: Draft2CutOffset }
   | { action: "regenerate"; slide: string; instruction?: string; edit: boolean; characterIds?: string[] }
   | { action: "choose"; slide: string; version: number }
   | { action: "map"; slide: string; position: MapPanelPosition };
@@ -545,6 +585,17 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
   const body = record(value);
   // Every slide whose words changed since its image: set again by the program, on the same images.
   if (body.action === "words") return { action: "words" };
+  // A panorama's scene made again (with what to change), or cut again where the editor moved the cuts.
+  if (body.action === "scene") {
+    const instruction = typeof body.instruction === "string" ? oneLine(body.instruction) : "";
+    if (instruction.length > IMAGE_INSTRUCTION_MAX_CHARACTERS) throw new Draft2InputError(`Keep the instruction under ${IMAGE_INSTRUCTION_MAX_CHARACTERS} characters.`);
+    return { action: "scene", ...(instruction ? { instruction } : {}) };
+  }
+  if (body.action === "cut") {
+    const offset = record(body.offset);
+    const number = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
+    return { action: "cut", offset: { x: number(offset.x, 0), y: number(offset.y, 0), scale: number(offset.scale, 1) } };
+  }
   const slide = typeof body.slide === "string" && /^[a-z0-9]{1,24}$/i.test(body.slide) ? body.slide : undefined;
   if (!slide) throw new Draft2InputError("Name the slide (such as cover or s2).");
   if (body.action === "choose") {
@@ -564,7 +615,7 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     if (!position) throw new Draft2InputError(`The map card goes ${MAP_PANEL_POSITIONS.join(", ")}.`);
     return { action: "map", slide, position };
   }
-  throw new Draft2InputError("The action is regenerate, choose, map or words.");
+  throw new Draft2InputError("The action is regenerate, choose, map, words, scene or cut.");
 }
 
 /**

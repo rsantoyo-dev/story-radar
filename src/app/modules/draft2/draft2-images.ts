@@ -55,7 +55,7 @@ import { failedCall } from "./draft2-funnel";
 import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
-  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
+  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, cutSections, masterPlateFile, masterPlatePromptFile, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
@@ -436,7 +436,7 @@ const anchorJob = (ctx: Context, plate: Draft2AnchorPlate): PlateJob => ({
   size: { width: ctx.fal.generationWidth, height: ctx.fal.generationHeight, aspectRatio: "4:5" }, target: OUTPUT, prompt: () => anchorPlatePrompt(ctx, plate),
 });
 const masterJob = (ctx: Context, plate: Draft2MasterPlate): PlateJob => ({
-  plate, file: MASTER_PLATE_FILE, promptFile: MASTER_PLATE_PROMPT_FILE, operation: "draft2_master_scene",
+  plate, file: masterPlateFile(plate.version), promptFile: masterPlatePromptFile(plate.version), operation: "draft2_master_scene",
   size: { width: plate.width, height: plate.height, aspectRatio: "16:9" }, target: { width: plate.width, height: plate.height }, prompt: () => masterScenePrompt(ctx, plate),
 });
 
@@ -490,6 +490,7 @@ function panoramaScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
     `The concept: ${ctx.script.concept}`,
     `How the visual script casts it: ${ctx.script.cast}`,
     `One light, one horizon and one scale across the whole width.${band}`,
+    ...(plate.instruction ? [`What the editor asks to change from the scene made before: ${JSON.stringify(plate.instruction)}`] : []),
     `In every section keep the top ${calm}% calm and plain, sky, wall or a flat field of the palette: the slides' words are set there afterwards. The subjects stand in the lower part of each section.`,
     "No words, letters, numbers, logos, signs, frames or interface of any kind.",
     `# The brand's visual identity\n${resolveCreativeVisualGuidance(ctx.profile)}`,
@@ -504,7 +505,7 @@ const masterSectionPrompt = (ctx: Context) =>
 async function masterSectionFile(ctx: Context, slide: Draft2SlideImage): Promise<File | undefined> {
   const plate = ctx.run.masterPlate;
   const section = plate?.sections.find((entry) => entry.slide === slide.slide);
-  ctx.master ??= readPrivateR2ImageFile({ objectKey: objectKey(ctx, MASTER_PLATE_FILE), contentType: "image/png", fileName: MASTER_PLATE_FILE })
+  ctx.master ??= readPrivateR2ImageFile({ objectKey: objectKey(ctx, masterPlateFile(plate?.version)), contentType: "image/png", fileName: masterPlateFile(plate?.version) })
     .then(async (file) => { const bytes = new Uint8Array(await file.arrayBuffer()); return hash(bytes) === plate?.sha256 ? bytes : undefined; })
     .catch(() => undefined);
   const master = await ctx.master;
@@ -569,7 +570,7 @@ async function pollPlate(ctx: Context, job: PlateJob, errors: Map<Draft2AnchorPl
       topicId: ctx.topicId, storyId: ctx.storyId, kind: "image", provider: "fal", model: plate.endpoint!, operation: job.operation,
       units: { images: 1, width: job.target.width, height: job.target.height, quality: IMAGES_QUALITY, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
       costMicros: estimate?.costMicros ?? null, estimated: true, rate: estimate?.rate ?? { unpriced: true },
-      idempotencyKey: `${job.operation === "draft2_master_scene" ? "draft2-master-scene" : "draft2-anchor-plate"}:${ctx.run.runId}`,
+      idempotencyKey: `${job.operation === "draft2_master_scene" ? "draft2-master-scene" : "draft2-anchor-plate"}:${ctx.run.runId}${job.operation === "draft2_master_scene" && ((plate as Draft2MasterPlate).version ?? 1) > 1 ? `:v${(plate as Draft2MasterPlate).version}` : ""}`,
     });
     Object.assign(plate, { status: "generated", sha256, completedAt: new Date().toISOString(), ...(estimate ? { costMicros: estimate.costMicros } : {}) } satisfies Partial<Draft2AnchorPlate>);
   } catch (error) {
@@ -1034,6 +1035,8 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   const working = session.status === "running" && Date.now() - new Date(session.updatedAt).getTime() < OPENING_STALL_MS;
   if (working) throw new Draft2BusyError("The images are still being made; decide when they finish.");
   if (action.action === "words") return setChangedWords({ topicId, session, images });
+  if (action.action === "scene") return remakeScene({ session, images, instruction: action.instruction });
+  if (action.action === "cut") return cutSceneAgain({ topicId, session, images, offset: action.offset });
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
@@ -1106,6 +1109,116 @@ async function setChangedWords({ topicId, session, images }: { topicId: string; 
   const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
+}
+
+/** A panorama's scene the editor can act on: made, under the editor's panorama, in the run that stands. */
+function panoramaScene(images: Draft2Images): Draft2MasterPlate {
+  const plate = images.masterPlate;
+  if (images.presentation?.images !== "panorama" || !plate) throw new Draft2InputError("These images are not a panorama.");
+  if (plate.status !== "generated" || !plate.sha256) throw new Draft2InputError("The scene is not made yet; continue the images first.");
+  return plate;
+}
+
+/** The plate's own record, without its history, for the list of earlier versions. */
+const plateRecord = ({ previous, ...plate }: Draft2MasterPlate): Draft2MasterPlateRecord => { void previous; return plate; };
+
+/**
+ * A panorama's scene made again (2026-10-17, the editor: "regenerate it,
+ * adjust it and divide it again"): a new version queued with what the editor
+ * asks to change, the earlier one kept in its history, and every slide's next
+ * version queued as its section of the new scene, keeping the layout of its
+ * words. The canvas continues the run: one image is made, the sections are
+ * cut from it, and nothing earlier is overwritten.
+ */
+async function remakeScene({ session, images, instruction }: { session: Draft2SessionRow; images: Draft2Images; instruction?: string }): Promise<Draft2SessionRow> {
+  const plate = panoramaScene(images);
+  const now = new Date().toISOString();
+  const next: Draft2MasterPlate = {
+    anchor: plate.anchor, status: "queued", queuedAt: now, width: plate.width, height: plate.height, sections: plate.sections,
+    version: (plate.version ?? 1) + 1, ...(instruction ? { instruction } : {}), ...(plate.offset ? { offset: plate.offset } : {}),
+    previous: [...(plate.previous ?? []), plateRecord(plate)],
+  };
+  const slides = images.slides.map((slide) => {
+    const shown = shownAttempt(slide);
+    const attempt: Draft2ImageAttempt = {
+      version: Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1, kind: "section", status: "queued", queuedAt: now,
+      ...(shown?.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}),
+    };
+    return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
+  });
+  const run: Draft2Images = { ...images, masterPlate: next, slides, status: "paused", updatedAt: now, error: "The scene waits to be made again; continue to make it." };
+  const updated = await updateDraft2Session(session.id, { images: run, ...(session.step === "images" ? { status: "needs-review", error: run.error } : {}) });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/**
+ * A panorama cut again where the editor moved the cuts (or made the sections
+ * smaller): every slide gets a new version, its section of the same scene
+ * with its words, the page number and the logo set again. No model is
+ * called and nothing is charged; the earlier versions stay, and each keeps
+ * the review of the version it replaces, since the scene is the one reviewed.
+ */
+async function cutSceneAgain({ topicId, session, images, offset }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; offset: Draft2CutOffset }): Promise<Draft2SessionRow> {
+  const plate = panoramaScene(images);
+  if (!images.slides.every(slideSettled)) throw new Draft2InputError("The slides are still being made; cut again when they finish.");
+  const cut = cutSections(plate, offset);
+  const same = plate.sections.every((section, index) => section.left === cut.sections[index].left && section.top === cut.sections[index].top && section.width === cut.sections[index].width);
+  if (same) throw new Draft2InputError("The cuts are where they already are.");
+  const target = imagesTarget(session);
+  let fal: Context["fal"];
+  try {
+    fal = getFalImageRuntimeConfig("4:5", IMAGES_QUALITY);
+  } catch (error) {
+    if (error instanceof FalImageConfigurationError) throw new Draft2InputError("FAL_KEY is not configured.");
+    throw error;
+  }
+  const moved: Draft2MasterPlate = { ...plate, sections: cut.sections, offset: cut.offset };
+  const run = { ...withoutHistory(images), masterPlate: moved };
+  const profile = await getCreativeProfile(topicId);
+  const ctx = await imagesContext({
+    topicId, storyId: session.storyId, sessionId: session.id, run, target, facts: session.facts ?? [], profile, fal,
+    descriptor: creativeImageModel(resolveDefaultCreativeImageModel()), signal: new AbortController().signal, trace: [...session.trace],
+  });
+  const now = new Date().toISOString();
+  const slides = await Promise.all(images.slides.map(async (slide) => {
+    const shown = shownAttempt(slide);
+    const attempt: Draft2ImageAttempt = {
+      version: Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1, kind: "section", status: "queued", queuedAt: now,
+      ...(shown?.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}),
+    };
+    await cutSection(ctx, slide, attempt, new Map(), async () => undefined);
+    if (attempt.status === "generated" && shown?.review) attempt.review = { ...shown.review, note: `Cut again from the same scene as v${shown.version}.${shown.review.note ? ` ${shown.review.note}` : ""}` };
+    return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
+  }));
+  const status = settledStatus(slides);
+  const next: Draft2Images = { ...images, masterPlate: moved, slides, status, updatedAt: now, error: imagesNote(slides) };
+  const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/**
+ * A panorama's scene as stored, for the canvas, checked against its record:
+ * the version asked for (the current one, or one of its history), drawn with
+ * the cuts where they stand or where the editor is trying them (offset), at
+ * a width the canvas shows.
+ */
+export async function draft2SceneFile({ topicId, sessionId, runId, version, offset }: { topicId: string; sessionId: string; runId: string; version: number; offset?: Draft2CutOffset }): Promise<Uint8Array> {
+  const session = await getDraft2Session(topicId, sessionId);
+  const run = session?.images ? [withoutHistory(session.images), ...(session.images.previousRuns ?? [])].find((entry) => entry.runId === runId) : undefined;
+  const current = run?.masterPlate;
+  const plate = current && ((current.version ?? 1) === version ? current : current.previous?.find((entry) => (entry.version ?? 1) === version));
+  if (!session || !run || !current || !plate || plate.status !== "generated" || !plate.sha256) throw new Draft2InputError("That scene is not one of this session's.");
+  const name = masterPlateFile(plate.version);
+  const bytes = new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: buildDraft2ImageObjectKey({ topicId, sessionId, runId, file: name }), contentType: "image/png", fileName: name })).arrayBuffer());
+  if (hash(bytes) !== plate.sha256) throw new Draft2InputError("The stored scene does not match its record.");
+  const sections = offset ? cutSections(plate, offset).sections : plate.sections;
+  const lines = sections.map((section, index) => `<rect x="${section.left}" y="${section.top}" width="${section.width}" height="${section.height}" fill="none" stroke="#ffffff" stroke-width="10"/><rect x="${section.left}" y="${section.top}" width="${section.width}" height="${section.height}" fill="none" stroke="#111111" stroke-width="4" stroke-dasharray="24 16"/><text x="${section.left + 24}" y="${section.top + 72}" font-family="Liberation Sans, Arial" font-size="56" font-weight="700" fill="#ffffff" stroke="#111111" stroke-width="3">${index + 1}</text>`).join("");
+  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${plate.width}" height="${plate.height}">${lines}</svg>`);
+  // sharp resizes before it composites, whatever the order of the calls: the cuts are drawn at the scene's size first, then the whole is brought down.
+  const drawn = await sharp(Buffer.from(bytes)).composite([{ input: overlay }]).png().toBuffer();
+  return new Uint8Array(await sharp(drawn).resize({ width: 1920 }).jpeg({ quality: 82 }).toBuffer());
 }
 
 /** One finished image of this session, as stored, for the canvas (checked against its record). */

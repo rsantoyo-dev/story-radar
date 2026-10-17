@@ -25,7 +25,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, cutSections, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -2222,7 +2222,8 @@ function ImagesView({ images, characters, story, saving, locked, onDecide, onRef
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
     {plate ? <p className={styles.factMeta}>Anchor plate · {plate.anchor} · {plate.status === "generated" ? "drawn once without words; every slide that carries the anchor takes it as a reference" : plate.status === "failed" ? `could not be made${plate.error ? ` (${clip(plate.error, 120)})` : ""}; the slides keep the anchor by the script’s words alone` : "being drawn before the slides"}</p> : null}
-    {master ? <p className={styles.factMeta}>Master scene · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
+    {master && images.presentation?.images === "panorama" && master.status === "generated" ? <SceneEditor images={images} plate={master} story={story} saving={saving} locked={locked} onDecide={onDecide} /> : null}
+    {master && !(images.presentation?.images === "panorama" && master.status === "generated") ? <p className={styles.factMeta}>{images.presentation?.images === "panorama" ? "Panorama" : "Master scene"} · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
     <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} characters={characters} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} onRefreshCharacters={onRefreshCharacters} refreshingCharacters={refreshingCharacters} />)}</ol>
   </div>;
 }
@@ -2240,6 +2241,55 @@ function ImageReviewLines({ review }: { review: Draft2ImageReview }) {
 }
 
 /** One slide: its image, its versions, the review, what it could not show, and another image. */
+/**
+ * A panorama's scene (2026-10-17, the editor: "show the first image, so we
+ * can regenerate it, adjust it and divide it again"): the one wide image the
+ * slides are cut from, with its numbered cuts. Moving the cuts or making the
+ * sections smaller is tried on the scene first and applied by "Cut again",
+ * free; "Make the scene again" asks for a new scene with what to change, and
+ * the slides are cut from it. Every earlier version stays.
+ */
+function SceneEditor({ images, plate, story, saving, locked, onDecide }: {
+  images: Draft2Images;
+  plate: NonNullable<Draft2Images["masterPlate"]>;
+  story: { topicId: string; sessionId: string; secret: string };
+  saving?: string;
+  locked: boolean;
+  onDecide: (input: Record<string, unknown>) => void;
+}) {
+  const saved = plate.offset ?? { x: 0, y: 0, scale: 1 };
+  const [offset, setOffset] = useState(saved);
+  const [instruction, setInstruction] = useState("");
+  const moved = offset.x !== saved.x || offset.y !== saved.y || offset.scale !== saved.scale;
+  const step = Math.max(8, Math.round(plate.height * 0.04));
+  // What the editor tries is clamped as the server cuts it, so the scene shows exactly what "Cut again" applies.
+  const tryOffset = (next: Draft2CutOffset) => setOffset(cutSections(plate, next).offset);
+  const query = new URLSearchParams({ topicId: story.topicId, sessionId: story.sessionId, run: images.runId, plate: "master", version: String(plate.version ?? 1), ...(moved ? { x: String(offset.x), y: String(offset.y), scale: String(offset.scale) } : {}) });
+  const busy = saving === "scene" || saving === "cut";
+  return <div className={styles.focusBody}>
+    <p className={styles.factMeta}>
+      Panorama · scene v{plate.version ?? 1} · {plate.width}×{plate.height} · each slide is its numbered section, cut as it is{plate.previous?.length ? ` · ${plate.previous.length} earlier ${plate.previous.length === 1 ? "version" : "versions"} kept` : ""}{plate.instruction ? ` · asked: “${clip(plate.instruction, 120)}”` : ""}
+    </p>
+    <PrivateDraft2Image url={`/api/radar/draft2/images/file?${query}`} secret={story.secret} alt={`The panorama's scene, version ${plate.version ?? 1}, with its cuts`} wide={{ width: 1920, height: Math.round((1920 * plate.height) / plate.width) }} />
+    <ActionRow>
+      <Button size="compact" variant="quiet" disabled={locked || busy} title="Move the cuts left" onClick={() => tryOffset({ ...offset, x: offset.x - step })}>←</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy} title="Move the cuts right" onClick={() => tryOffset({ ...offset, x: offset.x + step })}>→</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy} title="Move the cuts up" onClick={() => tryOffset({ ...offset, y: offset.y - step })}>↑</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy} title="Move the cuts down" onClick={() => tryOffset({ ...offset, y: offset.y + step })}>↓</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy || offset.scale <= CUT_MIN_SCALE} title="Smaller sections: more room to move them, fewer pixels each" onClick={() => tryOffset({ ...offset, scale: Math.round((offset.scale - 0.05) * 100) / 100 })}>Smaller</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy || offset.scale >= 1} onClick={() => tryOffset({ ...offset, scale: Math.round((offset.scale + 0.05) * 100) / 100 })}>Larger</Button>
+      <Button size="compact" variant="quiet" disabled={locked || busy || !moved} onClick={() => setOffset(saved)}>Undo the move</Button>
+      <Button size="compact" variant="secondary" busy={saving === "cut"} disabled={locked || busy || !moved} onClick={() => onDecide({ action: "cut", slide: "cut", offset })}>Cut again</Button>
+    </ActionRow>
+    <FormField label="What to change in the scene" description="The scene is made again as one new image, about 2 cents, and the slides are cut from it with their words where they were. Every earlier version stays.">
+      <textarea value={instruction} maxLength={600} rows={2} disabled={locked || busy} onChange={(event) => setInstruction(event.target.value)} />
+    </FormField>
+    <ActionRow>
+      <Button size="compact" variant="secondary" busy={saving === "scene"} disabled={locked || busy} onClick={() => onDecide({ action: "scene", slide: "scene", ...(instruction.trim() ? { instruction } : {}) })}>Make the scene again</Button>
+    </ActionRow>
+  </div>;
+}
+
 function SlideImageCard({ slide, characters, runId, story, saving, locked, onDecide, onRefreshCharacters, refreshingCharacters }: {
   slide: Draft2SlideImage;
   characters: readonly { id: string; name: string }[];
@@ -2365,7 +2415,7 @@ function ScriptCast({ visual, characters, saving, locked, onCast, onRefresh, ref
 }
 
 /** A private image: fetched with the editor's credentials and shown from memory. */
-function PrivateDraft2Image({ url, secret, alt }: { url: string; secret: string; alt: string }) {
+function PrivateDraft2Image({ url, secret, alt, wide }: { url: string; secret: string; alt: string; /** A wide image (a panorama's scene) at its own proportions. */ wide?: { width: number; height: number } }) {
   const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -2380,8 +2430,8 @@ function PrivateDraft2Image({ url, secret, alt }: { url: string; secret: string;
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [url, secret]);
-  return <div className={styles.imageFrame}>
-    {src ? <Image className={styles.imageFill} src={src} alt={alt} width={432} height={540} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the image." : "Loading…"}</p>}
+  return <div className={wide ? styles.sceneFrame : styles.imageFrame}>
+    {src ? <Image className={wide ? styles.sceneFill : styles.imageFill} src={src} alt={alt} width={wide?.width ?? 432} height={wide?.height ?? 540} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the image." : "Loading…"}</p>}
   </div>;
 }
 
