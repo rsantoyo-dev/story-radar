@@ -628,3 +628,15 @@ test("how the carousel is made is the editor's: a panorama always takes the prog
   const again = decidedFocus(program, parse(), { provider: "anthropic", model: "claude-sonnet-5-5" }, NOW);
   assert.equal(again.values?.textMode, "program", "a decision never takes the editor's choice away");
 });
+
+test("the last plan answer's beat over a character limit is cut at a word instead of failing the step", () => {
+  const long = "Cuenta que el almidón líquido sale por la cáscara y se vuelve sólido en unas centésimas de segundo, y que por eso no hay dos palomitas iguales; además, que el sonido viene de las cavidades vacías que vibran al caer la presión.";
+  assert.ok(long.length > 200);
+  const answerWith = (words: string) => JSON.stringify({ levers: { primary: "free", alternatives: [], factIds: [], paidBy: "last" }, spine: { beats: ARC_SPINE.beats.map((entry, index) => index === 2 ? { ...entry, words } : entry) }, direction: "d", visualDirection: "v", reasons: {} });
+  const known = new Set(["f1", "f2", "f3"]);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  assert.throws(() => parseFocusPlan(answerWith(long), { known, structure: arc }), /Beat 3 needs the words' job, in 1 to 200 characters/, "a first answer is asked again");
+  const cut = parseFocusPlan(answerWith(long), { known, structure: arc, clip: true }).spine.beats[2].words;
+  assert.ok(cut.length <= 200 && long.startsWith(cut), "the last one keeps its beat, cut at a word");
+  assert.match(cut, /[\p{L}]$/u, "never on a comma or a space");
+});

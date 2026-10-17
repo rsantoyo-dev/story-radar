@@ -32,11 +32,16 @@ import type { Draft2Skill } from "./draft2-skills";
  * twist (the Milan boulevard notice padded to six slides around "the two
  * weeks may change"). Version 7, the same day: focus.presentation, the
  * editor's choice of words set by the program and of one panorama cut into
- * the slides; the beats plan for it.
+ * the slides; the beats plan for it. Version 8, the same day, after the
+ * coffee ring's first panorama spine failed twice (over six beats, words
+ * over 200 characters) and then passed with a cut of the drop, a magnified
+ * edge, a view from above and two panels: a panorama keeps one view and one
+ * scale (the program checks it), and the planner reads the numbers it is
+ * checked against (spineLimits) in its request.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "7",
+  version: "8",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -156,7 +161,11 @@ story takes the ones it needs, in this order, and may repeat rising:
   its section of that one scene, something carries across each seam (a road,
   a table, a line, a reach) so the reader swipes to follow it, and the spine
   has at most six beats; its sections share one world by design, so the
-  sequence rule above does not apply to them. text "program": the program
+  sequence rule above does not apply to them. One view and one scale across
+  every section: a step of the story is the next thing along the scene (the
+  next drop on the counter, the next stage), never a cut-away, a close-up, a
+  magnified view or panels, which one wide image cannot hold; the program
+  checks it. text "program": the program
   sets each slide's words on a calm band of its image, along the top (below
   the logo where there is one); an image line keeps its subject out of that
   band and asks for no word at all.
@@ -168,7 +177,13 @@ story takes the ones it needs, in this order, and may repeat rising:
   have it (it may react on another slide). An identity's default cover
   ("the cover on terracotta") is the default of one post, not of every post.`,
   roleText: {
-    "focus-planner": `## The editor's notes
+    "focus-planner": `## The numbers you are checked against
+spineLimits gives them: the fewest and the most beats (a panorama's six),
+and each beat field's characters (scene, words, image, withholds, subject).
+Keep every field at least ten characters under its limit: the program
+counts every character, and an answer over a limit is asked for again.
+
+## The editor's notes
 notes, when present, are the editor's instructions on the plan the focus
 already carries (focus.levers, guards, spine, direction and
 visualDirection), in the editor's words. Return the whole plan revised:

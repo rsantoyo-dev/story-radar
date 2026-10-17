@@ -16,7 +16,16 @@ import type { Draft2SpineBeat } from "./draft2-focus.types";
  * all seven slides, each in another state; the editor: "the images are a
  * series, not a sequence").
  */
-export type Draft2SpineProblemCode = "SPINE_AVOID_TERM" | "SPINE_IMAGE_WORDS" | "SPINE_SAME_SUBJECT" | "SPINE_SERIES";
+export type Draft2SpineProblemCode = "SPINE_AVOID_TERM" | "SPINE_IMAGE_WORDS" | "SPINE_SAME_SUBJECT" | "SPINE_SERIES" | "SPINE_PANORAMA_VIEW";
+
+/**
+ * What breaks a panorama's one scene: a section drawn as a cut-away, a
+ * close-up, a magnified view or panels cannot share the scene's light,
+ * horizon and scale (the coffee ring's first panorama spine: a cut of the
+ * drop, a magnified edge, a view from above, two panels), in the
+ * publications' languages.
+ */
+const PANORAMA_BREAK = /(?<![\p{L}\p{N}_])(en corte|corte de (?:la|el|una|un|los|las)|corte transversal|secci[oó]n transversal|cross-?sections?|cut-?away|vue en coupe|en coupe|ampliaci[oó]n|ampliad[oa]s?|zoom|close-?ups?|primer plano|macro|microsc[oó]pic[oa]s?|al microscopio|gros plan|agrandie?s?|paneles|panels?|panneaux|split[- ]screen|d[ií]ptico|diptych|recuadros?|insets?|m[ée]daillons?)(?![\p{L}\p{N}_])/iu;
 export type Draft2SpineProblem = { code: Draft2SpineProblemCode; beat: number; detail: string };
 
 /** Two subjects this alike (the share of their longer words) are the same subject, as the visual script counts them. */
@@ -58,6 +67,8 @@ export function spineImageProblems(beats: readonly Pick<Draft2SpineBeat, "slide"
     const line = comparableText(beat.image);
     const avoided = avoid.find((term) => mentionsTerm(line, term));
     if (avoided) problems.push({ code: "SPINE_AVOID_TERM", beat: number, detail: `Beat ${number} (${beat.slide}) asks the image for "${avoided}", which the brand's identity avoids; show it another way` });
+    const broken = panorama ? PANORAMA_BREAK.exec(beat.image)?.[0] : undefined;
+    if (broken) problems.push({ code: "SPINE_PANORAMA_VIEW", beat: number, detail: `Beat ${number} (${beat.slide}) asks for "${broken}": a panorama is one scene in one view and one scale, so no section is a cut-away, a close-up or a panel; show the step in the scene itself, at the scene's scale` });
     const asked = forbiddenElement(beat.image) ?? wordsAskedOfImage(beat.image);
     if (asked) problems.push({ code: "SPINE_IMAGE_WORDS", beat: number, detail: `Beat ${number} (${beat.slide}) asks the image for "${asked}": the image model letters only the slide's words, so an image line never asks for numbers, labels, captions, logos or other words` });
     const previous = beats[index - 1];

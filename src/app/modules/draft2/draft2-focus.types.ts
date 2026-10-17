@@ -665,6 +665,28 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 const text = (value: unknown, max: number): string | undefined =>
   typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : undefined;
 const oneOf = <T extends string>(values: readonly T[], value: unknown): T | undefined => values.find((candidate) => candidate === value);
+/**
+ * A planning text cut to its limit at the last word that fits, for the last
+ * answer only: a beat whose scene or words run a few characters over is
+ * still a beat, and failing the whole step for it cost a story its Spine
+ * (2026-10-17, the coffee ring's panorama).
+ */
+const clipped = (value: unknown, max: number): string | undefined => {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const whole = value.trim();
+  if (whole.length <= max) return whole;
+  const cut = whole.slice(0, max + 1);
+  const end = cut.lastIndexOf(" ");
+  return (end > max / 2 ? cut.slice(0, end) : whole.slice(0, max)).replace(/[\s,;:–-]+$/u, "");
+};
+
+/** The numbers the program checks a spine against, for the planner's request: the beats it may have and each field's characters. */
+export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode">) {
+  return {
+    beats: { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS },
+    characters: { scene: FOCUS_BEAT_SCENE_MAX_CHARACTERS, words: FOCUS_BEAT_WORDS_MAX_CHARACTERS, image: FOCUS_BEAT_IMAGE_MAX_CHARACTERS, withholds: FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, subject: FOCUS_BEAT_SUBJECT_MAX_CHARACTERS },
+  };
+}
 
 /** The ids of verified facts in a list, once each and in order; anything else is dropped. */
 function knownFactIds(value: unknown, facts: ReadonlySet<string>, max: number): string[] {
@@ -823,7 +845,8 @@ export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: 
  * slide and role, its scene, words and image within their limits, what it
  * withholds (empty on the last only) and the facts it rests on.
  */
-function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never, limits: { maxBeats?: number } = {}): Draft2FocusSpine {
+function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never, limits: { maxBeats?: number; /** The last answer: a text over its limit is cut at a word, not refused. */ clip?: boolean } = {}): Draft2FocusSpine {
+  const field = limits.clip ? clipped : text;
   const raw = record(value).beats;
   if (!Array.isArray(raw)) fail("The spine is a list of beats, one per slide");
   const beats: Draft2SpineBeat[] = (raw as unknown[]).map((entry, index) => {
@@ -831,13 +854,13 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
     const slide = oneOf(FOCUS_SPINE_POSITIONS, body.slide);
     const role = oneOf(FOCUS_SPINE_ROLES, body.role);
     if (!slide || !role) fail(`Beat ${index + 1}: slide is one of ${FOCUS_SPINE_POSITIONS.join(", ")} and role one of ${FOCUS_SPINE_ROLES.join(", ")}`);
-    const scene = text(body.scene, FOCUS_BEAT_SCENE_MAX_CHARACTERS);
-    const words = text(body.words, FOCUS_BEAT_WORDS_MAX_CHARACTERS);
-    const image = text(body.image, FOCUS_BEAT_IMAGE_MAX_CHARACTERS);
+    const scene = field(body.scene, FOCUS_BEAT_SCENE_MAX_CHARACTERS);
+    const words = field(body.words, FOCUS_BEAT_WORDS_MAX_CHARACTERS);
+    const image = field(body.image, FOCUS_BEAT_IMAGE_MAX_CHARACTERS);
     if (!scene) fail(`Beat ${index + 1} needs its scene, in 1 to ${FOCUS_BEAT_SCENE_MAX_CHARACTERS} characters`);
     if (!words) fail(`Beat ${index + 1} needs the words' job, in 1 to ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} characters`);
     if (!image) fail(`Beat ${index + 1} needs what the image adds, in 1 to ${FOCUS_BEAT_IMAGE_MAX_CHARACTERS} characters`);
-    const withholds = typeof body.withholds === "string" ? body.withholds.trim() : "";
+    const withholds = typeof body.withholds === "string" ? (limits.clip ? clipped(body.withholds, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS) ?? "" : body.withholds.trim()) : "";
     if (withholds.length > FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS) fail(`Beat ${index + 1} withholds in at most ${FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} characters`);
     const factIds = known
       ? knownFactIds(body.factIds, known, MAX_BEAT_FACTS)
@@ -863,19 +886,21 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats }: {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats, clip = false }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
   imageCheck?: { avoid: readonly string[]; recurring?: string; panorama?: boolean };
   /** The most beats the presentation allows (a panorama's six). */
   maxBeats?: number;
+  /** The last answer: a beat's text over its limit is cut at a word instead of failing the step. */
+  clip?: boolean;
   /** Check that every important fact has a beat or a guard (spineUnusedFacts): a gap is a response error, asked for again with the rule; the second answer's gaps go to the editor as findings. */
   coverage?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[];
 }): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
-  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats });
+  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats, clip });
   if (imageCheck && !editorChoices.spine) {
     const problems = spineImageProblems(spine.beats, imageCheck);
     if (problems.length) throw new Draft2ResponseError(`The spine's image lines: ${problems.map((problem) => problem.detail).join("; ")}`);

@@ -78,3 +78,26 @@ Spine (skill v7) and the visual script (visuals v12) plan for it.
   side column) chosen by the visual script.
 - A check that the seams of a panorama line up after the words are set.
 - Choosing the presentation as a brand default in the creative profile.
+
+## Addendum, 2026-10-17: the first real panorama (spine v8)
+
+The coffee ring story's first panorama Spine failed twice: the planner's
+answers had more than six beats or a beat's words over 200 characters, and
+the second answer broke a hard rule again. The retry passed, but with a cut
+of the drop, a magnified edge, a view from above and two panels, which one
+wide image cannot hold. The editor's copy was fixed by hand (one counter seen
+from above at one scale, each step the next drop along it). Since then:
+
+- **One view and one scale** (spine v8): a panorama's step is the next thing
+  along the scene, never a cut-away, a close-up, a magnified view or panels.
+  The program checks the image lines (`SPINE_PANORAMA_VIEW`, Spanish, English
+  and French terms; "vista desde arriba" alone is a view, not a break): the
+  first answer is asked again, the second's problems are notes.
+- **The numbers in the request**: the plan request carries `spineLimits`
+  (the fewest and most beats, six for a panorama, and each beat field's
+  characters); the planner keeps ten characters of margin.
+- **The last answer is cut, not failed**: a beat's scene, words, image or
+  withholds over its limit on the last answer is cut at a word
+  (`parseFocusPlan`'s `clip`); a beat count over the cap still fails.
+- **Why an answer was refused** is the note of its call in the trace
+  ("Refused by the program: …"), no longer only on the dev console.

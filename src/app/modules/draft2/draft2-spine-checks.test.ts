@@ -75,3 +75,27 @@ test("a series, not a sequence: one subject on more than two thirds of the beats
   assert.equal(spineRecurring({ form: "classic", anchor: "" }), "");
   assert.equal(spineSeries(series.slice(0, 3)), undefined, "fewer than four subjects are not counted");
 });
+
+test("a panorama keeps one view and one scale: a cut-away, a close-up, a magnified view or panels is a problem only there", () => {
+  // The coffee ring's first panorama spine (2026-10-17), as Claude wrote it.
+  const first = [
+    beat("cover", "Sección izquierda de un mesón largo: un aro seco de café, grande y de contorno grueso, con una línea de vapor curva que cruza el borde derecho."),
+    beat("slide2", "Corte de la gota con flechas curvas a mano del centro hacia el borde; la línea de vapor de la portada entra por la izquierda."),
+    beat("middle", "Ampliación del borde de la gota apoyado en una línea irregular, con más vapor saliendo del borde que del centro."),
+    beat("middle", "Vista desde arriba: una cubierta en forma de anillo sobre el borde de la gota y una mancha oscura y redonda en el centro."),
+    beat("penultimate", "Vista ampliada en dos paneles: a la izquierda partículas redondas; a la derecha alargadas que se reparten parejas."),
+    beat("last", "Extremo derecho del mesón: una mancha de whisky seca de color parejo, sin aro."),
+  ];
+  const problems = spineImageProblems(first, { panorama: true }).filter((problem) => problem.code === "SPINE_PANORAMA_VIEW");
+  assert.deepEqual(problems.map((problem) => problem.beat), [2, 3, 5], "the cut, the magnified edge and the panels; one view from above is the scene's own");
+  assert.match(problems[0].detail, /asks for "Corte de la": a panorama is one scene in one view and one scale/);
+  assert.deepEqual(spineImageProblems(first).filter((problem) => problem.code === "SPINE_PANORAMA_VIEW"), [], "one image per slide may cut, magnify or split");
+  // The editor's version: one counter seen from above, each step the next drop along it.
+  const edited = [
+    beat("cover", "Vista desde arriba del extremo izquierdo de un mesón de madera clara, a la escala de las gotas: un aro de café seco en la mitad inferior; un rastro de gotas sigue hacia la derecha."),
+    beat("slide2", "El mismo mesón, misma vista y escala: una gota de café aún húmeda, con flechas curvas a mano del centro hacia el borde."),
+    beat("middle", "Misma vista y escala: una gota a medio secar con el borde prendido a la veta rugosa de la madera."),
+    beat("last", "Extremo derecho del mesón, misma vista y escala: una mancha de whisky ámbar, pareja y sin aro, junto a la base de un vaso."),
+  ];
+  assert.deepEqual(spineImageProblems(edited, { panorama: true }), []);
+});
