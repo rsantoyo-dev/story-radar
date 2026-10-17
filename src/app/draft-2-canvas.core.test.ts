@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, DRAFT_2_PHASES, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepForKey, draft2StepFromPath, draft2StepHref, draft2StepNumber, draft2StepPhase,
-  minutes, sessionMetrics, stepMetrics, usd, draft2Href, paragraphs, sourceHost, storyHref, traceUsageLine, wordCount,
+  minutes, sessionMetrics, stepMetrics, usd, dashboardHref, draft2Href, paragraphs, sourceHost, storyHref, storyWorkspace, traceUsageLine, wordCount,
 } from "./draft-2-canvas.core";
 
 const topicId = "11111111-1111-4111-8111-111111111111";
@@ -21,6 +21,21 @@ test("the canvas link keeps the dashboard section and return context, and drops 
 test("the way back opens the story's script tab with the same context", () => {
   assert.equal(storyHref(topicId, storyId, { from: "#production" }), `/topics/${topicId}/stories/${storyId}?from=%23production&tab=script`);
   assert.equal(storyHref(topicId, storyId), `/topics/${topicId}/stories/${storyId}?tab=script`);
+});
+
+test("a story opens in Draft 2 unless the editor asks for a v1 draft, a v1 preparation run or a publication to review", () => {
+  assert.equal(storyWorkspace(), "draft-2");
+  assert.equal(storyWorkspace({ tab: "script" }), "draft-2", "the Production list's draft workspace");
+  assert.equal(storyWorkspace({ tab: "focus" }), "draft-2", "a candidate opened for production");
+  assert.equal(storyWorkspace({ draftId: "d1", tab: "script" }), "studio");
+  assert.equal(storyWorkspace({ preparationRunId: "r1", tab: "script" }), "studio");
+  assert.equal(storyWorkspace({ tab: "publication" }), "studio");
+});
+
+test("the canvas leads back to the dashboard section it was opened from, Production by default, with its return context", () => {
+  assert.equal(dashboardHref(topicId, { from: "#today", returnContext: context }), `/?topicId=${topicId}&returnContext=${context}#today`);
+  assert.equal(dashboardHref(topicId), `/?topicId=${topicId}#production`);
+  assert.equal(dashboardHref(topicId, { from: "#story/abc", returnContext: "not-a-context" }), `/?topicId=${topicId}#production`, "never back into a story, never a forged context");
 });
 
 test("the source host drops www and survives a malformed URL", () => {

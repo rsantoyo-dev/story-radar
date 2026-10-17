@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Reac
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ActionRow, Button, EmptyState, FormField, InlineNotice, LoadingState, SectionHeader, StatusBadge, type StatusTone } from "@/app/ui/primitives";
+import { ActionRow, Button, EmptyState, FormField, InlineNotice, LinkButton, LoadingState, SectionHeader, StatusBadge, type StatusTone } from "@/app/ui/primitives";
 import type { StoryContentResponse } from "@/app/radar-dashboard";
 import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2SessionStatus, Draft2TraceEntry } from "@/app/modules/draft2/draft2-facts.types";
 import {
@@ -35,7 +35,7 @@ import {
 } from "@/app/modules/draft2/draft2-funnel";
 import { DRAFT2_MODEL_OPTIONS, DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES, castWithChoice, draft2ModelName, parseDraft2ModelChoice, type Draft2Cast, type Draft2FunnelStepName, type Draft2ModelChoice } from "@/app/modules/draft2/draft2-models";
 import {
-  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
+  adjacentDraft2Steps, AUTOPILOT_ORDER, autopilotRuns, contentStatusLabel, dashboardHref, DRAFT_2_STEPS, ranAt, draft2RailState, draft2StepFromPath, draft2StepHref, draft2StepPhase, minutes, paragraphs, sessionMetrics, sourceHost, stepMetrics, storyHref, traceUsageLine, usd, wordCount,
   type Draft2StepKey,
 } from "./draft-2-canvas.core";
 import {
@@ -403,7 +403,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [following, setFollowing] = useState<string>();
   // The clock a run is measured against, to tell a run that went silent from one still working.
   const [now, setNow] = useState(0);
-  const back = storyHref(topicId, storyId, { from, returnContext });
+  // The canvas is where a story opens: back leads to the dashboard section it came from; the v1 studio stays one link away.
+  const back = dashboardHref(topicId, { from, returnContext });
+  const studio = storyHref(topicId, storyId, { from, returnContext });
   const headers = { Authorization: `Bearer ${secret}` };
 
   useEffect(() => {
@@ -1143,7 +1145,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <SectionHeader level={2} eyebrow="Source material" title="What the story says" description="The stored text, exactly as every step reads it." />
             {text.length
               ? <div className={styles.reading}>{text.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
-              : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text. <Link href={back}>Open the story</Link></EmptyState>}
+              : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text. <Link href={studio}>Open the studio</Link></EmptyState>}
           </section>
           <section className={styles.factsResult} aria-label="The facts">
             {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
@@ -1485,7 +1487,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
 
   return <main className={styles.shell} style={themeStyle}>
     <header className={styles.topbar}>
-      <Link href={back} className={styles.topbarBack} aria-label="Back to the story">← <span>Story</span></Link>
+      <Link href={back} className={styles.topbarBack} aria-label="Back to the dashboard">← <span>Press Craftor</span></Link>
       <div className={styles.topbarTitle}>
         <span className={styles.topbarTopic}>{topicName} · Draft 2</span>
         <span className={styles.topbarStory}>{content?.title ?? (error ? "Could not open the story" : "Loading the story…")}</span>
@@ -1494,11 +1496,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {totals.calls ? <span className={styles.topbarVitals}>{minutes(totals.ms)} in calls · {usd(totals.costMicros)}</span> : null}
         {liveScreen && liveScreen !== current ? <ScreenLink href={hrefOf(liveScreen)} onNavigate={() => navigate(liveScreen)} className={styles.livePill}>{stepOf(liveScreen).title} running</ScreenLink> : null}
         {current !== "facts" ? <Button variant="quiet" size="compact" aria-expanded={sourceShown} aria-controls="draft2-source" onClick={() => showSource(!sourceOpen)}>Article</Button> : null}
+        <LinkButton variant="quiet" size="compact" href={studio} title="Open this story in the v1 studio">v1 studio</LinkButton>
         {/* The overview has the autopilot's own card; a narrow window keeps the bar to the article and the way back. */}
         {current ? <span className={styles.topbarAutopilot}>{modelsBadge}{autopilotButtons}</span> : null}
       </div> : null}
     </header>
-    {error ? <InlineNotice tone="error" title="Could not open the canvas" className={styles.notice}>{error} <Link href={back}>Back to the story</Link></InlineNotice> : null}
+    {error ? <InlineNotice tone="error" title="Could not open the canvas" className={styles.notice}>{error} <Link href={back}>Back to the dashboard</Link></InlineNotice> : null}
     {!content && !error ? <LoadingState className={styles.notice}>Loading the story…</LoadingState> : null}
     {content ? <div className={styles.workspace} data-source={sourceShown ? "open" : undefined}>
       <Draft2Rail current={current} overviewHref={hrefOf(undefined)} steps={screenSteps} onNavigate={navigate} />

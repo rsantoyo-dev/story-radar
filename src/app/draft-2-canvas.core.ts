@@ -32,7 +32,24 @@ export function draft2StepFromPath(pathname: string): Draft2StepKey | undefined 
   return match && isDraft2Step(match[1]) ? match[1] : undefined;
 }
 
-/** Back from the canvas to the story's studio, on its script tab. */
+/**
+ * Where a story opens from the dashboard (2026-10-16: "Draft 2 is what
+ * appears by default"): the canvas, unless the editor asks for something only
+ * the v1 studio has, a v1 draft, a v1 preparation run or a publication to
+ * review.
+ */
+export function storyWorkspace(options: { draftId?: string; preparationRunId?: string; tab?: string } = {}): "draft-2" | "studio" {
+  return options.draftId || options.preparationRunId || options.tab === "publication" ? "studio" : "draft-2";
+}
+
+/** Back to the dashboard section the story was opened from (Production by default), restoring where the editor was. */
+export function dashboardHref(topicId: string, context: StoryLinkContext = {}): string {
+  const section = context.from?.startsWith("#") && !context.from.startsWith("#story/") ? context.from : "#production";
+  const returnContext = context.returnContext && RETURN_CONTEXT_PATTERN.test(context.returnContext) ? `&returnContext=${encodeURIComponent(context.returnContext)}` : "";
+  return `/?topicId=${encodeURIComponent(topicId)}${returnContext}${section}`;
+}
+
+/** The story's v1 studio, on its script tab, with the same context. */
 export function storyHref(topicId: string, storyId: string, context: StoryLinkContext = {}): string {
   const search = contextSearch(context);
   search.set("tab", "script");

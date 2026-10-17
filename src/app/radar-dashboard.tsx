@@ -42,6 +42,7 @@ import { topicThemeStyle } from "@/design/topic-themes";
 import { dashboardViewFromHash, DASHBOARD_VIEW_TITLES } from "./dashboard-navigation";
 import { storyPublicationStage } from "./story-publication-stage";
 import type { CreativeProfile } from "./modules/stories/creative-content.types";
+import { storyWorkspace } from "./draft-2-canvas.core";
 import type { WorkspaceSourceCatalog } from "./modules/sources/workspace-source-catalog.repository";
 
 type DatabaseStats = {
@@ -786,7 +787,9 @@ export function RadarDashboard({
   }
 
   function openCreativeStory(storyId: string, options?: { editorialRunId?: string; draftId?: string; preparationRunId?: string; tab?: string }) {
-    const url = new URL(`/topics/${encodeURIComponent(selectedTopicId)}/stories/${encodeURIComponent(storyId)}`, window.location.origin);
+    // Draft 2 is the workspace; the v1 studio opens only for what it alone has (a v1 draft, a preparation run, a publication to review).
+    const studio = storyWorkspace(options) === "studio";
+    const url = new URL(`/topics/${encodeURIComponent(selectedTopicId)}/stories/${encodeURIComponent(storyId)}${studio ? "" : "/draft-2"}`, window.location.origin);
     url.searchParams.set("from", window.location.hash || "#production");
     try {
       const returnContext = crypto.randomUUID();
@@ -798,10 +801,12 @@ export function RadarDashboard({
       }));
       url.searchParams.set("returnContext", returnContext);
     } catch { /* The section link still works without session storage. */ }
-    if (options?.editorialRunId) url.searchParams.set("editorialRunId", options.editorialRunId);
-    if (options?.draftId) url.searchParams.set("draftId", options.draftId);
-    if (options?.preparationRunId) url.searchParams.set("preparationRunId", options.preparationRunId);
-    if (options?.tab) url.searchParams.set("tab", options.tab);
+    if (studio) {
+      if (options?.editorialRunId) url.searchParams.set("editorialRunId", options.editorialRunId);
+      if (options?.draftId) url.searchParams.set("draftId", options.draftId);
+      if (options?.preparationRunId) url.searchParams.set("preparationRunId", options.preparationRunId);
+      if (options?.tab) url.searchParams.set("tab", options.tab);
+    }
     router.push(url.pathname + url.search);
   }
 

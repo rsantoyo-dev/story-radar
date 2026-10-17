@@ -8,17 +8,10 @@ import { CreativeDraftWorkspace, type WorkspaceTab } from "@/app/creative-draft-
 import { StoryContentViewer, type StoryContentResponse } from "@/app/radar-dashboard";
 import styles from "@/app/creative-draft-workspace.generated.module.css";
 import { SIGNED_IN_CREDENTIAL } from "@/app/modules/auth/session-credential";
-import { draft2Href } from "@/app/draft-2-canvas.core";
+import { dashboardHref, draft2Href } from "@/app/draft-2-canvas.core";
 import { LinkButton } from "@/app/ui/primitives";
 
 const WORKSPACE_TABS: readonly WorkspaceTab[] = ["content", "focus", "script", "visuals", "publication"];
-
-function returnHref(topicId: string, from?: string, returnContext?: string): string {
-  const section = from?.startsWith("#") && !from.startsWith("#story/") ? from : "#production";
-  const context = returnContext && /^[0-9a-f-]{36}$/i.test(returnContext)
-    ? `&returnContext=${encodeURIComponent(returnContext)}` : "";
-  return `/?topicId=${encodeURIComponent(topicId)}${context}${section}`;
-}
 
 export function StoryWorkspacePageClient({
   signedIn = false, topicId, topicName, themeStyle, storyId, from, returnContext, initialTab,
@@ -50,7 +43,7 @@ export function StoryWorkspacePageClient({
   const [workspaceDirty, setWorkspaceDirty] = useState(false);
   const [workspaceNonce, setWorkspaceNonce] = useState(0);
   const [instagramRefreshToken, setInstagramRefreshToken] = useState(0);
-  const back = returnHref(topicId, from, returnContext);
+  const back = dashboardHref(topicId, { from, returnContext });
   const tab = WORKSPACE_TABS.find((candidate) => candidate === initialTab) ?? "focus";
 
   useEffect(() => {
