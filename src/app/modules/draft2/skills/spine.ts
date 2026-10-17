@@ -37,11 +37,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * over 200 characters) and then passed with a cut of the drop, a magnified
  * edge, a view from above and two panels: a panorama keeps one view and one
  * scale (the program checks it), and the planner reads the numbers it is
- * checked against (spineLimits) in its request.
+ * checked against (spineLimits) in its request. Version 9, the same day:
+ * the facts every spine must place (factsToCover) are in the request too, so
+ * a first answer places them instead of being asked again for them.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "8",
+  version: "9",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -182,6 +184,10 @@ spineLimits gives them: the fewest and the most beats (a panorama's six),
 and each beat field's characters (scene, words, image, withholds, subject).
 Keep every field at least ten characters under its limit: the program
 counts every character, and an answer over a limit is asked for again.
+factsToCover lists the facts the program requires a beat or a guard to rest
+on: place each one in the factIds of the beat that needs it, even when the
+beat states it in a clause, at most six facts a beat; a spine that leaves
+one out keeps the Opening waiting.
 
 ## The editor's notes
 notes, when present, are the editor's instructions on the plan the focus

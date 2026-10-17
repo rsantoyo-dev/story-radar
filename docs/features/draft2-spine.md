@@ -358,3 +358,24 @@ slides, giving the start hour and the project name a slide each and calling
   a qualifier is a clause, never the turn.
 - The later steps already handled short carousels: a two-item list runs four
   slides.
+
+## 15. Addendum, 2026-10-17: a spine that stays passable (spine v9)
+
+The coffee ring panorama could not reach the Opening: its spine left six facts
+of importance 85 or more to no beat (`SPINE_FACT_UNUSED`), "Rewrite the spine"
+kept the editor's spine as it was, and "Decide the focus" kept the spine but
+dropped the lever and the direction without marking anything, so the Opening
+could have followed a spine with no direction at all.
+
+- **The plan stays with the editor's spine**: a decision that keeps the
+  editor's spine keeps the lever, the guards and the directions written for
+  it, and marks the spine stale (unless the editor owns the lever and both
+  directions), so the Spine step writes the plan again before the Opening.
+- **Placing a fact is not another telling**: beats edited by hand that keep
+  their slides and roles (a fact placed, a scene or an image line rewritten)
+  leave the directions standing; beats added, removed or given other roles
+  still mark them stale.
+- **The facts to cover are in the request**: the plan request carries
+  `factsToCover` (every fact of importance `SPINE_COVERAGE_IMPORTANCE` or more
+  that is not disputed), and the planner places each in the factIds of the
+  beat that needs it, at most six a beat.

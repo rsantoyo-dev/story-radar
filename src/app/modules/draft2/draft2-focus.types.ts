@@ -435,6 +435,10 @@ export function spineUnusedFacts(spine: Pick<Draft2FocusSpine, "beats">, guards:
   return facts.filter((fact) => fact.importance >= SPINE_COVERAGE_IMPORTANCE && fact.status !== "disputed" && !placed.has(fact.id));
 }
 
+/** The facts a spine must place in a beat or a guard: every fact of importance SPINE_COVERAGE_IMPORTANCE or more that is not disputed, for the planner's request. */
+export const spineFactsToCover = (facts: readonly Pick<Draft2Fact, "id" | "importance" | "status">[]): string[] =>
+  facts.filter((fact) => fact.importance >= SPINE_COVERAGE_IMPORTANCE && fact.status !== "disputed").map((fact) => fact.id);
+
 /** The response error (or finding) for a spine that leaves important facts out. */
 export const spineUnusedDetail = (unused: readonly Pick<Draft2Fact, "id" | "claim">[]) =>
   `The spine leaves out facts the story depends on: ${unused.map((fact) => `${fact.id} (${fact.claim.length > 80 ? `${fact.claim.slice(0, 77)}…` : fact.claim})`).join("; ")}. Give each a beat, or fold it into one.`;
@@ -1145,12 +1149,24 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     ...Object.fromEntries(FOCUS_FIELDS.flatMap((field) => { const value = edited.includes(field) && focus.ai ? focus.ai[field] : decision.values[field]; return value === undefined ? [] : [[field, value]]; })),
     ...(decision.values.interest ? { interest: decision.values.interest } : {}),
   } as Draft2FocusValues;
+  // A decision that keeps the editor's spine keeps the plan written for it (lever, guards, directions) until the plan runs again, and marks
+  // it stale: never an empty direction and no lever under a spine the Opening would follow (the coffee ring, 2026-10-17). A decision that
+  // leaves the spine to the plan leaves the plan too.
+  const keptSpine = edited.includes("spine") && Boolean(decision.values.spine);
+  const carried = keptSpine && focus.values
+    ? Object.fromEntries((["levers", "guards", "direction", "visualDirection"] as const).flatMap((key) => {
+      const given = decision.values[key];
+      const previous = focus.values![key];
+      return (given === undefined || given === "") && previous !== undefined && previous !== "" ? [[key, previous]] : [];
+    }))
+    : {};
+  const planOwned = (["levers", "direction", "visualDirection"] as const).every((field) => edited.includes(field));
   return {
     ...focus,
     status: "ready",
     version: focus.version + 1,
     // The editor's choices on how the carousel is made are never Claude's to decide: a decision keeps them.
-    values: { ...decision.values, ...Object.fromEntries(FOCUS_EDITOR_FIELDS.flatMap((field) => focus.values?.[field] !== undefined ? [[field, focus.values[field]]] : [])) },
+    values: { ...decision.values, ...carried, ...Object.fromEntries(FOCUS_EDITOR_FIELDS.flatMap((field) => focus.values?.[field] !== undefined ? [[field, focus.values[field]]] : [])) },
     ai,
     reasons: decision.reasons,
     edited,
@@ -1163,11 +1179,13 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     decidedAt: now.toISOString(),
     updatedAt: now.toISOString(),
     error: undefined,
-    staleDirections: false,
+    staleDirections: keptSpine && !planOwned,
   };
 }
 
 const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+/** A spine's shape: its beats' slides and roles, in order. */
+const spineShape = (spine: Pick<Draft2FocusSpine, "beats">) => spine.beats.map((beat) => `${beat.slide}:${beat.role}`).join(" ");
 
 /** The editor's value for a field, checked against the contract; a value that does not fit is an input error. */
 function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown): Draft2FocusValues[Draft2FocusField] {
@@ -1301,8 +1319,11 @@ export function applyFocusEdit(focus: Draft2Focus, field: Draft2FocusField, valu
   if (sameValue(next, focus.values[field])) return focus;
   const backToClaude = focus.ai && sameValue(next, focus.ai[field]);
   const edited = backToClaude ? focus.edited.filter((entry) => entry !== field) : [...new Set([...focus.edited, field])];
+  // Beats edited by hand that keep their slides and roles (a fact placed, a scene or an image line rewritten) are the same telling: the
+  // directions stand. Beats added, removed or given other roles tell another story.
+  const sameShape = field === "spine" && focus.values.spine && spineShape(focus.values.spine) === spineShape(next as Draft2FocusSpine);
   // A change to how the story is told leaves the directions written for the earlier telling, unless the editor owns both; a direction the editor writes is theirs and never stale.
-  const staleDirections = FOCUS_TELLING_FIELDS.includes(field)
+  const staleDirections = FOCUS_TELLING_FIELDS.includes(field) && !sameShape
     ? !(edited.includes("direction") && edited.includes("visualDirection"))
     : field === "direction" || field === "visualDirection" ? false : focus.staleDirections;
   return {

@@ -640,3 +640,15 @@ test("the last plan answer's beat over a character limit is cut at a word instea
   assert.ok(cut.length <= 200 && long.startsWith(cut), "the last one keeps its beat, cut at a word");
   assert.match(cut, /[\p{L}]$/u, "never on a comma or a space");
 });
+
+test("a decision that keeps the editor's spine keeps its plan, marked stale; beats edited by hand that keep their shape leave the directions standing", () => {
+  const planned = decided({ direction: "Lead with the video.", visualDirection: "One laptop in an empty hall.", levers: { primary: "provocative-question", alternatives: [], factIds: ["f1"], paidBy: "slide2" } as never });
+  // The editor places a fact in a beat: same slides, same roles.
+  const placed = applyFocusEdit(planned, "spine", { beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, factIds: ["f2", "f3"] } : beat) }, NOW);
+  assert.deepEqual([placed.edited, placed.staleDirections ?? false], [["spine"], false], "a fact placed is the same telling");
+  // Claude decides again: the story may change, the editor's spine stays, and so does the plan written for it until the plan runs again.
+  const again = decidedFocus(placed, parse({ direction: undefined, visualDirection: undefined }, editorChoicesOf(placed)), { provider: "anthropic", model: "claude-sonnet-5-5" }, NOW);
+  assert.equal(JSON.stringify(again.values?.spine), JSON.stringify(placed.values?.spine), "the editor's spine");
+  assert.deepEqual([again.values?.direction, again.values?.visualDirection, again.values?.levers?.primary], ["Lead with the video.", "One laptop in an empty hall.", "provocative-question"], "never an empty direction and no lever under the spine");
+  assert.equal(again.staleDirections, true, "the Spine step writes the plan again before the opening follows it");
+});
