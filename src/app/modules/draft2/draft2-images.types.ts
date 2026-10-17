@@ -2,7 +2,7 @@ import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2
 import { funnelVersions } from "./draft2-funnel";
 import { referencePhotos, type Draft2Inventory } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2Visual, Draft2VisualCandidate, Draft2VisualNeed, Draft2VisualShot, Draft2VisualSlide } from "./draft2-visual.types";
-import { focusNarrative, narrativeUsesMaster, type Draft2FocusNarrative } from "./draft2-focus.types";
+import { focusNarrative, focusPresentation, narrativeUsesMaster, type Draft2FocusNarrative, type Draft2Presentation } from "./draft2-focus.types";
 import {
   CREATIVE_IMAGE_REVIEW_SCHEMA, imageReviewIssues, parseImageReviewAnswer,
   type CreativeImageReviewAnswer, type CreativeImageReviewInput,
@@ -36,8 +36,40 @@ export const IMAGE_INSTRUCTION_MAX_CHARACTERS = 600;
 /** Requests the canvas makes before it stops following a run: each one runs until the run settles or pauses. */
 export const IMAGES_MAX_REQUESTS = 12;
 
-export type Draft2ImageAttemptKind = "generate" | "correct" | "regenerate";
+/**
+ * generate: the first image; correct: the review's one correction;
+ * regenerate: one the editor asked for; words: the image of an earlier
+ * version with the slide's words set again by the program (no model, no
+ * cost); section: a panorama's section, cut from the one wide scene.
+ */
+export type Draft2ImageAttemptKind = "generate" | "correct" | "regenerate" | "words" | "section";
 export type Draft2ImageAttemptStatus = "queued" | "submitting" | "generating" | "generated" | "failed";
+
+/** A slide's words as the program sets them on its image. */
+export type Draft2SlideWords = { headline: string; text: string; practical?: string; cta?: string };
+
+/** The words a slide shows, from the carousel's slide. */
+export const slideWordsOf = (slide: Pick<Draft2CarouselSlide, "headline" | "text" | "practical" | "cta">): Draft2SlideWords => ({
+  headline: slide.headline, text: slide.text, ...(slide.practical ? { practical: slide.practical } : {}), ...(slide.cta ? { cta: slide.cta } : {}),
+});
+
+/** Whether the words set on an image are the words the slide has now. */
+export const sameSlideWords = (a: Draft2SlideWords | undefined, b: Draft2SlideWords) =>
+  Boolean(a) && a!.headline === b.headline && a!.text === b.text && (a!.practical ?? "") === (b.practical ?? "") && (a!.cta ?? "") === (b.cta ?? "");
+
+/**
+ * The slides whose shown image carries words the program set and the slide
+ * has changed since (a hand edit or a review patch after the images): their
+ * words are set again on the same image, for free, never drawn again.
+ */
+export function slidesWithChangedWords(images: Pick<Draft2ImagesRun, "slides"> | null | undefined, carousel: readonly Draft2CarouselSlide[] | undefined): string[] {
+  if (!images || !carousel?.length) return [];
+  return images.slides.flatMap((slide) => {
+    const shown = shownAttempt(slide);
+    const now = carousel.find((entry) => entry.slide === slide.slide);
+    return shown?.words && now && !sameSlideWords(shown.words, slideWordsOf(now)) ? [slide.slide] : [];
+  });
+}
 
 /** Sol's review of one finished image: what blocks it (issues), and a note on how it tells its beat. */
 export type Draft2ImageReview = {
@@ -78,6 +110,8 @@ export type Draft2ImageAttempt = {
   /** The version of the brand's logo composited on it: the one that read best against the image there. */
   logo?: { form: CreativeLogoForm; tone: CreativeLogoTone; assetId: string };
   expectedText?: string;
+  /** The words the program set on it (the focus's textMode "program"); absent when the image model lettered them. */
+  words?: Draft2SlideWords;
   sha256?: string;
   safetyFlag?: boolean;
   costMicros?: number;
@@ -211,6 +245,8 @@ export type Draft2ImagesRun = {
   anchorPlate?: Draft2AnchorPlate;
   /** A panorama's or a line's master scene, drawn before the slides. */
   masterPlate?: Draft2MasterPlate;
+  /** How the run makes its images, as the visual script's focus said when it started; absent: one image per slide with its words drawn in it. */
+  presentation?: Draft2Presentation;
   startedAt: string;
   updatedAt: string;
   error?: string;
@@ -346,6 +382,9 @@ export function imagesTarget(session: Pick<Draft2SessionRow, "visual" | "deck" |
   return { visual, script: chosen.candidate, carousel: visual.carousel, inventory };
 }
 
+/** What a panorama's master plate names as its scene: the carousel's own, described section by section in its prompt. */
+export const PANORAMA_SCENE = "the carousel's one continuous scene";
+
 /** A new run: one slide per carousel slide, each with its first image queued. */
 export function newImagesRun({ runId, visual, script, carousel, inventory, model, now }: {
   runId: string; visual: Draft2Visual; script: Draft2VisualCandidate; carousel: readonly Draft2CarouselSlide[]; inventory: Draft2Inventory; model: string; now: Date;
@@ -354,12 +393,18 @@ export function newImagesRun({ runId, visual, script, carousel, inventory, model
   // A guide or an object the story invents or takes from the facts is drawn once first; a brand character has its references.
   const narrative = visualNarrative(visual);
   const plate = narrative.form !== "classic" && (narrative.anchorKind === "figure" || narrative.anchorKind === "object") && narrative.anchor;
+  // How the editor chose to make the carousel in the focus the visual script followed.
+  const presentation = focusPresentation(visual.focus?.values);
+  const panorama = presentation.images === "panorama";
   return {
     runId, status: "running", visualId: script.id, ...(visual.deckId ? { deckId: visual.deckId } : {}), inventoryVersion: inventory.version,
     quality: IMAGES_QUALITY, model, startedAt: at, updatedAt: at,
+    ...(presentation.text !== "image" || panorama ? { presentation } : {}),
     ...(plate ? { anchorPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at } } : {}),
-    // A panorama or a line is drawn once as one wide scene, each slide from its section.
-    ...(narrativeUsesMaster(narrative) && narrative.anchor ? { masterPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at, ...masterLayout(carousel.map((words) => words.slide)) } } : {}),
+    // A panorama (the editor's choice) is drawn once as one wide scene and cut into the slides; a panorama or a line narrative is drawn once and each slide redrawn from its section.
+    ...(panorama
+      ? { masterPlate: { anchor: PANORAMA_SCENE, status: "queued" as const, queuedAt: at, ...masterLayout(carousel.map((words) => words.slide)) } }
+      : narrativeUsesMaster(narrative) && narrative.anchor ? { masterPlate: { anchor: narrative.anchor, status: "queued" as const, queuedAt: at, ...masterLayout(carousel.map((words) => words.slide)) } } : {}),
     slides: carousel.map((words, index) => {
       const scriptSlide = script.slides.find((entry) => entry.slide === words.slide);
       if (!scriptSlide) throw new Draft2InputError(`The visual script has no image for ${words.label}. Write the visual script again.`);
@@ -368,7 +413,7 @@ export function newImagesRun({ runId, visual, script, carousel, inventory, model
       return {
         slide: words.slide, label: words.label, order: index + 1, need: scriptSlide.need, ...(scriptSlide.shot ? { shot: scriptSlide.shot } : {}),
         characterIds: pasted ? [] : [...scriptSlide.characterIds], material, notes,
-        attempts: [{ version: 1, kind: "generate", status: "queued", queuedAt: at }],
+        attempts: [{ version: 1, kind: panorama ? "section" : "generate", status: "queued", queuedAt: at }],
       };
     }),
   };
@@ -408,12 +453,13 @@ export function draft2ImageDownloads(
 
 /** A first image or one the editor asked for waits for its review; a correction is final as it comes. */
 /** A finished image not reviewed yet: a first image, an editor's, or a correction made since corrections are reviewed. */
-export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && !attempt.review && (attempt.kind !== "correct" || Boolean(attempt.reviewAfter));
+export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && !attempt.review && attempt.kind !== "words" && (attempt.kind !== "correct" || Boolean(attempt.reviewAfter));
 
 /** Done when the newest image failed, or is finished and reviewed (a correction is reviewed, never corrected again). */
 export function attemptSettled(attempt: Draft2ImageAttempt | undefined): boolean {
   if (!attempt) return true;
-  return attempt.status === "failed" || (attempt.status === "generated" && (Boolean(attempt.review) || (attempt.kind === "correct" && !attempt.reviewAfter)));
+  // An image whose words were only set again is the image reviewed before: nothing to wait for.
+  return attempt.status === "failed" || (attempt.status === "generated" && (Boolean(attempt.review) || attempt.kind === "words" || (attempt.kind === "correct" && !attempt.reviewAfter)));
 }
 export const slideSettled = (slide: Draft2SlideImage) => attemptSettled(latestAttempt(slide));
 
@@ -423,28 +469,32 @@ export const slideSettled = (slide: Draft2SlideImage) => attemptSettled(latestAt
  * the slide's prompt when it shows what it must not (rework). The correction
  * is reviewed, never corrected again.
  */
-export function correctionFor(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, now: Date): Draft2ImageAttempt | undefined {
+export function correctionFor(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, now: Date, { program = false }: { /** The program sets the words: the correction asks the model for none. */ program?: boolean } = {}): Draft2ImageAttempt | undefined {
   if (attempt.kind !== "generate" || attempt.review?.status !== "issues" || slide.attempts.some((entry) => entry.kind === "correct" && (entry.baseVersion === attempt.version || entry.correctsVersion === attempt.version))) return undefined;
   const version = Math.max(...slide.attempts.map((entry) => entry.version)) + 1;
   // An image that shows what it must not is made again from the slide's prompt; one with a flaw in how it is drawn is edited.
   return attempt.review.rework
-    ? { version, kind: "correct", status: "queued", instruction: reworkInstruction(attempt.review.issues), correctsVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() }
-    : { version, kind: "correct", status: "queued", instruction: correctionInstruction(attempt.review.issues), baseVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() };
+    ? { version, kind: "correct", status: "queued", instruction: reworkInstruction(attempt.review.issues, { program }), correctsVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() }
+    : { version, kind: "correct", status: "queued", instruction: correctionInstruction(attempt.review.issues, { program }), baseVersion: attempt.version, reviewAfter: true, queuedAt: now.toISOString() };
 }
 
 /** What a new image must avoid that the first one showed: the review's issues, as requirements. */
-export function reworkInstruction(issues: readonly string[]): string {
+export function reworkInstruction(issues: readonly string[], { program = false }: { program?: boolean } = {}): string {
   const listed = issues.map((issue, index) => `(${index + 1}) ${sentence(issue)}.`).join(" ");
-  return `A first image of this slide was refused for these problems: ${listed} Make a new image that shows none of them: follow the slide's direction and the brand's rules for a subject without a verified photo (clean photographic cut-outs of the objects involved on flat colour fields, typography or a neutral setting), never a scene that could pass for a photograph of the named event or place, and nothing the slide's words and facts do not give. Render the visible text exactly as VISIBLE_TEXT gives it.`.slice(0, 1_800);
+  return `A first image of this slide was refused for these problems: ${listed} Make a new image that shows none of them: follow the slide's direction and the brand's rules for a subject without a verified photo (clean photographic cut-outs of the objects involved on flat colour fields, typography or a neutral setting), never a scene that could pass for a photograph of the named event or place, and nothing the slide's words and facts do not give. ${program ? "Render no words at all: the program sets them afterwards." : "Render the visible text exactly as VISIBLE_TEXT gives it."}`.slice(0, 1_800);
 }
 
 /** The cover's lettering: the hook dominates, clean, with little else to read. */
 export const COVER_PROMPT = "\n\nCOVER: the headline is the dominant element, large, bold and clean, on few lines; the subheadline small, on one line; no other words. One strong visual idea in the brand's style, nothing that competes with the headline.";
+/** The cover when the program sets its words: one strong idea, and room for a large headline in the band. */
+export const COVER_PROGRAM_PROMPT = "\n\nCOVER: one strong visual idea in the brand's style, its subject large and clear below the calm band, where the program sets a large headline afterwards.";
 
 /** What the correction asks of the image model: the review's issues, and nothing else changed. */
-export function correctionInstruction(issues: readonly string[]): string {
+export function correctionInstruction(issues: readonly string[], { program = false }: { program?: boolean } = {}): string {
   const listed = issues.map((issue, index) => `(${index + 1}) ${sentence(issue)}.`).join(" ");
-  return `Fix only these problems the review found, and change nothing else: the layout, the protagonist, the palette and the slide's words stay as they are. ${listed} Render the visible text exactly as VISIBLE_TEXT gives it.`.slice(0, 1_500);
+  return program
+    ? `Fix only these problems the review found, and change nothing else: the layout, the protagonist, the palette and the calm band for the words stay as they are. ${listed} Render no words at all: the program sets them afterwards.`.slice(0, 1_500)
+    : `Fix only these problems the review found, and change nothing else: the layout, the protagonist, the palette and the slide's words stay as they are. ${listed} Render the visible text exactly as VISIBLE_TEXT gives it.`.slice(0, 1_500);
 }
 
 /** The run once every slide settled: ready when each shown image passed its review, else for the editor to look at. */
@@ -462,6 +512,7 @@ export function imagesNote(slides: readonly Draft2SlideImage[]): string | undefi
 
 /** The editor's decisions: another image of a slide (optionally an edit of the one shown), or the version a slide shows. */
 export type Draft2ImagesAction =
+  | { action: "words" }
   | { action: "regenerate"; slide: string; instruction?: string; edit: boolean; characterIds?: string[] }
   | { action: "choose"; slide: string; version: number }
   | { action: "map"; slide: string; position: MapPanelPosition };
@@ -470,6 +521,8 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 
 export function parseImagesAction(value: unknown): Draft2ImagesAction {
   const body = record(value);
+  // Every slide whose words changed since its image: set again by the program, on the same images.
+  if (body.action === "words") return { action: "words" };
   const slide = typeof body.slide === "string" && /^[a-z0-9]{1,24}$/i.test(body.slide) ? body.slide : undefined;
   if (!slide) throw new Draft2InputError("Name the slide (such as cover or s2).");
   if (body.action === "choose") {
@@ -489,7 +542,7 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     if (!position) throw new Draft2InputError(`The map card goes ${MAP_PANEL_POSITIONS.join(", ")}.`);
     return { action: "map", slide, position };
   }
-  throw new Draft2InputError("The action is regenerate, choose or map.");
+  throw new Draft2InputError("The action is regenerate, choose, map or words.");
 }
 
 /**

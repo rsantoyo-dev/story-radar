@@ -25,13 +25,46 @@ import { spineImageProblems, type Draft2SpineProblem } from "./draft2-spine-chec
  * word.
  */
 /** The fields in the order they are decided: the story, then how it is told (concept, form, spine), then the directions derived from that. */
-export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "levers", "spine", "direction", "visualDirection"] as const;
-/** The fields that say how the story is told; an edit to one of them leaves the directions written for another telling (staleDirections). */
-export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "levers", "spine"];
+export const FOCUS_FIELDS = ["line", "audience", "framing", "readerConsequence", "structure", "goal", "voice", "concept", "narrative", "levers", "spine", "direction", "visualDirection", "textMode", "imageMode"] as const;
+/** The fields that say how the story is told; an edit to one of them leaves the directions written for another telling (staleDirections). A panorama is planned as one scene. */
+export const FOCUS_TELLING_FIELDS: readonly Draft2FocusField[] = ["concept", "narrative", "levers", "spine", "imageMode"];
 /** The fields the second call writes from the first's decision: the spine and the two directions derived from it (the plan). */
 export const FOCUS_PLAN_FIELDS: readonly Draft2FocusField[] = ["levers", "spine", "direction", "visualDirection"];
+/** The editor's own choices on how the carousel is made, before the Spine: Claude neither decides nor plans them, and a decision keeps them. */
+export const FOCUS_EDITOR_FIELDS: readonly Draft2FocusField[] = ["textMode", "imageMode"];
 /** The fields the first call decides: the story and how it is told. */
-export const FOCUS_DECISION_FIELDS: readonly Draft2FocusField[] = FOCUS_FIELDS.filter((field) => !FOCUS_PLAN_FIELDS.includes(field));
+export const FOCUS_DECISION_FIELDS: readonly Draft2FocusField[] = FOCUS_FIELDS.filter((field) => !FOCUS_PLAN_FIELDS.includes(field) && !FOCUS_EDITOR_FIELDS.includes(field));
+
+/**
+ * How the slides' words reach the images (2026-10-17, the editor: "put the
+ * words afterwards, so we avoid making images again"): "image", the image
+ * model letters them as before; "program", each image is made without a word,
+ * keeping a calm band, and the program sets the words there, so a changed
+ * word is set again on the stored image, never drawn again.
+ */
+export const FOCUS_TEXT_MODES = ["image", "program"] as const;
+export type Draft2TextMode = (typeof FOCUS_TEXT_MODES)[number];
+/**
+ * How the images are made: "slides", one image per slide; "panorama", one
+ * wide scene without words, cut into the slides side by side, so the scene
+ * runs on across every swipe. A panorama's words are always the program's,
+ * and it runs at most FOCUS_PANORAMA_MAX_SLIDES slides (GPT Image draws at
+ * most 3:1, so more slides would each be drawn too small).
+ */
+export const FOCUS_IMAGE_MODES = ["slides", "panorama"] as const;
+export type Draft2ImageMode = (typeof FOCUS_IMAGE_MODES)[number];
+export const FOCUS_PANORAMA_MAX_SLIDES = 6;
+export type Draft2Presentation = { text: Draft2TextMode; images: Draft2ImageMode };
+
+/** How this carousel is made: the editor's choices, else one image per slide with the words drawn in it; a panorama always takes the program's words. */
+export function focusPresentation(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> | undefined | null): Draft2Presentation {
+  const images = values?.imageMode === "panorama" ? "panorama" : "slides";
+  return { images, text: images === "panorama" || values?.textMode === "program" ? "program" : "image" };
+}
+
+/** The most beats a spine may have under this presentation, when the presentation caps it (a panorama). */
+export const presentationMaxBeats = (values: Pick<Draft2FocusValues, "textMode" | "imageMode"> | undefined | null): number | undefined =>
+  focusPresentation(values).images === "panorama" ? FOCUS_PANORAMA_MAX_SLIDES : undefined;
 export const FOCUS_FRAMINGS = ["reader-consequence", "explainer", "authority"] as const;
 export const FOCUS_STRUCTURES = ["arc", "steps", "list"] as const;
 export const FOCUS_GRAVITIES = ["light", "ordinary", "serious", "grave"] as const;
@@ -291,6 +324,10 @@ export type Draft2FocusValues = {
   interest?: string;
   /** How the images tell this story within the brand's visual identity: the world they live in, who leads them, what recurs. The visual script follows it. Absent on a focus decided before the field existed. */
   visualDirection?: string;
+  /** Who sets the slides' words on the images (focusPresentation): the editor's choice; absent, the image model letters them. */
+  textMode?: Draft2TextMode;
+  /** One image per slide, or one panorama cut into the slides (focusPresentation): the editor's choice; absent, one per slide. */
+  imageMode?: Draft2ImageMode;
 };
 
 export type Draft2FocusRole = { provider: Draft2Provider; model: string };
@@ -407,7 +444,7 @@ export const spineRecurring = (narrative: Pick<Draft2FocusNarrative, "form" | "a
 
 /** The focus with its spine's image problems as they stand now, the brand's avoid terms given: recomputed when the spine is written, edited or kept by a decision. */
 export function focusWithSpineProblems(focus: Draft2Focus, avoid: readonly string[]): Draft2Focus {
-  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid, recurring: spineRecurring(focus.values.narrative) }) : [];
+  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid, recurring: spineRecurring(focus.values.narrative), panorama: focusPresentation(focus.values).images === "panorama" }) : [];
   const { spineProblems, ...rest } = focus;
   void spineProblems;
   return problems.length ? { ...rest, spineProblems: problems } : rest;
@@ -426,9 +463,15 @@ const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, e
   : entry);
 
 /** The focus's values without the visual direction: what the words follow. */
-const wordsValues = ({ visualDirection, ...values }: Draft2FocusValues): Omit<Draft2FocusValues, "visualDirection"> => {
-  void visualDirection;
+/** The fields the words follow: every one but those only the visual script and the images read (the visual direction, who sets the words, one image or a panorama). */
+const wordsValues = ({ visualDirection, textMode, imageMode, ...values }: Draft2FocusValues): Omit<Draft2FocusValues, "visualDirection" | "textMode" | "imageMode"> => {
+  void visualDirection; void textMode; void imageMode;
   return values;
+};
+const samePresentation = (a: Pick<Draft2FocusValues, "textMode" | "imageMode">, b: Pick<Draft2FocusValues, "textMode" | "imageMode">) => {
+  const left = focusPresentation(a);
+  const right = focusPresentation(b);
+  return left.text === right.text && left.images === right.images;
 };
 
 /**
@@ -448,15 +491,16 @@ export function wordsFollowFocus(snapshot: Draft2FocusSnapshot | undefined, focu
  * words' version: the other fields are theirs.
  */
 export function visualFocus(words: Draft2FocusSnapshot, focus: { values?: Draft2FocusValues | null } | null | undefined): Draft2FocusSnapshot {
-  if (!focus?.values || focus.values.visualDirection === words.values.visualDirection) return words;
-  const { visualDirection } = focus.values;
-  return { ...words, values: { ...wordsValues(words.values), ...(visualDirection ? { visualDirection } : {}) } };
+  if (!focus?.values || (focus.values.visualDirection === words.values.visualDirection && samePresentation(focus.values, words.values))) return words;
+  const { visualDirection, textMode, imageMode } = focus.values;
+  return { ...words, values: { ...wordsValues(words.values), ...(visualDirection ? { visualDirection } : {}), ...(textMode ? { textMode } : {}), ...(imageMode ? { imageMode } : {}) } };
 }
 
 /** Whether a visual script followed another visual direction than the focus has now. */
 export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, focus: { values?: Draft2FocusValues | null } | null | undefined): boolean {
   if (!script || !focus?.values) return false;
-  return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "");
+  // How the carousel is made counts too: words set by the program or a panorama ask for another script.
+  return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values);
 }
 
 export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED";
@@ -750,8 +794,9 @@ function parseConcept(value: unknown, { known, material, gravity, editorChoice }
 }
 
 /** What is wrong with a spine's shape for a structure, if anything: its positions, its count of middle beats, its turn and its ending. */
-export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }): string | undefined {
+export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, { maxBeats }: { maxBeats?: number } = {}): string | undefined {
   if (beats.length < FOCUS_SPINE_MIN_BEATS || beats.length > FOCUS_SPINE_MAX_BEATS) return `The spine has ${FOCUS_SPINE_MIN_BEATS} to ${FOCUS_SPINE_MAX_BEATS} beats, one per slide; this one has ${beats.length}`;
+  if (maxBeats && beats.length > maxBeats) return `A panorama runs at most ${maxBeats} slides, one section of its scene each; this spine has ${beats.length}`;
   const positions = beats.map((beat) => beat.slide);
   const rank = (position: Draft2SpinePosition) => FOCUS_SPINE_POSITIONS.indexOf(position);
   if (positions.some((position, index) => index > 0 && rank(position) < rank(positions[index - 1]))) return "The beats follow the carousel: the cover, slide2, the middle slides, the penultimate of an arc, then the last";
@@ -778,7 +823,7 @@ export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: 
  * slide and role, its scene, words and image within their limits, what it
  * withholds (empty on the last only) and the facts it rests on.
  */
-function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never): Draft2FocusSpine {
+function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never, limits: { maxBeats?: number } = {}): Draft2FocusSpine {
   const raw = record(value).beats;
   if (!Array.isArray(raw)) fail("The spine is a list of beats, one per slide");
   const beats: Draft2SpineBeat[] = (raw as unknown[]).map((entry, index) => {
@@ -801,7 +846,7 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
     const subject = typeof body.subject === "string" ? body.subject.replace(/\s+/g, " ").trim().slice(0, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS) : "";
     return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, ...(subject ? { subject } : {}), withholds, factIds };
   });
-  const problem = spineShapeProblem(beats, structure);
+  const problem = spineShapeProblem(beats, structure, limits);
   if (problem) fail(problem);
   return { beats };
 }
@@ -818,17 +863,19 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage }: {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
-  imageCheck?: { avoid: readonly string[]; recurring?: string };
+  imageCheck?: { avoid: readonly string[]; recurring?: string; panorama?: boolean };
+  /** The most beats the presentation allows (a panorama's six). */
+  maxBeats?: number;
   /** Check that every important fact has a beat or a guard (spineUnusedFacts): a gap is a response error, asked for again with the rule; the second answer's gaps go to the editor as findings. */
   coverage?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[];
 }): Draft2FocusPlan {
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
-  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); });
+  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats });
   if (imageCheck && !editorChoices.spine) {
     const problems = spineImageProblems(spine.beats, imageCheck);
     if (problems.length) throw new Draft2ResponseError(`The spine's image lines: ${problems.map((problem) => problem.detail).join("; ")}`);
@@ -1046,7 +1093,9 @@ export function parseFocusDecision(answer: string, { facts, lines, editorChoices
   const given = record((parsed as Record<string, unknown>).reasons);
   const chosen = new Set(Object.keys(editorChoices).map((key) => key === "lineId" ? "line" : key));
   const reasons: Partial<Record<Draft2FocusField, string>> = {};
+  // The editor's own fields (how the carousel is made) are never Claude's: no reason of Claude's stands for them.
   for (const field of FOCUS_FIELDS) {
+    if (FOCUS_EDITOR_FIELDS.includes(field)) continue;
     const reason = text(given[field], REASON_MAX_CHARACTERS);
     if (reason && !chosen.has(field)) reasons[field] = reason;
   }
@@ -1075,7 +1124,8 @@ export function decidedFocus(focus: Draft2Focus, decision: { values: Draft2Focus
     ...focus,
     status: "ready",
     version: focus.version + 1,
-    values: decision.values,
+    // The editor's choices on how the carousel is made are never Claude's to decide: a decision keeps them.
+    values: { ...decision.values, ...Object.fromEntries(FOCUS_EDITOR_FIELDS.flatMap((field) => focus.values?.[field] !== undefined ? [[field, focus.values[field]]] : [])) },
     ai,
     reasons: decision.reasons,
     edited,
@@ -1137,8 +1187,19 @@ function editedValue(focus: Draft2Focus, field: Draft2FocusField, value: unknown
     }
     case "narrative": return editedNarrative(focus, value);
     case "concept": return editedConcept(focus, value);
-    case "spine": return spineFrom(value, values.structure, undefined, (message) => { throw new Draft2InputError(`${message}.`); });
+    case "spine": return spineFrom(value, values.structure, undefined, (message) => { throw new Draft2InputError(`${message}.`); }, { maxBeats: presentationMaxBeats(values) });
     case "levers": return editedLevers(value, values.levers);
+    case "textMode": {
+      const mode = oneOf(FOCUS_TEXT_MODES, value);
+      if (!mode) throw new Draft2InputError(`Who sets the words is one of ${FOCUS_TEXT_MODES.join(", ")}.`);
+      if (mode === "image" && focusPresentation(values).images === "panorama") throw new Draft2InputError("A panorama's words are set by the program: choose one image per slide first to have them drawn in the image.");
+      return mode;
+    }
+    case "imageMode": {
+      const mode = oneOf(FOCUS_IMAGE_MODES, value);
+      if (!mode) throw new Draft2InputError(`The images are one of ${FOCUS_IMAGE_MODES.join(", ")}.`);
+      return mode;
+    }
     case "voice": {
       const voice = record(value);
       const gravity = oneOf(FOCUS_GRAVITIES, voice.gravity);
@@ -1282,7 +1343,7 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
     if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${anchorNoun(narrative)}. Choose another anchor.` });
   }
   // A spine written for another structure (an arc's penultimate on a list, too few middle beats) no longer fits the slides the steps will write.
-  const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure) : undefined;
+  const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure, { maxBeats: presentationMaxBeats(values) }) : undefined;
   if (shape) findings.push({ field: "spine", code: "SPINE_SHAPE", detail: `${shape}: decide again for Claude to rewrite the spine for this structure, or edit the beats.` });
   return findings;
 }
@@ -1293,7 +1354,10 @@ export const focusItemCount = (values: Draft2FocusValues): number | undefined =>
 /** The focus as the Opening's models read it: what each value means, dials with their words. */
 export function focusForModels(values: Draft2FocusValues) {
   const { line, readerConsequence, structure, voice } = values;
+  const presentation = focusPresentation(values);
   return {
+    // How the carousel is made, when it is not one image per slide with its words drawn in it: the spine and the visual script plan for it.
+    ...(presentation.text !== "image" || presentation.images !== "slides" ? { presentation } : {}),
     ...(line ? { line: { name: line.name, objective: line.objective } } : {}),
     ...(values.interest ? { interest: values.interest } : {}),
     audience: values.audience,

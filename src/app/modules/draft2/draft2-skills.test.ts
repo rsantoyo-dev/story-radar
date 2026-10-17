@@ -16,7 +16,7 @@ import {
 import { FOCUS_ROLES, FOCUS_SKILL } from "./skills/focus";
 import { HOOKS_SKILL, OPENING_ROLES } from "./skills/hooks";
 import { toneLine } from "./skills/tone";
-import { FOCUS_ANCHOR_KINDS, FOCUS_CONCEPT_ARCS, FOCUS_FIELDS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_STRUCTURES } from "./draft2-focus.types";
+import { FOCUS_ANCHOR_KINDS, FOCUS_CONCEPT_ARCS, FOCUS_EDITOR_FIELDS, FOCUS_FIELDS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES, FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_STRUCTURES } from "./draft2-focus.types";
 import { NARRATIVES_SKILL } from "./skills/narratives";
 import {
   CLOSING_ACCEPT_SCORE, CLOSING_CANDIDATES, CLOSING_CRITERIA, CLOSING_CRITERION_FLOOR, CTA_MAX_WORDS, LAST_BODY_MAX_WORDS, LAST_HEADLINE_MAX_WORDS, LAST_PLAN_BODY_MAX_WORDS,
@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@6", "levers@1", "fairness@2", "reader@2", "hooks@10", "closings@4", "decks@5", "review@7", "visuals@11", "images@6", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@7", "levers@1", "fairness@2", "reader@2", "hooks@10", "closings@4", "decks@5", "review@7", "visuals@12", "images@6", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -115,7 +115,9 @@ test("the openings follow the focus: framing, structure, goal and voice, scored 
 });
 
 test("the focus skill names every field and value the contract accepts, and the editor's choices win", () => {
-  for (const field of FOCUS_FIELDS) assert.match(FOCUS_SKILL.text, new RegExp(`\\n- ${field}: `), field);
+  // The editor's own fields (who sets the words, one image or a panorama) are not Claude's to decide: the skill does not name them.
+  for (const field of FOCUS_FIELDS.filter((entry) => !FOCUS_EDITOR_FIELDS.includes(entry))) assert.match(FOCUS_SKILL.text, new RegExp(`\\n- ${field}: `), field);
+  for (const field of FOCUS_EDITOR_FIELDS) assert.doesNotMatch(FOCUS_SKILL.text, new RegExp(`\\n- ${field}: `), field);
   for (const value of [...FOCUS_FRAMINGS, ...FOCUS_STRUCTURES, ...FOCUS_GOALS, ...FOCUS_GRAVITIES, ...FOCUS_NARRATIVE_FORMS, ...FOCUS_NARRATIVE_ENDINGS, ...FOCUS_ANCHOR_KINDS, ...FOCUS_CONCEPT_ARCS]) assert.ok(FOCUS_SKILL.text.includes(`"${value}"`), value);
   for (const form of FOCUS_NARRATIVE_FORMS) assert.ok(NARRATIVES_SKILL.text.includes(`- ${form}: `), `the narratives skill defines ${form}`);
   assert.match(FOCUS_SKILL.text, /editorChoices are the editor's decisions\. Return each exactly as given/);
@@ -188,7 +190,7 @@ test("the visual scripts rubric states the limits and thresholds the program enf
   assert.match(VISUALS_SKILL.text, /The image model letters each slide's words inside the image/);
   assert.match(VISUALS_SKILL.text, /is not a\s+reconstruction/);
   assert.match(VISUAL_ROLES["visual-judge"], /"REPETITIVE"/);
-  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "11" });
+  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "12" });
   assert.match(VISUALS_SKILL.text, /The script follows the focus's visualDirection when it has one/);
   assert.match(VISUAL_ROLES["visual-writer"], /ids c1, c2…/);
   assert.deepEqual(composeInstructions("people-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");

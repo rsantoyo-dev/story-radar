@@ -5,6 +5,9 @@ import { withCreativeTextBudget } from "../stories/creative-text-meter";
 import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
+import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
+import { setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   type BrandReferenceSelection, type CreativeBrandOverlay, type CreativeBrandOverlaySnapshot, type CreativeBrief, type CreativeCharacterSnapshot,
@@ -52,10 +55,10 @@ import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-m
 import { placeMention } from "./draft2-inventory";
 import {
   ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, MASTER_PLATE_FILE, MASTER_PLATE_PROMPT_FILE, anchorPlateSettled, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
-  COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
+  COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
-  movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, slideFacts, slideSettled, slideUnit,
-  type Draft2ImageAttempt, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
+  movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
+  type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
 import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from "./draft2-focus.types";
@@ -93,6 +96,10 @@ async function inBatches<T>(items: readonly T[], size: number, work: (item: T) =
 }
 
 type Context = {
+  /** How the run makes its images: the words drawn in them or set by the program, one per slide or one panorama. */
+  presentation: Draft2Presentation;
+  /** The colours the program sets the words in: the palette's darkest and lightest. */
+  wordsPalette: Draft2WordsPalette;
   topicId: string;
   storyId: string;
   sessionId: string;
@@ -201,6 +208,25 @@ function chromeFor(ctx: Context, order: number) {
 }
 
 const logoApplies = (ctx: Context, order: number) => Boolean(ctx.brandSnapshot && shouldApplyCreativeBrandOverlay(ctx.brandSnapshot, order));
+
+/** Where the program sets a slide's words: below the logo where the logo sits on top, above the page number when a real photo or the map card takes the top. */
+function textBandOf(ctx: Context, slide: Draft2SlideImage, attempt: Pick<Draft2ImageAttempt, "portrait">): Draft2TextBand {
+  const overlay = overlayFor(ctx, slide.order);
+  const asset = overlay?.asset;
+  const logo = overlay && asset && shouldApplyCreativeBrandOverlay(overlay, slide.order)
+    ? computeCreativeBrandPromptExclusionRect({ settings: overlay, canvasWidth: OUTPUT.width, canvasHeight: OUTPUT.height, logoWidth: asset.width, logoHeight: asset.height })
+    : undefined;
+  const pasted = slide.material.find(isPasted);
+  const panel = slide.material.find(isMap)?.panel;
+  return textBandFor({ ...(logo ? { logo } : {}), ...(pasted ? { photoLayout: attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order) } : {}), ...(panel ? { mapPosition: panel.position ?? "bottom-right" } : {}) });
+}
+
+/** The words the program sets on a slide, from the carousel as the run reads it. */
+const wordsFor = (ctx: Context, slide: Draft2SlideImage) => {
+  const words = ctx.carousel.find((entry) => entry.slide === slide.slide);
+  if (!words) throw new Draft2InputError(`${slide.label} has no words in the carousel.`);
+  return slideWordsOf(words);
+};
 
 const isPasted = (entry: Draft2SlideMaterial): entry is Extract<Draft2SlideMaterial, { kind: "pasted-photo" }> => entry.kind === "pasted-photo";
 const isMap = (entry: Draft2SlideMaterial): entry is Extract<Draft2SlideMaterial, { kind: "map" }> => entry.kind === "map";
@@ -317,15 +343,18 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
     brandOverlay: overlayFor(ctx, slide.order), carouselChromeSettings: ctx.profile.carouselChrome,
     profileVisual: { name: ctx.profile.name, visualGuidance: ctx.profile.visualGuidance, creativeIdentity: ctx.profile.creativeIdentity, brandPalette: ctx.profile.brandPalette },
     verifiedImagery: Boolean(pasted || panel || placeFile || storyRefs.some((reference) => reference.purpose !== "style")),
+    // The program sets the words afterwards: the image carries none, and keeps the band calm for them.
+    wordsSetAfterwards: ctx.presentation.text === "program",
   });
+  const program = ctx.presentation.text === "program";
   const characterImages = characters.flatMap((character) => character.referenceImages);
   // The narrative's anchor, drawn once before the slides, goes right after the characters: the slide shows it as the plate does.
   const plateFile = ctx.run.anchorPlate?.status === "generated" && slideCarriesAnchor(slide) ? await anchorPlateFile(ctx, slide) : undefined;
   const plates = plateFile ? 1 : 0;
   const brandRefs = await resolveBrandGenerationReferences(ctx.topicId, ctx.brandSelections.get(slide.order));
   const zone = pasted ? portraitZonePrompt(attempt.portrait?.layout ?? portraitLayoutForSlide(slide.order)) : panel ? mapPanelZonePrompt(panel.layout, panel.position) : "";
-  let prompt = built.prompt + zone + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
-    + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "") + (slide.order === 1 ? COVER_PROMPT : "");
+  let prompt = built.prompt + zone + (program ? textBandPrompt(textBandOf(ctx, slide, attempt)) : "") + (plateFile ? anchorReferencePrompt(ctx, characterImages.length + 1) : "") + brandReferencePrompt(brandRefs, characterImages.length + plates)
+    + storyReferencePrompt(storyRefs, characterImages.length + plates + brandRefs.length) + (placeFile ? verifiedPlacePhotoInstruction(placeEntry?.name) : "") + (slide.order === 1 ? (program ? COVER_PROGRAM_PROMPT : COVER_PROMPT) : "");
   if (base) prompt += `\n\nIMAGE EDIT v1\nThe LAST input image is the base image to edit. Preserve its layout, copy and protagonist except for this requested change (data): ${JSON.stringify(attempt.instruction ?? "")}\nEND IMAGE EDIT`;
   else if (section) prompt += masterSectionPrompt(ctx);
   else if (attempt.instruction) prompt += `\nRequested change: ${JSON.stringify(attempt.instruction)}`;
@@ -345,9 +374,10 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
   ];
   if (files.length > MAX_REFERENCE_FILES) throw new Draft2InputError(`${slide.label} has ${files.length} reference images; GPT Image takes ${MAX_REFERENCE_FILES}.`);
   if (files.reduce((bytes, file) => bytes + file.size, 0) > MAX_REFERENCE_BYTES) throw new Draft2InputError(`${slide.label}'s reference images exceed 20 MB.`);
-  assertCreativeImageModelSupports(ctx.descriptor, { referenceCount: files.length, expectsText: Boolean(built.expectedText.trim()) });
+  assertCreativeImageModelSupports(ctx.descriptor, { referenceCount: files.length, expectsText: !program && Boolean(built.expectedText.trim()) });
   return {
-    prompt, expectedText: built.expectedText, files,
+    // The review reads the finished slide: the words the program set on it, or the ones the model lettered.
+    prompt, expectedText: program ? creativeImageModelVisibleText(unit) : built.expectedText, files,
     endpoint: creativeImageEndpoint(ctx.descriptor, files.length ? "reference-guided" : "text-to-image"),
     ...(placeFile && placeEntry ? { placePhoto: placeEntry.name } : {}),
   };
@@ -413,6 +443,7 @@ const masterJob = (ctx: Context, plate: Draft2MasterPlate): PlateJob => ({
  * (the script's subject and beat for each), the line through all of them.
  */
 function masterScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
+  if (ctx.presentation.images === "panorama") return panoramaScenePrompt(ctx, plate);
   const first = plate.sections[0];
   const band = first && first.height < plate.height ? ` Keep the top and the bottom quiet: the story runs along the middle band, about ${Math.round((first.height / plate.height) * 100)}% of the height.` : "";
   const sections = ctx.carousel.map((words, index) => {
@@ -433,9 +464,38 @@ function masterScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
   ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
 }
 
+/**
+ * What the image model reads to draw a panorama (the editor's choice in the
+ * focus): the whole carousel as one continuous scene without a word, cut
+ * into the slides side by side and used as it is, so the scene runs on
+ * across every swipe; the band along the top of every section stays calm
+ * for the words the program sets.
+ */
+function panoramaScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
+  const first = plate.sections[0];
+  const band = first && first.height < plate.height ? ` Keep the strip above and below the sections quiet: the slides take the middle band, about ${Math.round((first.height / plate.height) * 100)}% of the height.` : "";
+  const wordsBand = textBandFor({});
+  const calm = Math.round(((wordsBand.top + wordsBand.height) / OUTPUT.height) * 100);
+  const sections = ctx.carousel.map((words, index) => {
+    const scriptSlide = ctx.script.slides.find((entry) => entry.slide === words.slide);
+    return `${index + 1}. ${words.label}: ${scriptSlide?.subject || scriptSlide?.beat || ""}${scriptSlide?.subject && scriptSlide.beat ? ` (${scriptSlide.beat})` : ""}${scriptSlide?.direction ? `. ${scriptSlide.direction}` : ""}`;
+  });
+  return [
+    "PANORAMA",
+    `One wide image: the whole ${plate.sections.length}-slide carousel as one continuous scene, read from left to right. It is cut into ${plate.sections.length} portrait sections of equal width side by side, and each section becomes its slide exactly as it is: the reader swipes from one section into the next. The scene runs on across every cut: something crosses each cut into the next section (a road, a table, a line, a reach), and no face, hand or key object is split by one.`,
+    `From left to right, one section per slide:\n${sections.join("\n")}`,
+    `The concept: ${ctx.script.concept}`,
+    `How the visual script casts it: ${ctx.script.cast}`,
+    `One light, one horizon and one scale across the whole width.${band}`,
+    `In every section keep the top ${calm}% calm and plain, sky, wall or a flat field of the palette: the slides' words are set there afterwards. The subjects stand in the lower part of each section.`,
+    "No words, letters, numbers, logos, signs, frames or interface of any kind.",
+    `# The brand's visual identity\n${resolveCreativeVisualGuidance(ctx.profile)}`,
+  ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
+}
+
 /** How a slide's prompt names its section of the master scene, given last. */
 const masterSectionPrompt = (ctx: Context) =>
-  `\n\nMASTER SECTION\nThe LAST input image is this slide's section of the carousel's one wide scene${ctx.narrative.form === "follow-the-line" ? `, with the line (${ctx.narrative.anchor}) entering at its left edge and leaving at its right edge` : ""}. Keep its composition, horizon, light and colors, and keep everything that touches its left and right edges where it is, so this slide continues the slides beside it. Redraw it in full detail as this slide, with the slide's words where the layout reserves them.\nEND MASTER SECTION`;
+  `\n\nMASTER SECTION\nThe LAST input image is this slide's section of the carousel's one wide scene${ctx.narrative.form === "follow-the-line" ? `, with the line (${ctx.narrative.anchor}) entering at its left edge and leaving at its right edge` : ""}. Keep its composition, horizon, light and colors, and keep everything that touches its left and right edges where it is, so this slide continues the slides beside it. Redraw it in full detail as this slide, ${ctx.presentation.text === "program" ? "without any words" : "with the slide's words where the layout reserves them"}.\nEND MASTER SECTION`;
 
 /** A slide's section of the master scene, cut and sized as the slide is drawn; one that cannot be read leaves the slide to be drawn on its own, with a note. */
 async function masterSectionFile(ctx: Context, slide: Draft2SlideImage): Promise<File | undefined> {
@@ -588,6 +648,12 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
     const color = mapPaletteFromBrand(ctx.profile.brandPalette ?? [])?.primary;
     out = await compositeMapPanel({ image: out, map, matColor: color ?? "#1f2933", layout: panel.layout, ...(panel.position ? { position: panel.position } : {}), ...(panel.label ? { label: panel.label } : {}), ...(color ? { ink: color } : {}) });
   }
+  // The program's words, before the page number and the logo, in the band the prompt kept calm.
+  if (ctx.presentation.text === "program") {
+    const words = wordsFor(ctx, slide);
+    out = (await setSlideWords({ image: out, words, band: textBandOf(ctx, slide, attempt), palette: ctx.wordsPalette, cover: slide.order === 1 })).image;
+    attempt.words = words;
+  }
   const chrome = chromeFor(ctx, slide.order);
   if (chrome.overlay) out = await compositeCreativeCarouselChrome({ image: out, chrome });
   if (ctx.brandSnapshot && logoApplies(ctx, slide.order)) {
@@ -596,6 +662,28 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
     attempt.logo = { form: logo.version.form, tone: logo.version.tone, assetId: logo.version.assetId };
   }
   return out;
+}
+
+/**
+ * A panorama's slide: its section of the one wide scene, brought to the
+ * slide's size and finished as any slide (the program's words, the page
+ * number, the logo). No model is called; the scene was charged once.
+ */
+async function cutSection(ctx: Context, slide: Draft2SlideImage, attempt: Draft2ImageAttempt, finished: Map<Draft2ImageAttempt, Uint8Array>, checkpoint: () => Promise<unknown>): Promise<void> {
+  try {
+    const section = await masterSectionFile(ctx, slide);
+    if (!section) throw new Draft2InputError("The panorama's section could not be cut.");
+    const raw = new Uint8Array(await sharp(Buffer.from(await section.arrayBuffer())).resize(OUTPUT.width, OUTPUT.height, { fit: "fill", kernel: "lanczos3" }).png().toBuffer());
+    const final = await finish(ctx, slide, attempt, raw);
+    const sha256 = hash(final);
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: raw, contentType: "image/png", metadata: { sha256: hash(raw) } });
+    Object.assign(attempt, { status: "generated", sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), costMicros: 0, completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+    finished.set(attempt, final);
+  } catch (error) {
+    Object.assign(attempt, { status: "failed", error: message(error), completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+  }
+  await checkpoint();
 }
 
 /**
@@ -794,6 +882,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
     topicId, storyId, sessionId, run, script: target.script, carousel: target.carousel, inventory: target.inventory, facts, profile,
     ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), logos: new Map(), characters, brandSelections, units, draft, brief, fal, descriptor,
     ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
+    presentation: run.presentation ?? focusPresentation(undefined), wordsPalette: wordsPalette(profile.brandPalette),
   };
 }
 
@@ -884,7 +973,11 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
         }
         // Each real photo is looked at, and given its layout, before its slide goes out.
         await preparePortraits(ctx, checkpoint);
-        await inBatches(latest.filter(({ attempt }) => attempt.status === "queued"), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => submitAttempt(ctx, slide, attempt, checkpoint));
+        // A panorama's sections are cut from its scene; a scene that failed leaves each slide to be drawn on its own.
+        const sections = latest.filter(({ attempt }) => attempt.kind === "section" && attempt.status === "queued");
+        if (sections.length && run.masterPlate?.status === "generated") await inBatches(sections, IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => cutSection(ctx, slide, attempt, finished, checkpoint));
+        else for (const { attempt } of sections) attempt.kind = "generate";
+        await inBatches(latest.filter(({ attempt }) => attempt.status === "queued" && attempt.kind !== "section"), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => submitAttempt(ctx, slide, attempt, checkpoint));
         await inBatches(latest.filter(({ attempt }) => attempt.status === "generating" && attempt.requestId), IMAGE_SUBMIT_CONCURRENCY, ({ slide, attempt }) => pollAttempt(ctx, slide, attempt, finished, pollErrors, checkpoint));
         const toReview = run.slides.flatMap((slide) => { const attempt = latestAttempt(slide); return attempt && awaitsReview(attempt) ? [{ slide, attempt }] : []; });
         if (toReview.length && REQUEST_DEADLINE_MS - elapsed() < REVIEW_TIMEOUT_MS + 10_000) return pause();
@@ -892,7 +985,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           const image = finished.get(attempt) ?? new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), contentType: "image/png", fileName: imageFile(slide.slide, attempt.version) })).arrayBuffer());
           await reviewAttempt(ctx, slide, attempt, image);
           // A first image the review flags is corrected once, from that image before its overlays.
-          const correction = correctionFor(slide, attempt, new Date());
+          const correction = correctionFor(slide, attempt, new Date(), { program: ctx.presentation.text === "program" });
           if (correction) slide.attempts.push(correction);
           await checkpoint();
         });
@@ -931,6 +1024,7 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   if (!images) throw new Draft2InputError("Generate the images first.");
   const working = session.status === "running" && Date.now() - new Date(session.updatedAt).getTime() < OPENING_STALL_MS;
   if (working) throw new Draft2BusyError("The images are still being made; decide when they finish.");
+  if (action.action === "words") return setChangedWords({ topicId, session, images });
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
@@ -942,6 +1036,65 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   const status = settled ? settledStatus(slides) : "paused";
   const next: Draft2Images = { ...images, slides, status, updatedAt: now.toISOString(), error: settled ? imagesNote(slides) : "One slide waits to be made; continue to make it." };
   const updated = await updateDraft2Session(session.id, { images: next, ...(settled && session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/** The issues a review raised about the words: the program sets them again, so they no longer stand. */
+const WORDS_ISSUE = /^(The words in the image|The lettering has a problem|The logo or the page number covers)/u;
+
+/** The review of an image whose words were set again: its issues about the words dropped, the rest kept; passed when none remain. */
+function wordsSetAgainReview(review: Draft2ImageReview | undefined, version: number): Draft2ImageReview | undefined {
+  if (!review) return undefined;
+  const issues = review.issues.filter((issue) => !WORDS_ISSUE.test(issue));
+  return { ...review, status: review.status === "issues" && !issues.length ? "passed" : review.status, issues, note: `The image of v${version}, with its words set again by the program.${review.note ? ` ${review.note}` : ""}` };
+}
+
+/**
+ * The words changed since the images (a hand edit or a review patch), set
+ * again by the program on the same images: each changed slide gets a new
+ * version made from the image it shows, before its overlays, with the words
+ * it has now, the page number and the logo. No model is called and nothing
+ * is charged; the earlier versions stay.
+ */
+async function setChangedWords({ topicId, session, images }: { topicId: string; session: Draft2SessionRow; images: Draft2Images }): Promise<Draft2SessionRow> {
+  const target = imagesTarget(session);
+  const changed = slidesWithChangedWords(images, target.carousel);
+  if (!changed.length) throw new Draft2InputError("No slide's words changed since its image.");
+  let fal: Context["fal"];
+  try {
+    fal = getFalImageRuntimeConfig("4:5", IMAGES_QUALITY);
+  } catch (error) {
+    if (error instanceof FalImageConfigurationError) throw new Draft2InputError("FAL_KEY is not configured.");
+    throw error;
+  }
+  const run = withoutHistory(images);
+  const profile = await getCreativeProfile(topicId);
+  const ctx = await imagesContext({
+    topicId, storyId: session.storyId, sessionId: session.id, run, target, facts: session.facts ?? [], profile, fal,
+    descriptor: creativeImageModel(resolveDefaultCreativeImageModel()), signal: new AbortController().signal, trace: [...session.trace],
+  });
+  const now = new Date().toISOString();
+  const slides = await Promise.all(images.slides.map(async (slide) => {
+    const shown = shownAttempt(slide);
+    if (!changed.includes(slide.slide) || !shown) return slide;
+    const baseName = imageBaseFile(slide.slide, shown.version);
+    const base = new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, baseName), contentType: "image/png", fileName: baseName })).arrayBuffer());
+    const attempt: Draft2ImageAttempt = {
+      version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
+      ...(shown.portrait ? { portrait: shown.portrait } : {}), queuedAt: now, costMicros: 0,
+    };
+    const final = await finish(ctx, slide, attempt, base);
+    const sha256 = hash(final);
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
+    await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: base, contentType: "image/png", metadata: { sha256: hash(base) } });
+    const review = wordsSetAgainReview(shown.review, shown.version);
+    Object.assign(attempt, { sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), completedAt: new Date().toISOString(), ...(review ? { review } : {}) });
+    return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
+  }));
+  const status = settledStatus(slides);
+  const next: Draft2Images = { ...images, slides, status, updatedAt: now, error: imagesNote(slides) };
+  const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }

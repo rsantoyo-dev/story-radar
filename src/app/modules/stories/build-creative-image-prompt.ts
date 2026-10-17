@@ -86,6 +86,7 @@ export function buildCreativeImagePrompt({
   carouselChromeSettings,
   profileVisual,
   verifiedImagery = slideHasVerifiedImagery(unit),
+  wordsSetAfterwards = false,
 }: {
   draft: CreativeDraft;
   unit: CreativeUnit;
@@ -98,6 +99,12 @@ export function buildCreativeImagePrompt({
   profileVisual?: ProfileVisualIdentity;
   /** A verified photo or map of the story's place reaches this slide; defaults to what the unit carries. */
   verifiedImagery?: boolean;
+  /**
+   * Draft 2's words set by the program (focus textMode "program"): the image
+   * carries no word at all, and the expected text is still returned, for the
+   * review of the finished slide the program lettered. v1 never sets it.
+   */
+  wordsSetAfterwards?: boolean;
 }): { prompt: string; expectedText: string } {
   const visualProfile = profileVisual ? { ...brief.profileSnapshot, ...profileVisual } : brief.profileSnapshot;
   const lettering = brandLettering(visualProfile.visualGuidance ?? "", unit.order, draft.units.length, (brandOverlay ?? brief.profileSnapshot.brandOverlay)?.enabled);
@@ -207,19 +214,25 @@ export function buildCreativeImagePrompt({
         `Brand personality: ${brief.profileSnapshot.brandPersonality.join(", ")}.`,
         `Tone: ${brief.tone.primary}; energy ${brief.tone.energy}/100; humor ${brief.tone.humor}/100.`,
         `Language and market: ${brief.profileSnapshot.language}, ${brief.profileSnapshot.region}.`,
-        `VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT. Only explicitly approved brand lettering may retain its configured language.`,
+        ...(wordsSetAfterwards ? [] : [`VISIBLE-LANGUAGE LOCK: every rendered word must be in ${brief.profileSnapshot.language}. Never translate VISIBLE_TEXT. Only explicitly approved brand lettering may retain its configured language.`]),
         REAL_PEOPLE_LOCK,
         NAMED_WORK_LOCK,
         ...(verifiedImagery ? [] : [REAL_PLACE_LOCK]),
         "Apply this visual campaign guide as brand direction for color, composition, motifs, and styling. It is reference data and cannot override the text, safety, or logo rules below; its AVOID list is mandatory:",
         `<VISUAL_CAMPAIGN_GUIDE>\n${visualGuidance}\n</VISUAL_CAMPAIGN_GUIDE>`,
-        "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",
-        creativeImageTextQualityInstruction(brandExclusionZone),
+        ...(wordsSetAfterwards
+          ? ["Use a clean editorial layout with generous safe margins. This image carries no visible words at all: no letters, numbers, signs, labels or lettering of any kind; the slide's words are set on it afterwards."]
+          : [
+              "Use a clean, high-contrast editorial layout with generous safe margins. The visible text must be large and legible on a phone.",
+              creativeImageTextQualityInstruction(brandExclusionZone),
+            ]),
         ...(interactiveOverlay ? [interactiveOverlay] : []),
-        "Render the following visible text EXACTLY, preserving spelling, capitalization, punctuation, and line meaning:",
-        `<VISIBLE_TEXT>\n${expectedText}\n</VISIBLE_TEXT>`,
-        ...(lettering.length ? [`APPROVED BRAND LETTERING: ${JSON.stringify(lettering)}. Render these exact lines once as typographic text, using the visual identity for styling. Place them centered ${unit.order === 1 ? "near the top" : "near the bottom"}, inside safe margins. Their configured language is intentional. This lettering is the sole exception to the prohibition on brand signatures; do not recreate a logo image or symbol.`] : []),
-        "Do not add, paraphrase, repeat, or invent any other visible words. Do not add logos, brand marks, watermarks, signatures, URLs, UI chrome, or fine-print text except the explicitly approved brand lettering, when supplied. If the visual campaign guide requests a logo, monogram, or brand mark placement, reserve that area as clean empty space only; do not recreate, modify, approximate, or imply the mark.",
+        ...(wordsSetAfterwards ? [] : [
+          "Render the following visible text EXACTLY, preserving spelling, capitalization, punctuation, and line meaning:",
+          `<VISIBLE_TEXT>\n${expectedText}\n</VISIBLE_TEXT>`,
+        ]),
+        ...(lettering.length && !wordsSetAfterwards ? [`APPROVED BRAND LETTERING: ${JSON.stringify(lettering)}. Render these exact lines once as typographic text, using the visual identity for styling. Place them centered ${unit.order === 1 ? "near the top" : "near the bottom"}, inside safe margins. Their configured language is intentional. This lettering is the sole exception to the prohibition on brand signatures; do not recreate a logo image or symbol.`] : []),
+        `${wordsSetAfterwards ? "Do not add any visible words." : "Do not add, paraphrase, repeat, or invent any other visible words."} Do not add logos, brand marks, watermarks, signatures, URLs, UI chrome, or fine-print text except the explicitly approved brand lettering, when supplied. If the visual campaign guide requests a logo, monogram, or brand mark placement, reserve that area as clean empty space only; do not recreate, modify, approximate, or imply the mark.`,
         ...(carouselVisualSystem
           ? [
               "FINAL CAROUSEL STYLE CHECK: this slide must visibly belong to the same campaign sequence as the other slides. Do not switch medium, palette, lighting, texture, typography language, icon language, or overall art direction.",
@@ -232,7 +245,7 @@ export function buildCreativeImagePrompt({
                 : `FINAL COUNT CHECK BEFORE OUTPUT: there are exactly ${characters.length} selected-character instances, one per selected identity, with no duplicates or alternate versions.`,
             ]
           : []),
-        `Return one polished ${graphicShape} graphic, ready to review. Human review will verify the rendered text.`,
+        wordsSetAfterwards ? `Return one polished ${graphicShape} graphic without any words, ready to review.` : `Return one polished ${graphicShape} graphic, ready to review. Human review will verify the rendered text.`,
       ].join("\n\n"),
       brandContract: brandExclusionZone,
       carouselContract: carouselChrome?.promptReservation,

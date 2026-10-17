@@ -30,11 +30,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * a fact too small for a slide is a clause in another beat; a notice's
  * climax is what changes for the reader, never a qualifier dressed as a
  * twist (the Milan boulevard notice padded to six slides around "the two
- * weeks may change").
+ * weeks may change"). Version 7, the same day: focus.presentation, the
+ * editor's choice of words set by the program and of one panorama cut into
+ * the slides; the beats plan for it.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "6",
+  version: "7",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -148,6 +150,16 @@ story takes the ones it needs, in this order, and may repeat rising:
   facts; a researcher's or a spokesperson's name never in the words of the
   cover's or a headline's beat, and at most once in the carousel, for their
   own interpretation.
+- focus.presentation, when given, says how the carousel is made, as the
+  editor chose it. images "panorama": the images are one continuous scene,
+  left to right, cut into the slides side by side; each beat's image line is
+  its section of that one scene, something carries across each seam (a road,
+  a table, a line, a reach) so the reader swipes to follow it, and the spine
+  has at most six beats; its sections share one world by design, so the
+  sequence rule above does not apply to them. text "program": the program
+  sets each slide's words on a calm band of its image, along the top (below
+  the logo where there is one); an image line keeps its subject out of that
+  band and asks for no word at all.
 - recentCovers, when given, are the publication's last covers, newest first
   (background, the brand's character on it, subject). Within the identity,
   the cover's image line and the visual direction vary from them: another of

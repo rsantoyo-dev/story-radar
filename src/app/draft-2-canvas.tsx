@@ -10,8 +10,8 @@ import type { Draft2Fact, Draft2FactsEvaluation, Draft2FactsRound, Draft2Session
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, FOCUS_ANCHOR_MAX_CHARACTERS, FOCUS_CONCEPT_ARCS, FOCUS_MAX_REVEALS, FOCUS_PREMISE_MAX_CHARACTERS, FOCUS_REVEAL_MAX_CHARACTERS, focusConcept, FOCUS_AUDIENCE_MAX_CHARACTERS, FOCUS_CONSEQUENCE_MAX_CHARACTERS, FOCUS_DIRECTION_MAX_CHARACTERS, FOCUS_FRAMINGS, FOCUS_GOALS, FOCUS_GRAVITIES,
   FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
-  FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PLAN_NOTES_MAX_CHARACTERS, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
-  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2NarrativeForm, type Draft2PlanNotes, type Draft2SpineBeat, type Draft2SpineRole,
+  FOCUS_IMAGE_MODES, FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PANORAMA_MAX_SLIDES, FOCUS_PLAN_NOTES_MAX_CHARACTERS, FOCUS_TEXT_MODES, focusPresentation, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
+  type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2ImageMode, type Draft2NarrativeForm, type Draft2PlanNotes, type Draft2TextMode, type Draft2SpineBeat, type Draft2SpineRole,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "@/app/modules/stories/map-panel-position";
@@ -25,7 +25,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { IMAGES_MAX_REQUESTS, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -280,6 +280,8 @@ const NEED_LABEL: Record<string, string> = { "generic-illustration": "Illustrati
 const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-consequence": "Reader consequence", explainer: "Explainer", authority: "Authority" };
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
 const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
+const TEXT_MODE_LABEL: Record<Draft2TextMode, string> = { image: "Drawn in the image", program: "Set by the program" };
+const IMAGE_MODE_LABEL: Record<Draft2ImageMode, string> = { slides: "One image per slide", panorama: `One panorama cut into the slides (up to ${FOCUS_PANORAMA_MAX_SLIDES})` };
 const CONCEPT_LABEL: Record<Draft2ConceptArc, string> = {
   classic: "Classic: the news, told straight",
   discovery: "Discovery: the reader discovers the news",
@@ -1025,6 +1027,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const visualFinished = Boolean(visual && chosenVisualId && visual.status !== "running" && visual.status !== "paused");
   const imagesReady = visualFinished && !visualChanged;
   const imagesChanged = Boolean(images && chosenVisualId && images.visualId !== chosenVisualId);
+  // Slides whose words the program set and the carousel has changed since: set again on the same images, for free.
+  const wordsChanged = imagesChanged ? [] : slidesWithChangedWords(images, session?.visual?.carousel);
   // The accounts the caption may tag: proposed for the people, places and organizations, checked on Instagram, tagged only once the editor confirms them.
   const mentions = session?.mentions ?? undefined;
   const mentionsStalled = !running && mentions?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
@@ -1448,7 +1452,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "images" ? "Making the images…" : images ? "Make the images again" : "Make the images"}
         </Button>
       </>,
-      how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself; the page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {imageReviewer} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
+      how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself, unless the focus has the program set them: then each image is made without words, with a calm band where the program sets them, and a panorama is one wide scene cut into the slides. The page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {imageReviewer} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
       body: <>
         {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The carousel’s words, the deck or the people and places changed since the visual script; write the visual script again first.") : null}
         {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
@@ -1457,6 +1461,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "images" && session.error && running !== "images" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
         {imageError ? <InlineNotice tone="error" title="Your decision was not saved">{imageError}</InlineNotice> : null}
+        {wordsChanged.length && running !== "images" ? <InlineNotice tone="info" title={`The words of ${wordsChanged.length === 1 ? "one slide" : `${wordsChanged.length} slides`} changed since ${wordsChanged.length === 1 ? "its image" : "their images"}`}>
+          The program set these words, so it sets the new ones on the same {wordsChanged.length === 1 ? "image" : "images"}: no new image, no cost.{" "}
+          <Button size="compact" variant="secondary" busy={savingImage === "words"} disabled={running !== undefined || savingImage !== undefined} onClick={() => { void decideImage({ action: "words", slide: "words" }); }}>Set the new words</Button>
+        </InlineNotice> : null}
         {imagesDownload ? <InlineNotice tone={imagesDownload.tone} title={imagesDownload.tone === "error" ? "The download failed" : undefined}>{imagesDownload.text}</InlineNotice> : null}
         {inventoryError ? <InlineNotice tone="error" title="The brand's characters were not read again">{inventoryError}</InlineNotice> : null}
         {images && session && running !== "images" ? <ImagesView images={images} characters={inventory?.roster ?? []} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} onRefreshCharacters={() => { void decideInventory({ action: "roster" }); }} refreshingCharacters={savingInventory === "roster"} /> : null}
@@ -2268,7 +2276,7 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
     {url ? <PrivateDraft2Image url={url} secret={story.secret} alt={`${slide.label}, version ${shown?.version}`} /> : <div className={styles.imageFrame}><p className={styles.factMeta}>{latest?.status === "failed" ? latest.error : pending ? "Being made…" : "No image"}</p></div>}
     {generated.length > 1 ? <div className={styles.imageVersions} role="group" aria-label={`${slide.label}: versions`}>
       {generated.map((attempt) => <Button key={attempt.version} size="compact" variant={attempt.version === shown?.version ? "secondary" : "quiet"} disabled={locked || attempt.version === shown?.version} onClick={() => onDecide({ action: "choose", slide: slide.slide, version: attempt.version })}>
-        v{attempt.version}{attempt.kind === "correct" ? " · corrected" : attempt.kind === "regenerate" ? " · yours" : ""}
+        v{attempt.version}{attempt.kind === "correct" ? " · corrected" : attempt.kind === "regenerate" ? " · yours" : attempt.kind === "words" ? " · new words" : attempt.kind === "section" ? " · panorama" : ""}
       </Button>)}
     </div> : null}
     {shown?.review ? <ImageReviewLines review={shown.review} /> : null}
@@ -2537,6 +2545,8 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
     case "visualDirection": return values.visualDirection ?? "";
     case "spine": return values.spine ? `${values.spine.beats.length} beats · ${values.spine.beats.map((beat) => beat.role).join(" › ")}` : "none";
     case "levers": return values.levers ? [leverName(values.levers.primary), ...values.levers.alternatives.map(leverName)].join(" · ") : "none";
+    case "textMode": return TEXT_MODE_LABEL[focusPresentation(values).text];
+    case "imageMode": return IMAGE_MODE_LABEL[focusPresentation(values).images];
   }
 }
 
@@ -2556,6 +2566,7 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
   onReset: (field: Draft2FocusField) => void;
 }) {
   const values = focus.values!;
+  const presentation = focusPresentation(values);
   const decided = focus.decidedAt ? new Date(focus.decidedAt).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" }) : undefined;
   const edited = (field: Draft2FocusField) => focus.edited.includes(field);
   /** Claude's reason, or, for the editor's field, Claude's value beside it. */
@@ -2629,6 +2640,20 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
           </select>
         </FormField>
         {reset("goal")}
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Images" description={`One panorama is one wide scene without words, cut into the slides side by side, so it runs on across every swipe: its words are set by the program, and it takes at most ${FOCUS_PANORAMA_MAX_SLIDES} slides. Changing it asks for the spine again.`}>
+          <select value={presentation.images} disabled={locked} onChange={(event) => onSave("imageMode", event.target.value)}>
+            {FOCUS_IMAGE_MODES.map((mode) => <option key={mode} value={mode}>{IMAGE_MODE_LABEL[mode]}</option>)}
+          </select>
+        </FormField>
+      </div>
+      <div className={styles.focusField}>
+        <FormField label="Words on the images" description={presentation.images === "panorama" ? "A panorama is made without words; the program sets each slide's words on it." : "Drawn in the image: the image model letters each slide's words. Set by the program: each image is made without words, with a calm band where the program sets them, so a word you change later is set again on the same image, never drawn again."}>
+          <select value={presentation.text} disabled={locked || presentation.images === "panorama"} onChange={(event) => onSave("textMode", event.target.value)}>
+            {FOCUS_TEXT_MODES.map((mode) => <option key={mode} value={mode}>{TEXT_MODE_LABEL[mode]}</option>)}
+          </select>
+        </FormField>
       </div>
       <div className={`${styles.focusField} ${styles.focusWide}`}>
         <FocusVoice key={key("voice")} voice={values.voice} description={about("voice")} disabled={locked} onCommit={(voice) => onSave("voice", voice)} />

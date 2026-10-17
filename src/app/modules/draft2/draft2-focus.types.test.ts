@@ -4,7 +4,7 @@ import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
   anchorNoun, beatFactsFinding, beatFactsMissing, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineBeatFactIds, spineMiddleFactIds, spineShapeProblem,
-  spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus,
+  spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus, focusPresentation, FOCUS_DECISION_FIELDS,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -600,4 +600,31 @@ test("the spine covers the story: a fact it depends on has a beat or a guard, or
   assert.deepEqual(beatFactsMissing(["f1"], ["f1"]), []);
   assert.deepEqual([beatFactsMissing([], []), beatFactsMissing(["f1"], undefined)], [[], []], "a beat without facts, or no spine, asks nothing");
   assert.equal(beatFactsFinding("Slide 2", ["f2"], ["f1", "f2"], facts), "Slide 2 leaves out the facts its beat rests on: f2 (A DOD official says awards took less than a week.). State at least 1 of the beat's 2, and cite them.");
+});
+
+test("how the carousel is made is the editor's: a panorama always takes the program's words and at most six slides; the words do not follow it, the visual script does", () => {
+  assert.deepEqual(focusPresentation(undefined), { text: "image", images: "slides" }, "absent: one image per slide, its words drawn in it");
+  assert.deepEqual(focusPresentation({ textMode: "program" }), { text: "program", images: "slides" });
+  assert.deepEqual(focusPresentation({ imageMode: "panorama", textMode: "image" }), { text: "program", images: "panorama" }, "a panorama is made without words");
+  assert.ok(!FOCUS_DECISION_FIELDS.includes("textMode") && !FOCUS_DECISION_FIELDS.includes("imageMode"), "Claude neither decides nor gives a reason for them");
+  const focus = decided();
+  const program = applyFocusEdit(focus, "textMode", "program", NOW);
+  assert.deepEqual([program.values?.textMode, program.edited.includes("textMode"), program.staleDirections ?? false], ["program", true, false], "who sets the words leaves the spine as it is");
+  const panorama = applyFocusEdit(focus, "imageMode", "panorama", NOW);
+  assert.equal(panorama.staleDirections, true, "a panorama asks for the spine again: one scene");
+  assert.throws(() => applyFocusEdit(panorama, "textMode", "image", NOW), /A panorama's words are set by the program/);
+  assert.throws(() => applyFocusEdit(focus, "imageMode", "carousel", NOW), /The images are one of slides, panorama/);
+  // Seven beats are too many for a panorama: a finding until the spine is rewritten.
+  assert.match(focusFindings(panorama.values!).find((finding) => finding.code === "SPINE_SHAPE")?.detail ?? "", /A panorama runs at most 6 slides, one section of its scene each; this spine has 7/);
+  assert.match(spineShapeProblem(ARC_SPINE.beats as Draft2SpineBeat[], { kind: "arc", itemFactIds: [] }, { maxBeats: 6 }) ?? "", /at most 6 slides/);
+  // The words written before still follow the focus; the visual script does not.
+  const words = { version: focus.version, values: focus.values! };
+  assert.equal(wordsFollowFocus(words, program), true, "no words to write again");
+  assert.equal(visualDirectionChanged(words, program), true, "a script for images with their words drawn in them");
+  assert.equal(visualFocus(words, program).values.textMode, "program", "the new script follows the editor's choice");
+  assert.equal("presentation" in focusForModels(focus.values!), false, "the default is not spelled out to the models");
+  assert.deepEqual(focusForModels(panorama.values!).presentation, { text: "program", images: "panorama" });
+  // Deciding again keeps them.
+  const again = decidedFocus(program, parse(), { provider: "anthropic", model: "claude-sonnet-5-5" }, NOW);
+  assert.equal(again.values?.textMode, "program", "a decision never takes the editor's choice away");
 });

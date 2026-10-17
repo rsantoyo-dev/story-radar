@@ -51,7 +51,7 @@ export function spineSeries(beats: readonly Pick<Draft2SpineBeat, "subject">[], 
   return word && numbers.length > spineSeriesLimit(named.length) ? { word, beats: numbers, total: named.length } : undefined;
 }
 
-export function spineImageProblems(beats: readonly Pick<Draft2SpineBeat, "slide" | "image" | "subject">[], { avoid = [], recurring = "" }: { avoid?: readonly string[]; recurring?: string } = {}): Draft2SpineProblem[] {
+export function spineImageProblems(beats: readonly Pick<Draft2SpineBeat, "slide" | "image" | "subject">[], { avoid = [], recurring = "", panorama = false }: { avoid?: readonly string[]; recurring?: string; /** One scene cut into the slides: its sections share their subject by design, so subjects are not compared. */ panorama?: boolean } = {}): Draft2SpineProblem[] {
   const problems: Draft2SpineProblem[] = [];
   beats.forEach((beat, index) => {
     const number = index + 1;
@@ -61,12 +61,12 @@ export function spineImageProblems(beats: readonly Pick<Draft2SpineBeat, "slide"
     const asked = forbiddenElement(beat.image) ?? wordsAskedOfImage(beat.image);
     if (asked) problems.push({ code: "SPINE_IMAGE_WORDS", beat: number, detail: `Beat ${number} (${beat.slide}) asks the image for "${asked}": the image model letters only the slide's words, so an image line never asks for numbers, labels, captions, logos or other words` });
     const previous = beats[index - 1];
-    if (previous?.subject && beat.subject && sameSpineSubject(previous.subject, beat.subject)) {
+    if (!panorama && previous?.subject && beat.subject && sameSpineSubject(previous.subject, beat.subject)) {
       problems.push({ code: "SPINE_SAME_SUBJECT", beat: number, detail: `Beats ${index} and ${number} (${previous.slide}, ${beat.slide}) show the same dominant subject ("${beat.subject}"); each image shows something the carousel has not shown yet` });
     }
   });
   // A series: the same subject on most slides, each in another state, reads as one picture seven times.
-  const series = spineSeries(beats, { recurring });
+  const series = panorama ? undefined : spineSeries(beats, { recurring });
   if (series) {
     const keep = spineSeriesLimit(series.total);
     problems.push({ code: "SPINE_SERIES", beat: series.beats[series.beats.length - 1], detail: `The images are a series, not a sequence: "${series.word}" is the dominant subject of ${series.beats.length} of ${series.total} beats (${series.beats.join(", ")}); keep it on at most ${keep} and give the others what the facts hold beside it: the place, the tool, the people's trace, a comparison, the consequence` });

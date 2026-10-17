@@ -38,3 +38,13 @@ test("what counts as a verified image of the story", () => {
   assert.equal(images.slideHasVerifiedImagery({ placeVisual: {} }), false, "a place search that found nothing");
   assert.equal(images.withRealPlaceLock(images.withRealPlaceLock("Saved prompt")).split("HARD REAL-PLACE LOCK").length, 2, "added once to a saved prompt");
 });
+
+test("Draft 2's words set afterwards: the image carries none and is never asked to letter them; v1's prompt is unchanged", () => {
+  const lettered = images.buildCreativeImagePrompt({ draft, unit, brief } as never);
+  const wordless = images.buildCreativeImagePrompt({ draft, unit, brief, wordsSetAfterwards: true } as never);
+  assert.match(lettered.prompt, /<VISIBLE_TEXT>\nLe parc reste accessible/);
+  assert.doesNotMatch(wordless.prompt, /<VISIBLE_TEXT>|VISIBLE-LANGUAGE LOCK|Human review will verify the rendered text|APPROVED BRAND LETTERING/);
+  assert.match(wordless.prompt, /This image carries no visible words at all/);
+  assert.match(wordless.prompt, /Return one polished .+ graphic without any words, ready to review\./);
+  assert.equal(wordless.expectedText, lettered.expectedText, "the words are still given back, for the review of the finished slide");
+});

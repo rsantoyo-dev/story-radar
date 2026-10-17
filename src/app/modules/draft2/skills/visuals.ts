@@ -19,10 +19,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * originality, no longer the narrative the spine already settled. Twenty-two
  * real runs under the earlier rubric ended unaccepted, most after five rounds,
  * with the writer and the judge disagreeing at the level of the story.
+ * Version 12, 2026-10-17: focus.presentation, the editor's choice of words
+ * set by the program (every image without a word, with a calm band for
+ * them) and of one panorama cut into the slides (one scene, each slide its
+ * section, something crossing each seam).
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "11",
+  version: "12",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -266,6 +270,19 @@ The slide's words and the spine are fixed inputs: the script serves them and
 cannot change them. Score the image's service to the beat and the words; a
 flaw in the words themselves (a headline at odds with its own content) is
 said in the summary for the editor, never as an issue against the script.
+
+## How the carousel is made
+focus.presentation, when given, is the editor's choice and binds every
+slide. text "program": the program sets each slide's words on a calm band
+of its image, along the top (below the logo where there is one): every
+direction asks for no word, letter or number at all and keeps the slide's
+subject out of that band, which stays plain (sky, wall, table, a flat field
+of the palette). images "panorama": the images are one wide scene, left to
+right, cut into the slides side by side; each slide's direction is its
+section of that same scene, in the same light, horizon and scale, the band
+for the words runs along the top of the whole scene, and something crosses
+each seam into the next slide (a road, a table, a line, a reach). A
+panorama is never a series of separate pictures.
 
 ## Rounds
 One script, then the judge's own; the best revised beside the judge's as

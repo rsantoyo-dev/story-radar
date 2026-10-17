@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError } from "./draft2-facts.types";
 import {
   correctionFor, draft2ImageDownloads, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
-  settledStatus, shownAttempt, slideMaterial, slideSettled, slideUnit, textDifferences,
+  settledStatus, shownAttempt, slideMaterial, slideSettled, slideUnit, textDifferences, awaitsReview, slidesWithChangedWords, PANORAMA_SCENE,
   type Draft2ImageAttempt, type Draft2SlideImage, focusSubject, parsePortraitSubject,
 } from "./draft2-images.types";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
@@ -234,4 +234,28 @@ test("Luna's boxes on a real photo are kept inside it; percentages read as fract
   assert.throws(() => parsePortraitSubject(answer({ faceVisible: false, person: { left: 0.5, top: 0.5, right: 0.5, bottom: 0.5 } })), /found nobody/);
   assert.throws(() => parsePortraitSubject("nope"), /not valid JSON/);
   assert.deepEqual(focusSubject({ x: 0.98, y: 0.3 }), { face: { left: 0.94, top: 0.25, right: 1, bottom: 0.35 } }, "the editor's focal point is a small face");
+});
+
+test("the editor's presentation reaches the images: words set by the program, one panorama cut into the slides, the changed words set again for free", () => {
+  const focusWith = (values: Record<string, unknown>) => ({ version: 4, values: { direction: "d", ...values } }) as unknown as Draft2Visual["focus"];
+  const plain = newImagesRun({ runId: "r1", visual: visualRun(), script: script(), carousel, inventory: inventory([]), model: "m", now: NOW });
+  assert.equal(json([plain.presentation, plain.masterPlate, plain.slides.map((slide) => slide.attempts[0].kind)]), json([undefined, undefined, ["generate", "generate", "generate", "generate"]]), "as before by default");
+  const program = newImagesRun({ runId: "r2", visual: visualRun({ focus: focusWith({ textMode: "program" }) }), script: script(), carousel, inventory: inventory([]), model: "m", now: NOW });
+  assert.deepEqual(program.presentation, { text: "program", images: "slides" });
+  const panorama = newImagesRun({ runId: "r3", visual: visualRun({ focus: focusWith({ imageMode: "panorama" }) }), script: script(), carousel, inventory: inventory([]), model: "m", now: NOW });
+  assert.deepEqual(panorama.presentation, { text: "program", images: "panorama" });
+  assert.equal(json([panorama.masterPlate?.anchor, panorama.masterPlate?.sections.length, panorama.slides.map((slide) => slide.attempts[0].kind)]), json([PANORAMA_SCENE, 4, ["section", "section", "section", "section"]]), "one scene, cut into the four slides");
+  // A correction under the program's words asks the model for none.
+  const flagged: Draft2SlideImage = { ...plain.slides[0], attempts: [{ version: 1, kind: "generate", status: "generated", queuedAt: "t", review: { status: "issues", issues: ["The image shows third-party logos: a soda can."], note: "", transcription: "", model: "m", at: "t" } }] };
+  assert.match(correctionFor(flagged, flagged.attempts[0], NOW, { program: true })?.instruction ?? "", /the calm band for the words stay as they are[\s\S]*Render no words at all: the program sets them afterwards.$/);
+  assert.match(correctionFor(flagged, flagged.attempts[0], NOW)?.instruction ?? "", /Render the visible text exactly as VISIBLE_TEXT gives it.$/);
+  // Words changed after the images: only the slides whose shown image carries the program's words, and differ.
+  const set = (slide: Draft2SlideImage, words?: Record<string, string>): Draft2SlideImage => ({ ...slide, attempts: [{ version: 1, kind: "generate", status: "generated", queuedAt: "t", ...(words ? { words: words as never } : {}) }] });
+  const images = { slides: [set(plain.slides[0], { headline: carousel[0].headline, text: carousel[0].text }), set(plain.slides[1], { headline: "An older headline", text: carousel[1].text, practical: "9:30 to 12:30" }), set(plain.slides[2])] };
+  assert.deepEqual(slidesWithChangedWords(images, carousel), ["s1"], "the cover's words are the same, the penultimate's were drawn by the model");
+  assert.deepEqual(slidesWithChangedWords(undefined, carousel), []);
+  // An image whose words were set again is settled: the image is the one reviewed before.
+  const words: Draft2ImageAttempt = { version: 2, kind: "words", status: "generated", baseVersion: 1, queuedAt: "t" };
+  assert.deepEqual([awaitsReview(words), slideSettled({ ...plain.slides[0], attempts: [words] })], [false, true]);
+  assert.deepEqual(parseImagesAction({ action: "words" }), { action: "words" });
 });
