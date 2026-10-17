@@ -121,7 +121,13 @@ API (topic-scoped auth; the workspace is the topic's):
 Rights are the photo's, not one story's: declaring them on a story photo
 (its PATCH route) or on the bank's page updates the bank photo and every
 story's copy of it (`syncStoryPhotoRights`). Published packages are frozen
-and never change. A focal point set on a story photo becomes the bank
+and never change. A declaration beats the default: every photo saved before
+the editor could declare rights reads "reference", so when the same bytes were
+declared own or licensed in another story, the bank photo takes the newest
+such declaration and every copy follows (`declaredRights`, on every sync, and
+`bankStoryPhoto` for a new upload). The first sync met this at once: "parc
+pirulines", declared own on 2026-10-16, is the same file as "jo walk",
+uploaded on 2026-10-13 before the declaration existed. A focal point set on a story photo becomes the bank
 photo's, which the next copy starts from (`syncStoryPhotoFocus`).
 
 ## 6. Files

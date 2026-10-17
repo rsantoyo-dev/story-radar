@@ -1,13 +1,13 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { draft2Sessions, photoBankPhotos, photoBankSubjects, photoBankTags, stories, storyReferencePhotos, topics, type PhotoBankPhotoRow, type PhotoBankSubjectRow } from "@/db/schema";
 import { createLogger } from "../observability/logger";
 import { buildPhotoBankObjectKey, buildStoryReferenceObjectKey, copyPrivateR2Object, putPrivateR2Object, readPrivateR2ImageFile } from "../stories/r2-storage";
 import { publicStoryPhoto, requireStoryMembership } from "../stories/story-materials.repository";
-import { materialText, parsePhotoRights, type PhotoFocus, type StoryPhotoRights, type StoryReferencePhoto } from "../stories/story-materials.types";
+import { materialText, parsePhotoRights, publishablePhoto, type PhotoFocus, type StoryPhotoRights, type StoryReferencePhoto } from "../stories/story-materials.types";
 import {
   PhotoBankValidationError, commonsSubject, existingSubject, parseSubjectName, subjectOfEntity, withAlias,
   type PhotoBankEntity, type PhotoBankPhoto, type PhotoBankPhotoChange, type PhotoBankSource, type PhotoBankSubject, type PhotoBankSubjectChange, type PhotoBankSubjectChoice,
@@ -166,6 +166,8 @@ export async function bankStoryPhoto(row: StoryPhotoRow, { subject }: { subject?
     if (!bank) throw new PhotoBankValidationError("The photo could not be added to the photo bank.");
   }
   if (row.bankPhotoId !== bank.id) await db.update(storyReferencePhotos).set({ bankPhotoId: bank.id }).where(eq(storyReferencePhotos.id, row.id));
+  // A declaration beats the default: the same bytes declared own or licensed in this story lift a bank photo that was reference only.
+  if (bank.publicationRights === "reference" && publishablePhoto(row.publicationRights)) await syncStoryPhotoRights({ bankPhotoId: bank.id }, row.publicationRights);
   const filed = subject ?? (commons ? { kind: commons.kind, name: commons.name, wikidataId: commons.wikidataId } : undefined);
   if (filed) await tagBankPhoto(bank.id, (await subjectFor(workspaceId, filed)).id, { topicId: row.topicId, storyId: row.storyId });
   return bank.id;
@@ -186,10 +188,10 @@ export async function bankStoryPhotoQuietly(row: StoryPhotoRow, options?: { subj
  * gave it to. Idempotent; a photo that fails is logged and tried again on the
  * next call.
  */
-export async function syncPhotoBank(workspaceId: string): Promise<{ banked: number; filed: number }> {
+export async function syncPhotoBank(workspaceId: string): Promise<{ banked: number; filed: number; declared: number }> {
   const pending = await db.select({ photo: storyReferencePhotos }).from(storyReferencePhotos).innerJoin(topics, eq(topics.id, storyReferencePhotos.topicId))
     .where(and(eq(topics.workspaceId, workspaceId), isNull(storyReferencePhotos.bankPhotoId), eq(storyReferencePhotos.active, true))).limit(SYNC_BATCH);
-  if (!pending.length) return { banked: 0, filed: 0 };
+  if (!pending.length) return { banked: 0, filed: 0, declared: await declaredRights(workspaceId) };
   const banked = new Map<string, string>();
   for (const { photo } of pending) {
     const id = await bankStoryPhotoQuietly(photo);
@@ -211,8 +213,27 @@ export async function syncPhotoBank(workspaceId: string): Promise<{ banked: numb
       }
     }
   }
-  log.info("photo bank synced", { workspaceId, banked: banked.size, filed });
-  return { banked: banked.size, filed };
+  const declared = await declaredRights(workspaceId);
+  log.info("photo bank synced", { workspaceId, banked: banked.size, filed, declared });
+  return { banked: banked.size, filed, declared };
+}
+
+/**
+ * A declaration beats the default. Every photo saved before the editor could
+ * declare its rights is "reference"; the same bytes declared own or licensed
+ * in another story (the editor's word, given later) are the photo's rights:
+ * the bank photo takes the newest such declaration, and every story's copy
+ * follows. Returns how many bank photos it lifted.
+ */
+async function declaredRights(workspaceId: string): Promise<number> {
+  const rows = await db.select({ bankPhotoId: photoBankPhotos.id, rights: storyReferencePhotos.publicationRights }).from(photoBankPhotos)
+    .innerJoin(storyReferencePhotos, eq(storyReferencePhotos.bankPhotoId, photoBankPhotos.id))
+    .where(and(eq(photoBankPhotos.workspaceId, workspaceId), eq(photoBankPhotos.publicationRights, "reference"), eq(storyReferencePhotos.active, true), inArray(storyReferencePhotos.publicationRights, ["own", "licensed"])))
+    .orderBy(desc(storyReferencePhotos.createdAt));
+  const newest = new Map<string, StoryPhotoRights>();
+  for (const row of rows) if (!newest.has(row.bankPhotoId)) newest.set(row.bankPhotoId, row.rights);
+  for (const [bankPhotoId, rights] of newest) await syncStoryPhotoRights({ bankPhotoId }, rights);
+  return newest.size;
 }
 
 /** syncPhotoBank that never fails its caller. */
