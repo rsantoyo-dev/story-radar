@@ -115,9 +115,12 @@ in the kinds below is needed.
   limit per text is in limits.words: write the replacement within it from
   the start, cutting elsewhere in the same text when the fix needs room; a
   replacement over it is asked shorter once, then refused.
-- Asked to shorten (task "shorten", with the slide, the text, the patch and
-  its limit): return the same change within the limit, dropping no figure,
-  qualifier or attribution the facts give, as the replacement alone (after).
+- Asked to shorten (task "shorten", with the slide, the text, the patch, its
+  limit and the program\x27s count of its words): return the same change within
+  the limit, as the replacement alone (after). The program counts every group
+  of characters between spaces as a word, numbers and symbols included ("4
+  000 $" is three words): drop words, never a figure, a qualifier or an
+  attribution the facts give.
 - The smallest change that fixes the fault. Name what works in strengths
   first: a patch must not cost any of it.
 - Fewer is better, at most six: a carousel that needs none gets none.

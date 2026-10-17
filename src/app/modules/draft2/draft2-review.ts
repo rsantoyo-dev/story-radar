@@ -9,7 +9,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import type { Draft2Reader } from "./draft2-address.types";
 import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
-import { factsSnapshot, failedCall, funnelVersions, funnelWithCandidate, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
+import { factsSnapshot, failedCall, funnelVersions, funnelWithCandidate, funnelWordCount, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
 import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
@@ -29,6 +29,8 @@ const READER_MAX_OUTPUT_TOKENS = 4_000;
 const EDITOR_MAX_OUTPUT_TOKENS = 8_000;
 /** The replacement alone, shortened. */
 const SHORTEN_MAX_OUTPUT_TOKENS = 1_000;
+/** How many times a patch over its limit alone is asked shorter: the model's idea of a word is not the program's ("4 000 $" is three), so the second ask carries the program's count of the first answer. */
+const SHORTEN_ATTEMPTS = 2;
 /** Claude's thinking counts against the same ceiling as its answer. */
 const CLAUDE_EDITOR_MAX_OUTPUT_TOKENS = 16_000;
 const READER_TIMEOUT_MS = 90_000;
@@ -203,12 +205,16 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const address = { address: profile.readerAddress, language: profile.language };
       const headlineOf = (slide: string) => carousel.find((entry) => entry.slide === slide)?.headline;
       const checked = (patch: Draft2ReviewPatch) => [...reviewPatchRules(patch, facts, headlineOf(patch.slide)), ...patchFindings(session, chosen, patch, facts, emojis, address)];
-      /** The editor's own patch within the limit, or nothing when the call fails or answers nothing usable: the refusal stands. */
+      /** The editor's own patch within the limit, counted as the program counts, or nothing when the call fails or answers nothing usable: the refusal stands. */
       const shorten = async (patch: Draft2ReviewPatch, limit: number, findings: string[]): Promise<string | undefined> => {
+        const words = funnelWordCount(patch.after);
         try {
           const shortAnswer = await call(editorBy, "draft2_review_shorten", {
             instructions: editorInstructions,
-            contents: { task: "shorten", slide: patch.slide, field: patch.field, headline: headlineOf(patch.slide), before: patch.before, after: patch.after, reason: patch.reason, limit, findings },
+            contents: {
+              task: "shorten", slide: patch.slide, field: patch.field, headline: headlineOf(patch.slide), before: patch.before, after: patch.after, reason: patch.reason, limit, words, findings,
+              instruction: `Return the same change in ${limit} words or fewer; the replacement has ${words} as the program counts them: every group of characters between spaces is a word, numbers and symbols included ("4 000 $" is three words). Drop words, never a figure, a qualifier or an attribution the facts give.`,
+            },
             schema: DRAFT2_REVIEW_SHORTEN_SCHEMA, maxOutputTokens: SHORTEN_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: editor.skillVersions,
           });
           return parseShortenAnswer(shortAnswer);
@@ -219,15 +225,15 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
         if (patch.status !== "proposed") { patches.push(patch); continue; }
         let findings = checked(patch);
         const limit = limits.words[patch.slide]?.[patch.field];
-        if (lengthOnly(findings) && limit) {
-          const shorter = await shorten(patch, limit, findings);
-          if (shorter) {
-            const again: Draft2ReviewPatch = { ...patch, after: shorter, note: [patch.note, `Shortened to the slide's limit of ${limit} words.`].filter(Boolean).join(" ") };
-            findings = checked(again);
-            if (!findings.length) { patches.push(again); continue; }
-          }
+        let again = patch;
+        for (let attempt = 1; attempt <= SHORTEN_ATTEMPTS && limit && lengthOnly(findings); attempt++) {
+          const shorter = await shorten(again, limit, findings);
+          if (!shorter) break;
+          again = { ...patch, after: shorter, note: [patch.note, `Shortened to the slide's limit of ${limit} words.`].filter(Boolean).join(" ") };
+          findings = checked(again);
         }
-        patches.push(findings.length ? { ...patch, status: "refused" as const, note: findings.join(" ") } : patch);
+        if (!findings.length) { patches.push(again); continue; }
+        patches.push({ ...patch, status: "refused" as const, note: findings.join(" ") });
       }
       const now = new Date().toISOString();
       return { ...running, status: "ready", reader: read, readerBy, editor: { ...answer, patches }, editorBy, updatedAt: now };
