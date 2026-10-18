@@ -25,7 +25,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_ALIGNS, WORDS_BACKGROUNDS, WORDS_MIN_WIDTH, WORDS_SIZE, cutSections, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_ALIGNS, WORDS_BACKGROUNDS, WORDS_MIN_WIDTH, WORDS_SIZE, cutSections, standingScene, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -2220,11 +2220,13 @@ function ImagesView({ images, characters, story, saving, locked, onDecide, onRef
   const costMicros = images.slides.flatMap((slide) => slide.attempts).reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0) + (images.anchorPlate?.costMicros ?? 0) + (images.masterPlate?.costMicros ?? 0);
   const plate = images.anchorPlate;
   const master = images.masterPlate;
+  // A scene made again that failed leaves the one before standing: the editor keeps working on it.
+  const scene = images.presentation?.images === "panorama" ? standingScene(master) : undefined;
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
     {plate ? <p className={styles.factMeta}>Anchor plate · {plate.anchor} · {plate.status === "generated" ? "drawn once without words; every slide that carries the anchor takes it as a reference" : plate.status === "failed" ? `could not be made${plate.error ? ` (${clip(plate.error, 120)})` : ""}; the slides keep the anchor by the script’s words alone` : "being drawn before the slides"}</p> : null}
-    {master && images.presentation?.images === "panorama" && master.status === "generated" ? <SceneEditor images={images} plate={master} story={story} saving={saving} locked={locked} onDecide={onDecide} /> : null}
-    {master && !(images.presentation?.images === "panorama" && master.status === "generated") ? <p className={styles.factMeta}>{images.presentation?.images === "panorama" ? "Panorama" : "Master scene"} · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
+    {scene ? <SceneEditor images={images} plate={scene} story={story} saving={saving} locked={locked} onDecide={onDecide} /> : null}
+    {master && !scene ? <p className={styles.factMeta}>{images.presentation?.images === "panorama" ? "Panorama" : "Master scene"} · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
     <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} characters={characters} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} onRefreshCharacters={onRefreshCharacters} refreshingCharacters={refreshingCharacters} />)}</ol>
   </div>;
 }
@@ -2267,10 +2269,14 @@ function SceneEditor({ images, plate, story, saving, locked, onDecide }: {
   const tryOffset = (next: Draft2CutOffset) => setOffset(cutSections(plate, next).offset);
   const query = new URLSearchParams({ topicId: story.topicId, sessionId: story.sessionId, run: images.runId, plate: "master", version: String(plate.version ?? 1), ...(moved ? { x: String(offset.x), y: String(offset.y), scale: String(offset.scale) } : {}) });
   const busy = saving === "scene" || saving === "cut";
+  const kept = plate.previous?.filter((entry) => entry.status === "generated").length ?? 0;
+  // The last scene asked after this one that could not be made: nothing was drawn in its place.
+  const refused = plate.previous?.filter((entry) => entry.status === "failed" && (entry.version ?? 1) > (plate.version ?? 1)).at(-1);
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>
-      Panorama · scene v{plate.version ?? 1} · {plate.width}×{plate.height} · each slide is its numbered section, cut as it is{plate.previous?.length ? ` · ${plate.previous.length} earlier ${plate.previous.length === 1 ? "version" : "versions"} kept` : ""}{plate.instruction ? ` · asked: “${clip(plate.instruction, 120)}”` : ""}
+      Panorama · scene v{plate.version ?? 1} · {plate.width}×{plate.height} · each slide is its numbered section, cut as it is{kept ? ` · ${kept} earlier ${kept === 1 ? "version" : "versions"} kept` : ""}{plate.instruction ? ` · asked: “${clip(plate.instruction, 120)}”` : ""}
     </p>
+    {refused ? <p className={styles.factMeta}>Scene v{refused.version ?? 1} could not be made{refused.error ? ` (${clip(refused.error, 160)})` : ""}{refused.instruction ? `, asked: “${clip(refused.instruction, 120)}”` : ""}. The slides keep scene v{plate.version ?? 1}; say it another way and make the scene again.</p> : null}
     <PrivateDraft2Image url={`/api/radar/draft2/images/file?${query}`} secret={story.secret} alt={`The panorama's scene, version ${plate.version ?? 1}, with its cuts`} wide={{ width: 1920, height: Math.round((1920 * plate.height) / plate.width) }} />
     <ActionRow>
       <Button size="compact" variant="quiet" disabled={locked || busy} title="Move the cuts left" onClick={() => tryOffset({ ...offset, x: offset.x - step })}>←</Button>

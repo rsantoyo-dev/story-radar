@@ -55,7 +55,7 @@ import { failedCall } from "./draft2-funnel";
 import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
-  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, cutSections, masterPlateFile, masterPlatePromptFile, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
+  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, cutSections, masterPlateFile, nextSceneVersion, sceneBefore, standingScene, masterPlatePromptFile, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
@@ -978,7 +978,18 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           }));
           if (jobs.some((job) => !anchorPlateSettled(job.plate))) { await sleep(POLL_INTERVAL_MS); continue; }
           if (run.anchorPlate?.status === "failed") for (const slide of run.slides) if (slideCarriesAnchor(slide)) note(slide, "The anchor plate could not be made, so this slide keeps the anchor by the script's words alone.");
-          if (run.masterPlate?.status === "failed") for (const slide of run.slides) note(slide, "The master scene could not be made, so this slide is drawn on its own from the script.");
+          const before = run.masterPlate && sceneBefore(run.masterPlate);
+          if (run.masterPlate && before) {
+            // The editor's scene made again failed: the slides keep the scene before and the versions they showed; none is drawn on its own.
+            const failed = run.masterPlate;
+            run.masterPlate = before;
+            for (const slide of run.slides) {
+              const attempt = latestAttempt(slide);
+              if (attempt?.kind !== "section" || attempt.status !== "queued") continue;
+              Object.assign(attempt, { status: "failed", error: `Scene v${failed.version ?? 1} could not be made, so the slide keeps scene v${before.version ?? 1}${failed.error ? `: ${failed.error}` : "."}`, completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+              if (attempt.replacesVersion !== undefined) slide.chosenVersion = attempt.replacesVersion;
+            }
+          } else if (run.masterPlate?.status === "failed") for (const slide of run.slides) note(slide, "The master scene could not be made, so this slide is drawn on its own from the script.");
           await checkpoint();
         }
         // Each real photo is looked at, and given its layout, before its slide goes out.
@@ -1199,11 +1210,11 @@ export async function previewDraft2Words({ topicId, sessionId, slide: name, layo
   return { image, bottom: wordsBlockBottom(wordsFor(ctx, slide), used), layout: used };
 }
 
-/** A panorama's scene the editor can act on: made, under the editor's panorama, in the run that stands. */
+/** A panorama's scene the editor can act on: made (or the one before a remake that failed), under the editor's panorama, in the run that stands. */
 function panoramaScene(images: Draft2Images): Draft2MasterPlate {
-  const plate = images.masterPlate;
-  if (images.presentation?.images !== "panorama" || !plate) throw new Draft2InputError("These images are not a panorama.");
-  if (plate.status !== "generated" || !plate.sha256) throw new Draft2InputError("The scene is not made yet; continue the images first.");
+  if (images.presentation?.images !== "panorama" || !images.masterPlate) throw new Draft2InputError("These images are not a panorama.");
+  const plate = standingScene(images.masterPlate);
+  if (!plate || plate.status !== "generated" || !plate.sha256) throw new Draft2InputError("The scene is not made yet; continue the images first.");
   return plate;
 }
 
@@ -1223,14 +1234,14 @@ async function remakeScene({ session, images, instruction }: { session: Draft2Se
   const now = new Date().toISOString();
   const next: Draft2MasterPlate = {
     anchor: plate.anchor, status: "queued", queuedAt: now, width: plate.width, height: plate.height, sections: plate.sections,
-    version: (plate.version ?? 1) + 1, ...(instruction ? { instruction } : {}), ...(plate.offset ? { offset: plate.offset } : {}),
+    version: nextSceneVersion(plate), ...(instruction ? { instruction } : {}), ...(plate.offset ? { offset: plate.offset } : {}),
     previous: [...(plate.previous ?? []), plateRecord(plate)],
   };
   const slides = images.slides.map((slide) => {
     const shown = shownAttempt(slide);
     const attempt: Draft2ImageAttempt = {
       version: Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1, kind: "section", status: "queued", queuedAt: now,
-      ...(shown?.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}),
+      ...(shown?.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}), ...(shown ? { replacesVersion: shown.version } : {}),
     };
     return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
   });

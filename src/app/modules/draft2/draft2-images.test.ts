@@ -70,7 +70,7 @@ type Review = (slide: string, version: number) => Record<string, unknown>;
 const clean: Review = () => ({ transcription: "", textCovered: false, textNote: "", storyNote: "The walk reads." });
 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
-function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown> } = {}) {
+function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay, refuse }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown>; /** A request fal's content checker refuses, by its prompt. */ refuse?: (prompt: string) => boolean } = {}) {
   const calls = {
     submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
@@ -86,6 +86,7 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
   };
   const r2 = new Map<string, Buffer>();
   const pollsLeft = new Map<string, number>();
+  const refused = new Set<string>();
   let requestCount = 0;
   let row: Row = { id: sessionId, topicId, storyId, step: "visual", status: "needs-review", facts, visual: VISUAL, deck: { editorChoiceId: "c3" }, inventory: INVENTORY, images: null, error: null, trace: [], updatedAt: new Date(), ...session } as Row;
   /** Each compositor appends its name, so the stored image shows the order they ran in. */
@@ -184,12 +185,14 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
         calls.submits.push({ endpoint: input.endpoint, prompt: input.prompt, files: input.referenceImages.map((file) => file.name), width: input.width, height: input.height });
         const id = `req-${++requestCount}`;
         pollsLeft.set(id, polls);
+        if (refuse?.(input.prompt)) refused.add(id);
         return id;
       },
       pollFalImage: async (input: { requestId: string; targetWidth: number; targetHeight: number; postProcess: (value: { normalizedPng: Uint8Array; requestId: string; width: number; height: number }) => Promise<Uint8Array> }) => {
         const left = pollsLeft.get(input.requestId) ?? 0;
         if (clock) clock.now += pollMs;
         if (left > 0) { pollsLeft.set(input.requestId, left - 1); return { status: "generating" }; }
+        if (refused.has(input.requestId)) throw new Error("fal.ai rejected the image request (HTTP 422): body.prompt: The content could not be processed because it contained material flagged by a content checker.");
         await input.postProcess({ normalizedPng: Buffer.from(`raw:${input.requestId}`), requestId: input.requestId, width: input.targetWidth, height: input.targetHeight });
         return { status: "generated", image: { url: `https://v3.fal.media/${input.requestId}.png`, seed: 1 } };
       },
@@ -595,4 +598,33 @@ test("a panorama or a line is drawn once as one wide master scene; each slide is
   await scene.run();
   assert.match(scene.calls.submits[0].prompt, /The scene: An autumn trail\./);
   assert.equal(scene.calls.reviews.some((review) => "anchor" in review.contents), false, "a panorama's scene is every slide by construction");
+});
+
+test("a scene the editor makes again that fal refuses: the slides keep the scene before and the versions they showed, no slide is drawn on its own, and the next scene takes a new version", async () => {
+  const line = { form: "follow-the-line", anchorKind: "line", characterId: null, anchor: "The boardwalk trail", anchorFactIds: ["f1"], progression: "What the trail reaches", ending: "resolves" };
+  let refusing = false;
+  const h = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: line } } } }, refuse: (prompt) => refusing && prompt.startsWith("PANORAMA") });
+  await h.run();
+  // The editor's panorama, its words lettered by the image model so the program's lettering stays out of this test.
+  h.setRow({ images: { ...h.row().images!, presentation: { images: "panorama", text: "image" } } });
+  const shownBefore = h.row().images!.slides.map((slide) => [slide.slide, imagesTypes.shownAttempt(slide)!.version]);
+  const sent = h.calls.submits.length;
+  refusing = true;
+  await h.decide({ action: "scene", slide: "scene", instruction: "Chispa más arriba" });
+  const images = (await h.run({ resume: true })).images!;
+  assert.equal(h.calls.submits.length, sent + 1, "the one scene asked, and no slide drawn on its own");
+  assert.match(h.calls.submits[sent].prompt, /What the editor asks to change from the scene made before: "Chispa más arriba"/);
+  const scene = images.masterPlate!;
+  assert.equal(json([scene.version ?? 1, scene.status, scene.previous?.map((entry) => [entry.version ?? 1, entry.status])]), json([1, "generated", [[2, "failed"]]]));
+  assert.equal(json(images.slides.map((slide) => [slide.slide, imagesTypes.shownAttempt(slide)!.version])), json(shownBefore), "each slide shows what it showed");
+  for (const slide of images.slides) {
+    const latest = imagesTypes.latestAttempt(slide)!;
+    assert.equal(json([latest.kind, latest.status]), json(["section", "failed"]));
+    assert.match(latest.error!, /^Scene v2 could not be made, so the slide keeps scene v1: .*content checker/);
+    assert.equal(slide.notes.some((entry) => /drawn on its own/.test(entry)), false);
+  }
+  refusing = false;
+  await h.decide({ action: "scene", slide: "scene", instruction: "Chispa a la altura de la mancha" });
+  const again = (await h.run({ resume: true })).images!;
+  assert.equal(json([again.masterPlate!.version, again.masterPlate!.status, again.masterPlate!.previous?.map((entry) => entry.version ?? 1)]), json([3, "generated", [2, 1]]), "v3, never the failed v2's file or request again");
 });

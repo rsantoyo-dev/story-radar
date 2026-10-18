@@ -298,3 +298,22 @@ test("the editor's layout for a slide's words, checked: the box inside the slide
   assert.deepEqual(parseImagesAction({ action: "layout", slide: "s1", layout: sent, all: true }).action, "layout");
   assert.throws(() => parseImagesAction({ action: "layout", layout: sent }), /Name the slide/);
 });
+
+test("a scene the editor had made again that fails gives back the scene before, keeps the failed one in its history, and the next takes a new version; a first scene that fails has none to give back", async () => {
+  const { nextSceneVersion, sceneBefore, standingScene } = await import("./draft2-images.types");
+  const base = { anchor: "the carousel's one continuous scene", width: 3840, height: 1344, sections: [] };
+  const first = { ...base, status: "generated" as const, sha256: "a", queuedAt: "2026-10-17T19:52:28.911Z" };
+  const second = { ...base, status: "generated" as const, sha256: "b", version: 2, instruction: "sobre loza, en crema", offset: { x: 3, y: 54, scale: 1 }, queuedAt: "2026-10-18T04:00:52.072Z" };
+  const refused = { ...base, status: "failed" as const, version: 3, instruction: "Chispa más arriba", error: "fal.ai rejected the image request (HTTP 422): flagged by a content checker.", queuedAt: "2026-10-18T04:03:30.030Z", previous: [first, second] };
+  const back = sceneBefore(refused);
+  assert.equal(back?.version, 2);
+  assert.equal(back?.sha256, "b");
+  assert.deepEqual(back?.offset, { x: 3, y: 54, scale: 1 }, "the cuts where the editor left them");
+  assert.deepEqual(back?.previous?.map((entry) => [entry.version ?? 1, entry.status]), [[1, "generated"], [3, "failed"]]);
+  assert.equal(nextSceneVersion(back!), 4, "never v3 again: its prompt and its request stay its own");
+  assert.equal(standingScene(refused)?.version, 2);
+  assert.equal(standingScene(second), second);
+  assert.equal(sceneBefore(second), undefined, "a scene made stands");
+  assert.equal(sceneBefore({ ...base, status: "failed", queuedAt: first.queuedAt }), undefined, "a first scene that failed: the slides are drawn on their own");
+  assert.equal(sceneBefore({ ...refused, previous: [{ ...base, status: "failed", queuedAt: first.queuedAt }] }), undefined, "nothing made before it");
+});

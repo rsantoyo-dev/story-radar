@@ -158,6 +158,8 @@ export type Draft2ImageAttempt = {
   reviewAfter?: true;
   /** An edit starts from this version's image as it was before the logo and the page number. */
   baseVersion?: number;
+  /** A section queued with the scene made again: the version the slide showed then, shown again if the new scene fails. */
+  replacesVersion?: number;
   endpoint?: string;
   requestId?: string;
   promptCharacters?: number;
@@ -256,7 +258,9 @@ export type Draft2MasterSection = { slide: string; left: number; top: number; wi
  * A panorama's or a line's master scene: the whole carousel drawn once as one
  * wide image without a word, then cut into one section per slide, side by
  * side; each slide is redrawn from its section, so the scene continues from
- * slide to slide. One that fails leaves each slide to be drawn on its own.
+ * slide to slide. A first scene that fails leaves each slide to be drawn on
+ * its own; one the editor had made again that fails gives the slides back the
+ * scene before (sceneBefore).
  */
 export type Draft2MasterPlate = Draft2AnchorPlate & {
   width: number; height: number; sections: Draft2MasterSection[];
@@ -270,6 +274,30 @@ export type Draft2MasterPlate = Draft2AnchorPlate & {
   previous?: Draft2MasterPlateRecord[];
 };
 export type Draft2MasterPlateRecord = Omit<Draft2MasterPlate, "previous">;
+
+/**
+ * A scene the editor had made again that failed (2026-10-18: fal's content
+ * checker refused it, and its six slides were drawn one by one, ten images
+ * for the one asked): the last version made before it, as the scene that
+ * stands, with the failed one kept in its history. None when the scene did
+ * not fail, or when it was the first.
+ */
+export function sceneBefore(plate: Draft2MasterPlate): Draft2MasterPlate | undefined {
+  if (plate.status !== "failed") return undefined;
+  const history = plate.previous ?? [];
+  let index = history.length - 1;
+  while (index >= 0 && !(history[index].status === "generated" && history[index].sha256)) index--;
+  if (index < 0) return undefined;
+  const { previous, ...failed } = plate;
+  void previous;
+  return { ...history[index], previous: [...history.slice(0, index), ...history.slice(index + 1), failed] };
+}
+
+/** The version a scene made again takes: one more than any in its history, failed ones included, so no file or request is reused. */
+export const nextSceneVersion = (plate: Draft2MasterPlate) => Math.max(plate.version ?? 1, ...(plate.previous ?? []).map((entry) => entry.version ?? 1)) + 1;
+
+/** The scene the editor works on: the one made, or the one before a remake that failed. */
+export const standingScene = (plate: Draft2MasterPlate | undefined) => plate && (plate.status === "generated" ? plate : sceneBefore(plate));
 export type Draft2CutOffset = { x: number; y: number; scale: number };
 export const MASTER_PLATE_FILE = "master-scene.png";
 export const MASTER_PLATE_PROMPT_FILE = "master-scene-prompt.txt";
