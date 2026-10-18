@@ -2332,9 +2332,47 @@ function WordsRoleControls({ label, role, range, disabled, onChange }: { label: 
  * published; "Apply" makes a new version from the same image, free. The
  * style can go to every slide, each keeping its own place.
  */
-function WordsEditor({ slide, layout, story, saving, locked, onDecide }: {
+/** One slide's preview with its words set as tried; with no layout, the program chooses one and says which. */
+async function previewWords(story: { topicId: string; sessionId: string; secret: string }, slide: string, layout: Draft2WordsLayout | undefined, signal: AbortSignal) {
+  const response = await fetch(`/api/radar/draft2/images/words?topicId=${encodeURIComponent(story.topicId)}`, {
+    method: "POST", cache: "no-store", signal,
+    headers: { Authorization: `Bearer ${story.secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId: story.sessionId, slide, ...(layout ? { layout } : {}) }),
+  });
+  if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "The preview could not be made.");
+  const bottom = Number(response.headers.get("X-Words-Bottom"));
+  const chosen = JSON.parse(decodeURIComponent(response.headers.get("X-Words-Layout") ?? "null")) as Draft2WordsLayout | null;
+  return { blob: await response.blob(), bottom: Number.isFinite(bottom) ? bottom : undefined, chosen };
+}
+
+/**
+ * The words' editor. A slide lettered before layouts were kept (2026-10-17)
+ * has none: the program finds again where it set the words, in the brand's
+ * fonts, and the editor starts from there; applying it is a change.
+ */
+function WordsEditor({ layout, ...props }: Omit<Parameters<typeof WordsLayoutEditor>[0], "fresh" | "layout"> & { layout?: Draft2WordsLayout }) {
+  const [chosen, setChosen] = useState<Draft2WordsLayout>();
+  const [error, setError] = useState<string>();
+  const { topicId, sessionId, secret } = props.story;
+  const name = props.slide.slide;
+  useEffect(() => {
+    if (layout) return;
+    const controller = new AbortController();
+    previewWords({ topicId, sessionId, secret }, name, undefined, controller.signal)
+      .then((preview) => { if (preview.chosen) setChosen(preview.chosen); else setError("The program could not place these words."); })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "The preview could not be made."); });
+    return () => controller.abort();
+  }, [layout, name, secret, sessionId, topicId]);
+  const start = layout ?? chosen;
+  if (!start) return <p className={styles.factMeta}>{error ?? "Finding where the words are…"}</p>;
+  return <WordsLayoutEditor {...props} layout={start} fresh={!layout} />;
+}
+
+function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDecide }: {
   slide: Draft2SlideImage;
   layout: Draft2WordsLayout;
+  /** The layout was just chosen by the program: the slide has not been set with it yet. */
+  fresh: boolean;
   story: { topicId: string; sessionId: string; secret: string };
   saving: boolean;
   locked: boolean;
@@ -2346,22 +2384,14 @@ function WordsEditor({ slide, layout, story, saving, locked, onDecide }: {
   const [previewError, setPreviewError] = useState<string>();
   const stage = useRef<HTMLDivElement>(null);
   const drag = useRef<{ mode: "move" | "width"; x: number; y: number; box: Draft2WordsLayout["box"] } | undefined>(undefined);
-  const changed = JSON.stringify(draft) !== JSON.stringify(layout);
+  const changed = fresh || JSON.stringify(draft) !== JSON.stringify(layout);
   const disabled = locked || saving;
   // The server sets the words as tried, a moment after the last change: the preview is the slide as it would be published.
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/radar/draft2/images/words?topicId=${encodeURIComponent(story.topicId)}`, {
-        method: "POST", cache: "no-store", signal: controller.signal,
-        headers: { Authorization: `Bearer ${story.secret}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: story.sessionId, slide: slide.slide, layout: draft }),
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "The preview could not be made.");
-          const bottom = Number(response.headers.get("X-Words-Bottom"));
-          return { src: URL.createObjectURL(await response.blob()), bottom: Number.isFinite(bottom) ? bottom : draft.box.top + 300 };
-        })
+      previewWords({ topicId: story.topicId, sessionId: story.sessionId, secret: story.secret }, slide.slide, draft, controller.signal)
+        .then(({ blob, bottom }) => ({ src: URL.createObjectURL(blob), bottom: bottom ?? draft.box.top + 300 }))
         .then((next) => { setPreviewError(undefined); setPreview((current) => { if (current) URL.revokeObjectURL(current.src); return next; }); })
         .catch((cause) => { if (!controller.signal.aborted) setPreviewError(cause instanceof Error ? cause.message : "The preview could not be made."); });
     }, 350);
@@ -2436,7 +2466,7 @@ function WordsEditor({ slide, layout, story, saving, locked, onDecide }: {
     <label className={styles.factMeta}><input type="checkbox" checked={all} disabled={disabled} onChange={(event) => setAll(event.target.checked)} /> Give every slide this style (fonts, sizes, colours, background, alignment); each keeps its own place</label>
     <ActionRow>
       <Button size="compact" variant="secondary" busy={saving} disabled={disabled || (!changed && !all)} onClick={() => onDecide({ action: "layout", slide: slide.slide, layout: draft, all })}>Apply</Button>
-      <Button size="compact" variant="quiet" disabled={disabled || !changed} onClick={() => setDraft(layout)}>Undo the changes</Button>
+      <Button size="compact" variant="quiet" disabled={disabled || JSON.stringify(draft) === JSON.stringify(layout)} onClick={() => setDraft(layout)}>Undo the changes</Button>
     </ActionRow>
   </div>;
 }
@@ -2489,7 +2519,7 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
         {MAP_PANEL_POSITIONS.map((position) => <option key={position} value={position}>{MAP_POSITION_LABEL[position]}</option>)}
       </select>
     </FormField> : null}
-    {shown?.wordsLayout && shown.words ? <details>
+    {shown?.words ? <details>
       <summary>Words: place and style</summary>
       <WordsEditor key={shown.version} slide={slide} layout={shown.wordsLayout} story={story} saving={Boolean(saving)} locked={locked || pending} onDecide={onDecide} />
     </details> : null}

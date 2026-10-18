@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import { TEXT_CANVAS, setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand } from "./draft2-text-layer";
+import { TEXT_CANVAS, autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand } from "./draft2-text-layer";
 
 test("where the program sets the words: along the top, below a logo on top; along the bottom when a photo bleeds from the top or the map sits top right", () => {
   assert.deepEqual(textBandFor({}), { edge: "top", left: 72, top: 64, width: 936, height: 540 });
@@ -65,4 +65,15 @@ test("a layout sets the words where it says, in the brand's fonts: in its box, c
   // A band runs the whole width behind the words.
   const banded = await drawWords({ image: teal, words, layout: { ...low, background: { kind: "band", color: "#F6F0E4", opacity: 1 } } });
   assert.ok(await changedPixels(teal, banded, { left: 0, top: 905, width: 60, height: 40 }) > 2_000, "the band reaches the slide's edge");
+});
+
+test("a slide lettered before layouts were kept: the program finds again the layout it set the words with, and drawing it gives the same slide", async () => {
+  const palette = { ink: "#253746", paper: "#F6F0E4" };
+  const words = { headline: "El anillo del café", text: "El agua se va por el borde y arrastra el polvo con ella.", practical: "" };
+  const band = textBandFor({});
+  const cream = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#F6F0E4" } }).png().toBuffer());
+  const set = await setSlideWords({ image: cream, words, band, palette, cover: true });
+  const found = await autoWordsLayout({ image: cream, words, band, palette, cover: true });
+  assert.deepEqual(found, set.layout);
+  assert.equal(await changedPixels(set.image, await drawWords({ image: cream, words, layout: found }), { left: 0, top: 0, width: 1080, height: 1350 }), 0);
 });

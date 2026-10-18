@@ -11,7 +11,8 @@ export const runtime = "nodejs";
  * A slide's words set with the layout the editor is trying ({ sessionId,
  * slide, layout }), on the image the slide shows: a JPEG of the finished
  * slide, nothing stored, no model called. X-Words-Bottom says where the block
- * of words ends, for the editor's box.
+ * of words ends, for the editor's box. Without a layout the program chooses
+ * one, and X-Words-Layout carries it (URI-encoded JSON).
  */
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);
@@ -22,8 +23,10 @@ export async function POST(request: Request) {
   if (!DRAFT2_UUID_PATTERN.test(sessionId) || !slide) return noStoreJson({ error: "sessionId and slide are required" }, 400);
   try {
     const topicId = await requireActiveRequestTopic(request);
-    const { image, bottom } = await previewDraft2Words({ topicId, sessionId, slide, layout: parseWordsLayout(body?.layout) });
-    return new Response(Buffer.from(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Words-Bottom": String(bottom) } });
+    // No layout: a slide lettered before layouts were kept, the editor's starting point.
+    const tried = body?.layout ? parseWordsLayout(body.layout) : undefined;
+    const { image, bottom, layout } = await previewDraft2Words({ topicId, sessionId, slide, ...(tried ? { layout: tried } : {}) });
+    return new Response(Buffer.from(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Words-Bottom": String(bottom), "X-Words-Layout": encodeURIComponent(JSON.stringify(layout)) } });
   } catch (error) {
     return draft2ErrorResponse(error, "preview the words");
   }

@@ -6,7 +6,7 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
 import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
-import { drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
 import { DEFAULT_WORDS_STYLE, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
@@ -1153,9 +1153,11 @@ async function applyWordsLayout({ topicId, session, images, slide: name, layout,
   const slides = await Promise.all(images.slides.map(async (slide) => {
     const own = slide.slide === name;
     const current = shownAttempt(slide);
-    if (!own && (!all || !current?.wordsLayout)) return slide;
+    if (!own && (!all || !current?.words)) return slide;
     const { shown, base } = await shownBase(ctx, slide);
-    const next = own ? layout : withStyleOf(shown.wordsLayout!, layout);
+    // A slide lettered before layouts were kept has no box of its own: the program finds again where it set the words.
+    const place = shown.wordsLayout ?? await autoWordsLayout({ image: base, words: wordsFor(ctx, slide), band: textBandOf(ctx, slide, shown), palette: ctx.wordsPalette, style: ctx.wordsStyle, cover: slide.order === 1 });
+    const next = own ? layout : withStyleOf(place, layout);
     const attempt: Draft2ImageAttempt = {
       version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
       ...(shown.portrait ? { portrait: shown.portrait } : {}), wordsLayout: next, queuedAt: now, costMicros: 0,
@@ -1180,7 +1182,7 @@ async function applyWordsLayout({ topicId, session, images, slide: name, layout,
  * tries it: nothing is stored. Returns a JPEG of the finished slide (its words,
  * the page number, the logo) and where the block of words ends, for the box.
  */
-export async function previewDraft2Words({ topicId, sessionId, slide: name, layout }: { topicId: string; sessionId: string; slide: string; layout: Draft2WordsLayout }): Promise<{ image: Uint8Array; bottom: number }> {
+export async function previewDraft2Words({ topicId, sessionId, slide: name, layout }: { topicId: string; sessionId: string; slide: string; layout?: Draft2WordsLayout }): Promise<{ image: Uint8Array; bottom: number; layout: Draft2WordsLayout }> {
   const session = await getDraft2Session(topicId, sessionId);
   const images = session?.images;
   if (!session || !images) throw new Draft2InputError("Generate the images first.");
@@ -1189,10 +1191,12 @@ export async function previewDraft2Words({ topicId, sessionId, slide: name, layo
   if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
   const ctx = await editContext(topicId, session, withoutHistory(images));
   const { shown, base } = await shownBase(ctx, slide);
-  const attempt: Draft2ImageAttempt = { version: 0, kind: "words", status: "generated", ...(shown.portrait ? { portrait: shown.portrait } : {}), wordsLayout: layout, queuedAt: new Date().toISOString() };
+  // No layout yet (a slide lettered before layouts were kept): the program chooses one now, in the brand's fonts, and the editor starts from it.
+  const attempt: Draft2ImageAttempt = { version: 0, kind: "words", status: "generated", ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(layout ?? shown.wordsLayout ? { wordsLayout: layout ?? shown.wordsLayout } : {}), queuedAt: new Date().toISOString() };
   const final = await finish(ctx, slide, attempt, base);
+  const used = attempt.wordsLayout!;
   const image = new Uint8Array(await sharp(Buffer.from(final)).resize({ width: 864 }).jpeg({ quality: 84 }).toBuffer());
-  return { image, bottom: wordsBlockBottom(wordsFor(ctx, slide), layout) };
+  return { image, bottom: wordsBlockBottom(wordsFor(ctx, slide), used), layout: used };
 }
 
 /** A panorama's scene the editor can act on: made, under the editor's panorama, in the run that stands. */
