@@ -7,7 +7,8 @@ import { Button, FormField, InlineNotice, LoadingState } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
 
 type Scope = { topicId: string; storyId: string; secret: string };
-function photoUrl(scope: Scope, id?: string) {
+/** A story's photos, or one of them, for the authenticated routes. */
+export function storyPhotoUrl(scope: Scope, id?: string) {
   return `/api/radar/stories/${encodeURIComponent(scope.storyId)}/photos${id ? `/${encodeURIComponent(id)}` : ""}?topicId=${encodeURIComponent(scope.topicId)}`;
 }
 export function useStoryPhotos({ topicId, storyId, secret }: Scope) {
@@ -16,7 +17,7 @@ export function useStoryPhotos({ topicId, storyId, secret }: Scope) {
   const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(photoUrl({ topicId, storyId, secret }), { headers: { Authorization: `Bearer ${secret.trim()}` }, cache: "no-store", signal: controller.signal })
+    fetch(storyPhotoUrl({ topicId, storyId, secret }), { headers: { Authorization: `Bearer ${secret.trim()}` }, cache: "no-store", signal: controller.signal })
       .then(async response => { const result = await response.json(); if (!response.ok) throw new Error(result.error ?? "Could not load story photos"); return result; })
       .then(result => { setPhotos(result); setError(""); })
       .catch(error => { if (!controller.signal.aborted) setError(error.message); });
@@ -31,12 +32,12 @@ export const PHOTO_RIGHTS_LABEL: Record<StoryPhotoRights, string> = {
   reference: "Reference only: never published",
 };
 async function saveRights(scope: Scope, id: string, publicationRights: string): Promise<void> {
-  const response = await fetch(photoUrl(scope, id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ publicationRights }) });
+  const response = await fetch(storyPhotoUrl(scope, id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ publicationRights }) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error ?? "Could not save the photo's rights");
 }
 async function saveFocus(scope: Scope, photo: StoryReferencePhoto, focus: PhotoFocus | null): Promise<void> {
-  const response = await fetch(photoUrl(scope, photo.id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ focus }) });
+  const response = await fetch(storyPhotoUrl(scope, photo.id), { method: "PATCH", headers: { Authorization: `Bearer ${scope.secret.trim()}`, "Content-Type": "application/json" }, body: JSON.stringify({ focus }) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error ?? "Could not save the focal point");
 }
@@ -96,7 +97,7 @@ function PhotoPreview({ scope, photo, onFocusSaved, disabled = false }: { scope:
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | undefined;
-    fetch(photoUrl({ topicId, storyId, secret }, photo.id), { headers: { Authorization: `Bearer ${secret.trim()}` }, signal: controller.signal })
+    fetch(storyPhotoUrl({ topicId, storyId, secret }, photo.id), { headers: { Authorization: `Bearer ${secret.trim()}` }, signal: controller.signal })
       .then(response => { if (!response.ok) throw new Error("Photo unavailable"); return response.blob(); })
       .then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
@@ -138,7 +139,7 @@ export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
     }
     setBusy(true); setMessage(""); setMessageIsError(false);
     try {
-      const response = await fetch(photoUrl(scope), { method: "POST", headers: { Authorization: `Bearer ${scope.secret.trim()}` }, body: new FormData(form) });
+      const response = await fetch(storyPhotoUrl(scope), { method: "POST", headers: { Authorization: `Bearer ${scope.secret.trim()}` }, body: new FormData(form) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Upload failed");
       form.reset(); refresh(); setMessage("Photo saved. Select it on the relevant draft slides before generating images.");
@@ -154,7 +155,7 @@ export function StoryPhotosPanel({ onChanged, ...scope }: Scope & {
   async function revoke(id: string) {
     setBusy(true); setMessage(""); setMessageIsError(false);
     try {
-      const response = await fetch(photoUrl(scope, id), { method: "DELETE", headers: { Authorization: `Bearer ${scope.secret.trim()}` } });
+      const response = await fetch(storyPhotoUrl(scope, id), { method: "DELETE", headers: { Authorization: `Bearer ${scope.secret.trim()}` } });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Could not remove photo");
       refresh();

@@ -41,9 +41,11 @@ export const IMAGES_MAX_REQUESTS = 12;
  * generate: the first image; correct: the review's one correction;
  * regenerate: one the editor asked for; words: the image of an earlier
  * version with the slide's words set again by the program (no model, no
- * cost); section: a panorama's section, cut from the one wide scene.
+ * cost); section: a panorama's section, cut from the one wide scene; own:
+ * the editor's own image (one of the story's photos), fitted to the slide,
+ * with the slide's words, the page number and the logo set by the program.
  */
-export type Draft2ImageAttemptKind = "generate" | "correct" | "regenerate" | "words" | "section";
+export type Draft2ImageAttemptKind = "generate" | "correct" | "regenerate" | "words" | "section" | "own";
 export type Draft2ImageAttemptStatus = "queued" | "submitting" | "generating" | "generated" | "failed";
 
 /** A slide's words as the program sets them on its image. */
@@ -56,13 +58,29 @@ export type Draft2SlideWords = { headline: string; text: string; practical?: str
  * The program writes one for every slide it letters; the editor moves,
  * resizes and restyles it, and the words are set again on the same image.
  */
-export type Draft2WordsRole = { font: string; weight: number; size: number; color: string };
+export type Draft2WordsRole = {
+  font: string; weight: number; size: number; color: string;
+  /** How the words marked ** in setAs stand out (2026-10-18): heavier, in another colour. Absent: the font's heaviest weight, the role's colour. */
+  mark?: { weight: number; color: string };
+  /** Set in capitals. */
+  upper?: true;
+  /** Letter spacing, in thousandths of the size (negative tightens). */
+  tracking?: number;
+};
 export type Draft2WordsLayout = {
   box: { left: number; top: number; width: number };
   align: "left" | "center" | "right";
   headline: Draft2WordsRole;
   text: Draft2WordsRole;
   background: { kind: "none" | "card" | "band"; color: string; opacity: number };
+  /** A soft shadow under the letters, for words straight on a photo. */
+  shadow?: true;
+  /**
+   * How the headline and the text read on this slide, as the editor set them:
+   * the same words with line breaks where they want them and **marked** words.
+   * Ignored once the slide's words change (readsAs); never copied to another slide.
+   */
+  setAs?: { headline?: string; text?: string };
 };
 export const WORDS_ALIGNS = ["left", "center", "right"] as const;
 export const WORDS_BACKGROUNDS = ["none", "card", "band"] as const;
@@ -70,6 +88,27 @@ export const WORDS_BACKGROUNDS = ["none", "card", "band"] as const;
 export const WORDS_SIZE = { headline: [28, 160], text: [18, 80] } as const;
 /** The narrowest box the words may have, in slide pixels. */
 export const WORDS_MIN_WIDTH = 240;
+/** The letter spacing the editor may set, in thousandths of the size. */
+export const WORDS_TRACKING = [-50, 300] as const;
+/** The longest "how it reads" the editor may set for a role, and the most line breaks in it. */
+export const WORDS_SET_AS_MAX = { characters: 600, breaks: 8 } as const;
+
+/** A role's words as they read, without marks or line breaks: what must stay the slide's. */
+const plainWords = (value: string) => value.replace(/\*\*/gu, "").replace(/\s+/gu, " ").trim();
+
+/**
+ * How a role reads on the slide: the editor's line breaks and marks while
+ * they keep the slide's words exactly (only whitespace and ** may differ);
+ * the words as they are once those change.
+ */
+export function readsAs(words: string, setAs: string | undefined): string {
+  return setAs !== undefined && plainWords(setAs) === plainWords(words) ? setAs : words;
+}
+
+/** The roles whose "how it reads" no longer keeps the slide's words, by name, for the editor's message. */
+export function setAsMismatches(words: Draft2SlideWords, layout: Pick<Draft2WordsLayout, "setAs">): ("headline" | "text")[] {
+  return (["headline", "text"] as const).filter((role) => layout.setAs?.[role] !== undefined && plainWords(layout.setAs[role]!) !== plainWords(words[role]));
+}
 
 /**
  * A layout as the editor sends it, checked: the box kept inside the slide and
@@ -87,10 +126,30 @@ export function parseWordsLayout(value: unknown): Draft2WordsLayout {
   const role = (entry: unknown, [min, max]: readonly [number, number], fallback: Draft2WordsRole): Draft2WordsRole => {
     const given = record(entry);
     const choice = brandFontChoice(given, { font: fallback.font, weight: fallback.weight });
-    return { ...choice, size: clamp(number(given.size, fallback.size), min, max), color: color(given.color, fallback.color) };
+    const size = clamp(number(given.size, fallback.size), min, max);
+    const roleColor = color(given.color, fallback.color);
+    const mark = given.mark && typeof given.mark === "object" ? record(given.mark) : undefined;
+    const tracking = typeof given.tracking === "number" && Number.isFinite(given.tracking) ? clamp(given.tracking, WORDS_TRACKING[0], WORDS_TRACKING[1]) : 0;
+    return {
+      ...choice, size, color: roleColor,
+      ...(mark ? { mark: { weight: brandFontChoice({ font: choice.font, weight: mark.weight }, choice).weight, color: color(mark.color, roleColor) } } : {}),
+      ...(given.upper === true ? { upper: true as const } : {}),
+      ...(tracking ? { tracking } : {}),
+    };
   };
   const background = record(body.background);
+  const setAs = record(body.setAs);
+  const readAs = (entry: unknown): string | undefined => {
+    if (typeof entry !== "string") return undefined;
+    const value = entry.replace(/\r\n?/gu, "\n").replace(/[^\S\n]+/gu, " ").replace(/ *\n */gu, "\n").trim();
+    if (!value || value.length > WORDS_SET_AS_MAX.characters) return undefined;
+    return value.split("\n").length - 1 > WORDS_SET_AS_MAX.breaks ? undefined : value;
+  };
+  const headlineAs = readAs(setAs.headline);
+  const textAs = readAs(setAs.text);
   return {
+    ...(body.shadow === true ? { shadow: true as const } : {}),
+    ...(headlineAs || textAs ? { setAs: { ...(headlineAs ? { headline: headlineAs } : {}), ...(textAs ? { text: textAs } : {}) } } : {}),
     box: { left: clamp(number(box.left, 72), 0, 1080 - width), top: clamp(number(box.top, 64), 0, 1300), width },
     align: WORDS_ALIGNS.find((entry) => entry === body.align) ?? "left",
     headline: role(body.headline, WORDS_SIZE.headline, { font: "liberation-sans", weight: 700, size: 66, color: "#1b1f24" }),
@@ -103,8 +162,12 @@ export function parseWordsLayout(value: unknown): Draft2WordsLayout {
   };
 }
 
-/** A layout's style without its place: what "apply to every slide" carries, each slide keeping its own box. */
-export const withStyleOf = (layout: Draft2WordsLayout, style: Draft2WordsLayout): Draft2WordsLayout => ({ ...style, box: layout.box });
+/** A layout's style without its place: what "apply to every slide" carries, each slide keeping its own box and how its own words read. */
+export function withStyleOf(layout: Draft2WordsLayout, style: Draft2WordsLayout): Draft2WordsLayout {
+  const { setAs, ...rest } = style;
+  void setAs;
+  return { ...rest, box: layout.box, ...(layout.setAs ? { setAs: layout.setAs } : {}) };
+}
 
 /** The words a slide shows, from the carousel's slide. */
 export const slideWordsOf = (slide: Pick<Draft2CarouselSlide, "headline" | "text" | "practical" | "cta">): Draft2SlideWords => ({
@@ -128,6 +191,35 @@ export function slidesWithChangedWords(images: Pick<Draft2ImagesRun, "slides"> |
     return shown?.words && now && !sameSlideWords(shown.words, slideWordsOf(now)) ? [slide.slide] : [];
   });
 }
+
+/**
+ * The editor's own image on a slide (2026-10-18, the editor: "upload one of my
+ * own… a gallery of photos I took, and the program did not take them all"):
+ * where it came from (one of the story's photos, or a scene the editor
+ * uploaded), the rights it is published under, as declared, and how it fills
+ * the slide. A photo that fills the slide carries no pasted portrait or map:
+ * it is the slide; a section of an own scene is finished like any section.
+ */
+export type Draft2OwnImage = {
+  fill: "slide" | "scene";
+  source: "story-photo" | "upload";
+  name: string;
+  rights: "own" | "licensed";
+  /** The credit a licensed photo owes, from its record when it was used. */
+  provenance?: string;
+  storyPhotoId?: string;
+  /** The file as received: its hash and size. */
+  sha256: string;
+  width: number;
+  height: number;
+  /** A photo on a slide: cropped to fill it (around its focal point when it has one), or whole on the brand's colour. */
+  fit?: Draft2OwnFit;
+};
+export const OWN_FITS = ["cover", "contain"] as const;
+export type Draft2OwnFit = (typeof OWN_FITS)[number];
+
+/** Whether a shown image stands without a review: one Sol passed, or the editor's own. */
+export const imageCleared = (attempt: Draft2ImageAttempt | undefined) => attempt?.review?.status === "passed" || Boolean(attempt?.own);
 
 /** Sol's review of one finished image: what blocks it (issues), and a note on how it tells its beat. */
 export type Draft2ImageReview = {
@@ -174,6 +266,8 @@ export type Draft2ImageAttempt = {
   words?: Draft2SlideWords;
   /** How it set them: the layout the editor starts from to move or restyle them. */
   wordsLayout?: Draft2WordsLayout;
+  /** The editor's own image this version shows (kind own, its words set again, or a section of the editor's own scene); never reviewed by Sol. */
+  own?: Draft2OwnImage;
   sha256?: string;
   safetyFlag?: boolean;
   costMicros?: number;
@@ -272,6 +366,8 @@ export type Draft2MasterPlate = Draft2AnchorPlate & {
   offset?: Draft2CutOffset;
   /** The earlier versions of the scene, oldest first. */
   previous?: Draft2MasterPlateRecord[];
+  /** A scene the editor uploaded instead of one the model drew. */
+  own?: Draft2OwnImage;
 };
 export type Draft2MasterPlateRecord = Omit<Draft2MasterPlate, "previous">;
 
@@ -303,6 +399,10 @@ export const MASTER_PLATE_FILE = "master-scene.png";
 export const MASTER_PLATE_PROMPT_FILE = "master-scene-prompt.txt";
 /** A scene version's files: the first keeps the names it always had. */
 export const masterPlateFile = (version = 1) => version <= 1 ? MASTER_PLATE_FILE : `master-scene-v${version}.png`;
+/** An uploaded scene's file as the editor sent it, kept beside the scene cut from it. */
+export const ownSceneOriginalFile = (version: number, extension: string) => `master-scene-v${version}-own.${extension}`;
+/** The smallest section an uploaded scene may give each slide, in pixels of height. */
+export const OWN_SCENE_MIN_SECTION = 540;
 export const masterPlatePromptFile = (version = 1) => version <= 1 ? MASTER_PLATE_PROMPT_FILE : `master-scene-v${version}-prompt.txt`;
 /** The smallest a section may be, as a share of the largest the scene allows. */
 export const CUT_MIN_SCALE = 0.6;
@@ -315,9 +415,10 @@ export const CUT_MIN_SCALE = 0.6;
  */
 export function cutSections(plate: Pick<Draft2MasterPlate, "width" | "height" | "sections">, asked: Partial<Draft2CutOffset>): { sections: Draft2MasterSection[]; offset: Draft2CutOffset } {
   const slides = plate.sections.map((section) => section.slide);
-  const base = masterLayout(slides).sections[0];
+  // The largest 4:5 sections side by side the scene holds: a drawn scene's as masterLayout lays them, an uploaded one's at its own size.
+  const largest = Math.min(plate.height, Math.floor(plate.width / (SLIDE_RATIO * Math.max(1, slides.length))));
   const scale = Math.min(1, Math.max(CUT_MIN_SCALE, Number.isFinite(asked.scale) ? Number(asked.scale) : 1));
-  const height = Math.max(1, Math.floor(base.height * scale));
+  const height = Math.max(1, Math.floor(largest * scale));
   const width = Math.max(1, Math.floor(height * SLIDE_RATIO));
   const total = width * slides.length;
   const left = Math.floor((plate.width - total) / 2);
@@ -579,13 +680,13 @@ export function draft2ImageDownloads(
 
 /** A first image or one the editor asked for waits for its review; a correction is final as it comes. */
 /** A finished image not reviewed yet: a first image, an editor's, or a correction made since corrections are reviewed. */
-export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && !attempt.review && attempt.kind !== "words" && (attempt.kind !== "correct" || Boolean(attempt.reviewAfter));
+export const awaitsReview = (attempt: Draft2ImageAttempt) => attempt.status === "generated" && !attempt.review && !attempt.own && attempt.kind !== "words" && (attempt.kind !== "correct" || Boolean(attempt.reviewAfter));
 
 /** Done when the newest image failed, or is finished and reviewed (a correction is reviewed, never corrected again). */
 export function attemptSettled(attempt: Draft2ImageAttempt | undefined): boolean {
   if (!attempt) return true;
   // An image whose words were only set again is the image reviewed before: nothing to wait for.
-  return attempt.status === "failed" || (attempt.status === "generated" && (Boolean(attempt.review) || attempt.kind === "words" || (attempt.kind === "correct" && !attempt.reviewAfter)));
+  return attempt.status === "failed" || (attempt.status === "generated" && (Boolean(attempt.review) || Boolean(attempt.own) || attempt.kind === "words" || (attempt.kind === "correct" && !attempt.reviewAfter)));
 }
 export const slideSettled = (slide: Draft2SlideImage) => attemptSettled(latestAttempt(slide));
 
@@ -625,13 +726,13 @@ export function correctionInstruction(issues: readonly string[], { program = fal
 
 /** The run once every slide settled: ready when each shown image passed its review, else for the editor to look at. */
 export function settledStatus(slides: readonly Draft2SlideImage[]): "ready" | "needs-review" {
-  return slides.every((slide) => shownAttempt(slide)?.review?.status === "passed") ? "ready" : "needs-review";
+  return slides.every((slide) => imageCleared(shownAttempt(slide))) ? "ready" : "needs-review";
 }
 
 /** The run's state in a line, for the session's note. */
 export function imagesNote(slides: readonly Draft2SlideImage[]): string | undefined {
   const failed = slides.filter((slide) => !shownAttempt(slide)).length;
-  const flagged = slides.filter((slide) => { const shown = shownAttempt(slide); return shown && shown.review?.status !== "passed"; }).length;
+  const flagged = slides.filter((slide) => { const shown = shownAttempt(slide); return shown && !imageCleared(shown); }).length;
   if (!failed && !flagged) return undefined;
   return [failed ? `${failed} ${failed === 1 ? "slide has" : "slides have"} no image` : "", flagged ? `${flagged} ${flagged === 1 ? "image needs" : "images need"} your review` : ""].filter(Boolean).join("; ") + ".";
 }
@@ -642,6 +743,7 @@ export type Draft2ImagesAction =
   | { action: "scene"; instruction?: string }
   | { action: "cut"; offset: Draft2CutOffset }
   | { action: "layout"; slide: string; layout: Draft2WordsLayout; all: boolean }
+  | { action: "own"; slide: string; storyPhotoId: string; fit: Draft2OwnFit }
   | { action: "regenerate"; slide: string; instruction?: string; edit: boolean; characterIds?: string[] }
   | { action: "choose"; slide: string; version: number }
   | { action: "map"; slide: string; position: MapPanelPosition };
@@ -683,12 +785,18 @@ export function parseImagesAction(value: unknown): Draft2ImagesAction {
     const characterIds = Array.isArray(body.characterIds) ? body.characterIds.filter((entry): entry is string => typeof entry === "string") : undefined;
     return { action: "regenerate", slide, ...(instruction ? { instruction } : {}), edit: body.edit === true, ...(characterIds ? { characterIds } : {}) };
   }
+  // One of the story's photos as the slide's image, as the editor's own.
+  if (body.action === "own") {
+    const storyPhotoId = typeof body.storyPhotoId === "string" && /^[0-9a-f-]{36}$/iu.test(body.storyPhotoId) ? body.storyPhotoId : undefined;
+    if (!storyPhotoId) throw new Draft2InputError("Name the story's photo to use.");
+    return { action: "own", slide, storyPhotoId, fit: OWN_FITS.find((entry) => entry === body.fit) ?? "cover" };
+  }
   if (body.action === "map") {
     const position = MAP_PANEL_POSITIONS.find((entry) => entry === body.position);
     if (!position) throw new Draft2InputError(`The map card goes ${MAP_PANEL_POSITIONS.join(", ")}.`);
     return { action: "map", slide, position };
   }
-  throw new Draft2InputError("The action is regenerate, choose, map, words, scene, cut or layout.");
+  throw new Draft2InputError("The action is regenerate, choose, map, own, words, scene, cut or layout.");
 }
 
 /**

@@ -19,6 +19,7 @@ import * as characterGeneration from "../stories/creative-character-generation";
 import * as selectBrand from "../stories/select-brand-references";
 import { fitPortrait } from "../stories/creative-portrait-composite";
 import { loadInSandbox } from "./draft2-test-sandbox";
+import * as textLayer from "./draft2-text-layer";
 import { createHash } from "node:crypto";
 
 const hashOf = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -70,7 +71,7 @@ type Review = (slide: string, version: number) => Record<string, unknown>;
 const clean: Review = () => ({ transcription: "", textCovered: false, textNote: "", storyNote: "The walk reads." });
 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
-function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay, refuse }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown>; /** A request fal's content checker refuses, by its prompt. */ refuse?: (prompt: string) => boolean } = {}) {
+function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay, refuse, sceneSize = { width: 3232, height: 1344 } }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown>; /** A request fal's content checker refuses, by its prompt. */ refuse?: (prompt: string) => boolean; /** The size an uploaded scene comes to. */ sceneSize?: { width: number; height: number } } = {}) {
   const calls = {
     submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
@@ -92,11 +93,19 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
   /** Each compositor appends its name, so the stored image shows the order they ran in. */
   const step = (name: string) => async ({ image }: { image: Uint8Array }) => Buffer.from(`${Buffer.from(image).toString()}|${name}`);
   const expected = (unit: { headline: string; subheadline?: string; body?: string; ctaQuestion?: string }) => [unit.headline, unit.subheadline, unit.body, unit.ctaQuestion].filter(Boolean).join("\n");
-  const fakeSharp = () => ({
-    png: () => ({ toBuffer: async () => Buffer.from("map-png") }), resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("jpeg") }) }),
+  const fakeSharp = (input?: Uint8Array) => ({
+    // A section brought to the slide's size passes through as it is.
+    png: () => ({ toBuffer: async () => Buffer.from("map-png") }), resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("jpeg") }), png: () => ({ toBuffer: async () => Buffer.from(input ?? "") }) }),
     // A real photo before its slide: its size, and the preview Luna looks at.
-    metadata: async () => ({ width: 800, height: 1000 }),
-    rotate: () => ({ resize: () => ({ jpeg: () => ({ toBuffer: async () => Buffer.from("preview") }) }) }),
+    metadata: async () => ({ width: 800, height: 1000, format: "png" }),
+    rotate: () => ({
+      resize: (width: unknown, _height?: number, options?: { fit?: string }) => ({
+        jpeg: () => ({ toBuffer: async () => Buffer.from("preview") }),
+        // The editor's photo fitted to the slide, or their scene brought to a drawn scene's size.
+        png: () => ({ toBuffer: async (how?: { resolveWithObject?: boolean }) => how?.resolveWithObject ? { data: Buffer.from(`scene:${Buffer.from(input ?? "").toString()}`), info: sceneSize } : Buffer.from(`own ${options?.fit ?? (width as { fit?: string }).fit}`) }),
+        flatten: () => ({ png: () => ({ toBuffer: async () => Buffer.from("own contain") }) }),
+      }),
+    }),
     // A slide's section of a master scene: the rectangle cut and the size it is drawn at.
     extract: (rect: { left: number; top: number; width: number; height: number }) => ({ resize: (width: number, height: number) => ({ png: () => ({ toBuffer: async () => {
       calls.sections.push({ ...rect, to: `${width}x${height}` });
@@ -117,6 +126,14 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     "./skills/draft2-skills": skills,
     "./skills/images": imageSkills,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
+    // The program's lettering stands for itself: each slide shows where its words were set.
+    "./draft2-text-layer": {
+      ...textLayer,
+      drawWords: async ({ image }: { image: Uint8Array }) => Buffer.from(`${Buffer.from(image).toString()}|words`),
+      setSlideWords: async ({ image }: { image: Uint8Array }) => ({ image: Buffer.from(`${Buffer.from(image).toString()}|words`), layout: WORDS_LAYOUT, panel: false, color: "#173F52" }),
+      autoWordsLayout: async () => WORDS_LAYOUT,
+      wordsBlockBottom: () => 600,
+    },
     "./draft2-inventory": { placeMention: (entity: { name: string }) => ({ name: entity.name, kind: "named", role: "event", excerpt: entity.name, municipality: "", region: "", country: "", purpose: "location" }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => (overlay ? { ...profile, brandOverlay: { ...profile.brandOverlay, ...overlay } } : profile) },
@@ -247,6 +264,7 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     run: (options: { resume?: boolean } = {}) => exports.runDraft2Images({ topicId, storyId, sessionId, ...options }),
     decide: (input: Record<string, unknown>) => exports.editDraft2Images({ topicId, sessionId, input }),
     file: (input: Record<string, unknown>) => exports.draft2ImageFile({ topicId, sessionId, ...input }) as unknown as Promise<File>,
+    ownScene: (input: { image: Uint8Array; name: string; rights: "own" | "licensed"; credit?: string }) => exports.placeOwnDraft2Scene({ topicId, sessionId, ...input }),
     archive: () => exports.draft2ImagesArchive({ topicId, sessionId }) as unknown as Promise<{ fileName: string; archive: Buffer; count: number; reviewCopies: number }>,
     calls,
     r2,
@@ -256,6 +274,8 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
 }
 
 const stored = (h: ReturnType<typeof harness>, file: string) => h.r2.get(`draft2/${h.row().images!.runId}/${file}`)?.toString();
+/** The layout the program's lettering stands for in these tests. */
+const WORDS_LAYOUT = imagesTypes.parseWordsLayout({});
 
 test("every slide is made from v1's prompt, finished with v1's post-production in v1's order, stored, charged once and reviewed by Sol", async () => {
   const h = harness();
@@ -627,4 +647,57 @@ test("a scene the editor makes again that fal refuses: the slides keep the scene
   await h.decide({ action: "scene", slide: "scene", instruction: "Chispa a la altura de la mancha" });
   const again = (await h.run({ resume: true })).images!;
   assert.equal(json([again.masterPlate!.version, again.masterPlate!.status, again.masterPlate!.previous?.map((entry) => entry.version ?? 1)]), json([3, "generated", [2, 1]]), "v3, never the failed v2's file or request again");
+});
+
+test("the editor puts one of the story's photos on a slide: fitted, lettered by the program, with the page number and the logo, and no portrait pasted on it; no model, no review, free; a photo for reference only is refused", async () => {
+  const inventory: Draft2Inventory = {
+    ...INVENTORY,
+    entities: [{ id: "e1", name: "Catherine Fournier", kind: "person", role: "subject", description: "", factIds: ["f1"], person: { status: "confirmed", candidates: [], confirmed: { entityId: "Q1", name: "Catherine Fournier", thumbnailUrl: "u", author: "A", license: "CC BY 4.0", commonsUrl: "c", storyPhotoId: "55555555-5555-4555-8555-555555555555" } } }],
+  };
+  const script = { ...SCRIPT, slides: [scriptSlide("cover", { need: "real-photo", references: ["e1"] }), scriptSlide("s1"), scriptSlide("last")] };
+  const visual = { ...VISUAL, candidates: [script], rounds: [{ ...VISUAL.rounds[0], candidates: [script] }] };
+  const mine = "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e10";
+  const borrowed = "1f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e11";
+  const h = harness({ session: { visual, inventory }, rights: { [borrowed]: "reference" } });
+  await h.run();
+  const sent = [h.calls.submits.length, h.calls.reviews.length, h.calls.portraits.length, h.calls.charges.length];
+  const session = await h.decide({ action: "own", slide: "cover", storyPhotoId: mine, fit: "cover" });
+  assert.equal(json([h.calls.submits.length, h.calls.reviews.length, h.calls.portraits.length, h.calls.charges.length]), json(sent), "no model, no review, no portrait, no charge");
+  const cover = session.images!.slides[0];
+  const own = imagesTypes.shownAttempt(cover)!;
+  assert.equal(json([own.version, own.kind, own.costMicros, own.review, own.own?.fill, own.own?.source, own.own?.rights, own.own?.storyPhotoId, own.own?.fit, Boolean(own.words), Boolean(own.wordsLayout)]),
+    json([2, "own", 0, undefined, "slide", "story-photo", "own", mine, "cover", true, true]));
+  assert.equal(json([stored(h, "cover-v2-base.png"), stored(h, "cover-v2.png")]), json(["own cover", "own cover|words|1/3|logo"]), "fitted, then the words, the page number and the logo; no portrait");
+  assert.equal(imagesTypes.imageCleared(own), true);
+  // Its words moved: the editor's own image again, with its words set again; never the portrait.
+  const moved = await h.decide({ action: "layout", slide: "cover", layout: { ...WORDS_LAYOUT, box: { left: 72, top: 700, width: 936 } }, all: false });
+  const again = imagesTypes.shownAttempt(moved.images!.slides[0])!;
+  assert.equal(json([again.kind, again.own?.storyPhotoId, stored(h, `cover-v${again.version}.png`)]), json(["words", mine, "own cover|words|1/3|logo"]));
+  await assert.rejects(h.decide({ action: "own", slide: "s1", storyPhotoId: borrowed, fit: "contain" }), /reference only: declare it your own or licensed/);
+  await assert.rejects(h.decide({ action: "layout", slide: "cover", layout: { ...WORDS_LAYOUT, setAs: { headline: "Another headline" } }, all: false }), /must keep the slide's words/);
+});
+
+test("the editor's own panorama scene: kept as sent, brought to a drawn scene's size, every slide cut from it with its words, free and never reviewed; too small a scene is refused", async () => {
+  const line = { form: "follow-the-line", anchorKind: "line", characterId: null, anchor: "The boardwalk trail", anchorFactIds: ["f1"], progression: "What the trail reaches", ending: "resolves" };
+  const h = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: line } } } } });
+  await h.run();
+  h.setRow({ images: { ...h.row().images!, presentation: { images: "panorama", text: "program" } } });
+  const sent = [h.calls.submits.length, h.calls.reviews.length, h.calls.charges.length];
+  const session = await h.ownScene({ image: Buffer.from("my-scene"), name: "playa.png", rights: "licensed", credit: "Photo: Ana Ruiz · CC BY 4.0" });
+  assert.equal(json([h.calls.submits.length, h.calls.reviews.length, h.calls.charges.length]), json(sent), "no model, no review, no charge");
+  const images = session.images!;
+  const scene = images.masterPlate!;
+  assert.equal(json([scene.version, scene.status, scene.width, scene.height, scene.costMicros, scene.own?.source, scene.own?.rights, scene.own?.provenance, scene.previous?.map((entry) => entry.version ?? 1)]),
+    json([2, "generated", 3232, 1344, 0, "upload", "licensed", "Photo: Ana Ruiz · CC BY 4.0", [1]]));
+  assert.equal(json([stored(h, "master-scene-v2-own.png"), stored(h, "master-scene-v2.png")]), json(["my-scene", "scene:my-scene"]), "the file as sent, and the scene cut from");
+  for (const slide of images.slides) {
+    const shown = imagesTypes.shownAttempt(slide)!;
+    assert.equal(json([shown.kind, shown.own?.fill, imagesTypes.imageCleared(shown)]), json(["section", "scene", true]));
+    assert.match(stored(h, `${slide.slide}-v${shown.version}.png`)!, /^section \d+\|words\|/);
+  }
+  assert.equal(images.status, "ready");
+  const small = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: line } } } }, sceneSize: { width: 1200, height: 400 } });
+  await small.run();
+  small.setRow({ images: { ...small.row().images!, presentation: { images: "panorama", text: "program" } } });
+  await assert.rejects(small.ownScene({ image: Buffer.from("tiny"), name: "tiny.png", rights: "own" }), /For 3 slides the scene needs at least 1296 × 540 pixels/);
 });

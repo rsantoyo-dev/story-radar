@@ -11,7 +11,9 @@ import { activeDraft2Session, getDraft2Session, updateDraft2Session } from "./dr
 import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
 import { funnelVersions } from "./draft2-funnel";
 import { draft2ImageFile } from "./draft2-images";
-import { slideUnit } from "./draft2-images.types";
+import { shownAttempt, slideUnit } from "./draft2-images.types";
+import { findStoryPhoto } from "../stories/story-materials.repository";
+import { publishablePhoto } from "../stories/story-materials.types";
 import { captionText, normalHashtag } from "./draft2-caption.types";
 import { DRAFT2_PROVIDER, publicationTarget, targetPostText, type Draft2Publication } from "./draft2-publication.types";
 import { chosenOpeningLever } from "./draft2-opening.types";
@@ -86,6 +88,13 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const target = publicationTarget(session);
+  // The editor's own photos publish under the rights declared now: one taken back to reference only since stops the approval.
+  for (const slide of target.slides) {
+    const own = shownAttempt(slide.image)?.own;
+    if (!own?.storyPhotoId) continue;
+    const photo = await findStoryPhoto(topicId, storyId, own.storyPhotoId);
+    if (!photo?.active || !publishablePhoto(photo.publicationRights)) throw new Draft2InputError(`${slide.label} shows ${own.name}, which is no longer declared your own or licensed: declare it again in the story's photos, or choose another image.`);
+  }
   const lever = chosenOpeningLever(session.opening);
   if (target.issues.length && !acknowledgeIssues) {
     throw new Draft2InputError(`Look at ${target.issues.length === 1 ? "this image" : "these images"} before publishing, then approve again: ${target.issues.join(" ")}`);

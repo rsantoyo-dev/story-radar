@@ -317,3 +317,42 @@ test("a scene the editor had made again that fails gives back the scene before, 
   assert.equal(sceneBefore({ ...base, status: "failed", queuedAt: first.queuedAt }), undefined, "a first scene that failed: the slides are drawn on their own");
   assert.equal(sceneBefore({ ...refused, previous: [{ ...base, status: "failed", queuedAt: first.queuedAt }] }), undefined, "nothing made before it");
 });
+
+test("the editor's word styles as sent, checked: a mark snapped to the font's weights, capitals, spacing within bounds, a shadow, and how the words read only when they stay the slide's", async () => {
+  const { parseWordsLayout, readsAs, setAsMismatches, withStyleOf, WORDS_TRACKING } = await import("./draft2-images.types");
+  const layout = parseWordsLayout({
+    headline: { font: "fraunces-soft", weight: 900, size: 88, color: "#253746", mark: { weight: 650, color: "#963F2D" }, upper: true, tracking: 900 },
+    text: { font: "dm-sans", weight: 500, size: 40, color: "#253746", tracking: 0, upper: "yes" },
+    shadow: true, setAs: { headline: "  El **anillo**\r\n  del café ", text: 7 },
+  });
+  assert.deepEqual(layout.headline.mark, { weight: 600, color: "#963F2D" }, "a weight the font has");
+  assert.equal(json([layout.headline.upper, layout.headline.tracking, layout.text.upper, layout.text.tracking, layout.shadow]), json([true, WORDS_TRACKING[1], undefined, undefined, true]));
+  assert.deepEqual(layout.setAs, { headline: "El **anillo**\ndel café" });
+  assert.equal(parseWordsLayout({ setAs: { headline: `${"a\n".repeat(12)}b` } }).setAs, undefined, "too many breaks");
+  const words = { headline: "El anillo del café", text: "El agua se va." };
+  assert.equal(readsAs(words.headline, layout.setAs?.headline), "El **anillo**\ndel café");
+  assert.equal(readsAs(words.headline, "El anillo de té"), words.headline, "other words: as written");
+  assert.deepEqual(setAsMismatches(words, { setAs: { headline: "El anillo de té", text: "El agua\nse va." } }), ["headline"]);
+  const other = parseWordsLayout({ box: { left: 72, top: 900, width: 600 }, setAs: { headline: "Otra\nslide" } });
+  const styled = withStyleOf(other, layout);
+  assert.equal(json([styled.box, styled.setAs, styled.headline.mark, styled.shadow]), json([other.box, { headline: "Otra\nslide" }, layout.headline.mark, true]), "another slide takes the style, keeps its place and its own breaks");
+  assert.equal(withStyleOf(parseWordsLayout({}), layout).setAs, undefined, "and never this slide's words");
+});
+
+test("the editor's own image stands without Sol: it settles at once, clears the run, and an uploaded scene of its own size is cut in the largest sections it holds", async () => {
+  const { attemptSettled, awaitsReview, cutSections, imageCleared, parseImagesAction, settledStatus } = await import("./draft2-images.types");
+  const own = { fill: "slide" as const, source: "story-photo" as const, name: "Taza en la mesa", rights: "own" as const, storyPhotoId: "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e10", sha256: "a", width: 2048, height: 1536, fit: "cover" as const };
+  const attempt = { version: 3, kind: "own" as const, status: "generated" as const, own, sha256: "b", queuedAt: "2026-10-18T10:00:00.000Z" };
+  assert.equal(json([imageCleared(attempt), attemptSettled(attempt), awaitsReview(attempt)]), json([true, true, false]));
+  const reviewed = { version: 1, kind: "generate" as const, status: "generated" as const, sha256: "c", queuedAt: attempt.queuedAt, review: { status: "issues" as const, issues: ["A logo"], note: "", transcription: "", model: "sol", at: attempt.queuedAt } };
+  const slide = (attempts: unknown[]) => ({ slide: "s1", label: "Slide 1", order: 2, need: "generic-illustration", material: [], notes: [], characterIds: [], attempts }) as never;
+  assert.equal(settledStatus([slide([reviewed])]), "needs-review");
+  assert.equal(settledStatus([slide([reviewed, attempt])]), "ready", "the editor's image replaces the flagged one");
+  assert.deepEqual(parseImagesAction({ action: "own", slide: "s1", storyPhotoId: own.storyPhotoId, fit: "contain" }), { action: "own", slide: "s1", storyPhotoId: own.storyPhotoId, fit: "contain" });
+  assert.equal((parseImagesAction({ action: "own", slide: "s1", storyPhotoId: own.storyPhotoId, fit: "stretch" }) as { fit: string }).fit, "cover");
+  assert.throws(() => parseImagesAction({ action: "own", slide: "s1", storyPhotoId: "../x" }), /Name the story's photo/);
+  // A 6-slide carousel from an uploaded 3840 × 1080 scene: six 4:5 sections as high as the width allows (799, as masterLayout rounds a drawn one), centred.
+  const sections = ["cover", "slide2", "s1", "s2", "penultimate", "last"].map((name) => ({ slide: name, left: 0, top: 0, width: 1, height: 1 }));
+  const cut = cutSections({ width: 3840, height: 1080, sections }, {});
+  assert.equal(json([cut.sections[0], cut.sections[5].left + cut.sections[5].width]), json([{ slide: "cover", left: 3, top: 140, width: 639, height: 799 }, 3837]));
+});

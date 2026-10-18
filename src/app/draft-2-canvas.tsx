@@ -25,7 +25,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_ALIGNS, WORDS_BACKGROUNDS, WORDS_MIN_WIDTH, WORDS_SIZE, cutSections, standingScene, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_ALIGNS, WORDS_BACKGROUNDS, WORDS_MIN_WIDTH, WORDS_SIZE, WORDS_TRACKING, cutSections, imageCleared, standingScene, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -47,6 +47,7 @@ import {
 } from "./draft-2-canvas-shell";
 import { BRAND_FONTS, FONT_WEIGHT_NAME, brandFontById } from "@/app/modules/stories/brand-fonts";
 import { StoryPhotosPanel } from "./story-photos-panel";
+import { OwnImageChooser, OwnSceneForm, PrivateThumb, ReadsAsField } from "./draft-2-own-images";
 import { HandEdits, OwnOpening, type HandEditChange, type HandEditField } from "./draft-2-hand-edits";
 import type { Draft2EditStep, Draft2OwnOpening } from "./modules/draft2/draft2-edits.types";
 import { publishablePhoto } from "./modules/stories/story-materials.types";
@@ -772,6 +773,23 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     if (queued) void runStep("images", { continuing: true });
   }
 
+  /** A panorama's scene the editor uploads: the slides are cut from it at once, no model called. */
+  async function uploadScene(form: FormData) {
+    if (!session || running || savingImage) return;
+    setSavingImage("scene"); setImageError(undefined);
+    try {
+      form.set("sessionId", session.id);
+      const response = await fetch(`/api/radar/draft2/images/scene?topicId=${encodeURIComponent(topicId)}`, { method: "POST", cache: "no-store", headers, body: form });
+      const body = await response.json().catch(() => ({})) as { session?: Draft2SessionView; error?: string };
+      if (!response.ok || !body.session) throw new Error(body.error ?? "Could not use the scene.");
+      setSession(body.session);
+    } catch (cause) {
+      setImageError(cause instanceof Error ? cause.message : "Could not use the scene.");
+    } finally {
+      setSavingImage(undefined);
+    }
+  }
+
   /** One decision on the accounts to tag: tag one, say it is not them, take that back, or add one of the editor's (checked on Instagram). */
   async function decideMention(input: Record<string, unknown>): Promise<boolean> {
     if (!session || running || savingMention) return false;
@@ -1468,7 +1486,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         </InlineNotice> : null}
         {imagesDownload ? <InlineNotice tone={imagesDownload.tone} title={imagesDownload.tone === "error" ? "The download failed" : undefined}>{imagesDownload.text}</InlineNotice> : null}
         {inventoryError ? <InlineNotice tone="error" title="The brand's characters were not read again">{inventoryError}</InlineNotice> : null}
-        {images && session && running !== "images" ? <ImagesView images={images} characters={inventory?.roster ?? []} story={{ topicId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} onRefreshCharacters={() => { void decideInventory({ action: "roster" }); }} refreshingCharacters={savingInventory === "roster"} /> : null}
+        {images && session && running !== "images" ? <ImagesView images={images} characters={inventory?.roster ?? []} story={{ topicId, storyId, sessionId: session.id, secret }} saving={savingImage} locked={running !== undefined || savingImage !== undefined} onDecide={(input) => { void decideImage(input); }} onUploadScene={(form) => { void uploadScene(form); }} onRefreshCharacters={() => { void decideInventory({ action: "roster" }); }} refreshingCharacters={savingInventory === "roster"} /> : null}
         {!images && available.images && !running ? <EmptyState title="No images yet">Make the images: each slide from the chosen visual script, reviewed one by one.</EmptyState> : null}
       </>,
     },
@@ -2080,23 +2098,6 @@ const BANK_RIGHTS_LABEL = { own: "our own", licensed: "licensed", reference: "re
 const fromBank = (entity: Draft2InventoryEntity) => Boolean(entity.storyPhoto && entity.bank?.linked?.storyPhotoId === entity.storyPhoto.id);
 
 /** A private photo of the bank, fetched with the editor's credentials. */
-function PrivateThumb({ url, secret, alt }: { url: string; secret: string; alt: string }) {
-  const [src, setSrc] = useState("");
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl = "";
-    fetch(url, { headers: { Authorization: `Bearer ${secret}` }, cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("The photo is unavailable.");
-        const blob = await response.blob();
-        if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setSrc(objectUrl); }
-      })
-      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
-    return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [url, secret]);
-  return src ? <Image className={styles.candidateThumb} src={src} alt={alt} width={160} height={120} unoptimized /> : <p className={styles.factMeta}>{failed ? "Could not load the photo." : "Loading…"}</p>;
-}
 
 /**
  * What the workspace's photo bank has of a person or place: the photos
@@ -2204,17 +2205,18 @@ function PlaceItem({ entity, photos, story, locked, onDecide }: { entity: Draft2
  * review, and the editor's choices: another image (with what to
  * change, optionally as an edit of the one shown), or another version.
  */
-function ImagesView({ images, characters, story, saving, locked, onDecide, onRefreshCharacters, refreshingCharacters }: {
+function ImagesView({ images, characters, story, saving, locked, onDecide, onUploadScene, onRefreshCharacters, refreshingCharacters }: {
   /** The brand's characters with a reference image, for casting a slide's next image. */
   characters: readonly { id: string; name: string }[];
   onRefreshCharacters: () => void;
   refreshingCharacters: boolean;
   images: Draft2Images;
   /** Where the images are read from; the secret authorizes it when the editor is not signed in. */
-  story: { topicId: string; sessionId: string; secret: string };
+  story: ImagesScope;
   saving?: string;
   locked: boolean;
   onDecide: (input: Record<string, unknown>) => void;
+  onUploadScene: (form: FormData) => void;
 }) {
   const shown = images.slides.filter((slide) => shownAttempt(slide)).length;
   const costMicros = images.slides.flatMap((slide) => slide.attempts).reduce((sum, attempt) => sum + (attempt.costMicros ?? 0), 0) + (images.anchorPlate?.costMicros ?? 0) + (images.masterPlate?.costMicros ?? 0);
@@ -2225,7 +2227,7 @@ function ImagesView({ images, characters, story, saving, locked, onDecide, onRef
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>{shown} of {images.slides.length} slides · from visual script {images.visualId} · {images.quality} quality · {images.model}{costMicros ? ` · ≈US$${(costMicros / 1_000_000).toFixed(2)} in images` : ""}</p>
     {plate ? <p className={styles.factMeta}>Anchor plate · {plate.anchor} · {plate.status === "generated" ? "drawn once without words; every slide that carries the anchor takes it as a reference" : plate.status === "failed" ? `could not be made${plate.error ? ` (${clip(plate.error, 120)})` : ""}; the slides keep the anchor by the script’s words alone` : "being drawn before the slides"}</p> : null}
-    {scene ? <SceneEditor images={images} plate={scene} story={story} saving={saving} locked={locked} onDecide={onDecide} /> : null}
+    {scene ? <SceneEditor images={images} plate={scene} story={story} saving={saving} locked={locked} onDecide={onDecide} onUploadScene={onUploadScene} /> : null}
     {master && !scene ? <p className={styles.factMeta}>{images.presentation?.images === "panorama" ? "Panorama" : "Master scene"} · {master.anchor} · {master.status === "generated" ? `drawn once, ${master.width}×${master.height}, without words; each slide is redrawn from its section` : master.status === "failed" ? `could not be made${master.error ? ` (${clip(master.error, 120)})` : ""}; each slide is drawn on its own from the script` : "being drawn before the slides"}</p> : null}
     <ol className={styles.imageGrid}>{images.slides.map((slide) => <SlideImageCard key={slide.slide} slide={slide} characters={characters} runId={images.runId} story={story} saving={saving === slide.slide} locked={locked} onDecide={onDecide} onRefreshCharacters={onRefreshCharacters} refreshingCharacters={refreshingCharacters} />)}</ol>
   </div>;
@@ -2252,13 +2254,14 @@ function ImageReviewLines({ review }: { review: Draft2ImageReview }) {
  * free; "Make the scene again" asks for a new scene with what to change, and
  * the slides are cut from it. Every earlier version stays.
  */
-function SceneEditor({ images, plate, story, saving, locked, onDecide }: {
+function SceneEditor({ images, plate, story, saving, locked, onDecide, onUploadScene }: {
   images: Draft2Images;
   plate: NonNullable<Draft2Images["masterPlate"]>;
   story: { topicId: string; sessionId: string; secret: string };
   saving?: string;
   locked: boolean;
   onDecide: (input: Record<string, unknown>) => void;
+  onUploadScene: (form: FormData) => void;
 }) {
   const saved = plate.offset ?? { x: 0, y: 0, scale: 1 };
   const [offset, setOffset] = useState(saved);
@@ -2274,7 +2277,7 @@ function SceneEditor({ images, plate, story, saving, locked, onDecide }: {
   const refused = plate.previous?.filter((entry) => entry.status === "failed" && (entry.version ?? 1) > (plate.version ?? 1)).at(-1);
   return <div className={styles.focusBody}>
     <p className={styles.factMeta}>
-      Panorama · scene v{plate.version ?? 1} · {plate.width}×{plate.height} · each slide is its numbered section, cut as it is{kept ? ` · ${kept} earlier ${kept === 1 ? "version" : "versions"} kept` : ""}{plate.instruction ? ` · asked: “${clip(plate.instruction, 120)}”` : ""}
+      Panorama · scene v{plate.version ?? 1}{plate.own ? ` · yours (${plate.own.rights === "licensed" ? "licensed" : "your own"}), not drawn by the model` : ""} · {plate.width}×{plate.height} · each slide is its numbered section, cut as it is{kept ? ` · ${kept} earlier ${kept === 1 ? "version" : "versions"} kept` : ""}{plate.instruction ? ` · asked: “${clip(plate.instruction, 120)}”` : ""}
     </p>
     {refused ? <p className={styles.factMeta}>Scene v{refused.version ?? 1} could not be made{refused.error ? ` (${clip(refused.error, 160)})` : ""}{refused.instruction ? `, asked: “${clip(refused.instruction, 120)}”` : ""}. The slides keep scene v{plate.version ?? 1}; say it another way and make the scene again.</p> : null}
     <PrivateDraft2Image url={`/api/radar/draft2/images/file?${query}`} secret={story.secret} alt={`The panorama's scene, version ${plate.version ?? 1}, with its cuts`} wide={{ width: 1920, height: Math.round((1920 * plate.height) / plate.width) }} />
@@ -2294,6 +2297,10 @@ function SceneEditor({ images, plate, story, saving, locked, onDecide }: {
     <ActionRow>
       <Button size="compact" variant="secondary" busy={saving === "scene"} disabled={locked || busy} onClick={() => onDecide({ action: "scene", slide: "scene", ...(instruction.trim() ? { instruction } : {}) })}>Make the scene again</Button>
     </ActionRow>
+    <details>
+      <summary>Use your own scene</summary>
+      <OwnSceneForm slides={plate.sections.length} saving={saving === "scene"} locked={locked || busy} onUpload={onUploadScene} />
+    </details>
   </div>;
 }
 
@@ -2302,13 +2309,27 @@ const WORDS_BACKGROUND_LABEL: Record<Draft2WordsLayout["background"]["kind"], st
 const FONT_CATEGORY_NAME: Record<string, string> = { "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", condensed: "Condensed", handwritten: "Handwritten" };
 const SLIDE_PX = { width: 1080, height: 1350 } as const;
 
+/** Where the images are read from and the story's photos with them; the secret authorizes it when the editor is not signed in. */
+type ImagesScope = { topicId: string; storyId: string; sessionId: string; secret: string };
+
+/** A layout with one role's "how it reads" set, or taken off (as written). */
+function withSetAs(layout: Draft2WordsLayout, role: "headline" | "text", value: string | undefined): Draft2WordsLayout {
+  const { setAs, ...rest } = layout;
+  const next: NonNullable<Draft2WordsLayout["setAs"]> = { ...setAs };
+  if (value === undefined) delete next[role];
+  else next[role] = value;
+  return next.headline !== undefined || next.text !== undefined ? { ...rest, setAs: next } : rest;
+}
+
 /** One role's controls: its font (the bundled catalog), weight, size in slide pixels and colour. */
 function WordsRoleControls({ label, role, range, disabled, onChange }: { label: string; role: Draft2WordsLayout["headline"]; range: readonly [number, number]; disabled: boolean; onChange: (role: Draft2WordsLayout["headline"]) => void }) {
   const font = brandFontById(role.font);
+  // The marked words' style as the renderer reads it: the editor's, else the font's heaviest weight in the role's colour.
+  const mark = role.mark ?? { weight: font ? Math.max(...font.weights) : role.weight, color: role.color };
   const categories = [...new Set(BRAND_FONTS.map((entry) => entry.category))];
   return <>
     <FormField label={`${label}: font`}>
-      <select value={role.font} disabled={disabled} onChange={(event) => { const next = brandFontById(event.target.value); onChange({ ...role, font: event.target.value, weight: next?.weights.includes(role.weight) ? role.weight : next?.weights[next.weights.length - 1] ?? role.weight }); }}>
+      <select value={role.font} disabled={disabled} onChange={(event) => { const next = brandFontById(event.target.value); onChange({ ...role, font: event.target.value, weight: next?.weights.includes(role.weight) ? role.weight : next?.weights[next.weights.length - 1] ?? role.weight, ...(role.mark ? { mark: { ...role.mark, weight: next?.weights.includes(role.mark.weight) ? role.mark.weight : next?.weights[next.weights.length - 1] ?? role.mark.weight } } : {}) }); }}>
         {categories.map((category) => <optgroup key={category} label={FONT_CATEGORY_NAME[category] ?? category}>
           {BRAND_FONTS.filter((entry) => entry.category === category).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
         </optgroup>)}
@@ -2325,6 +2346,18 @@ function WordsRoleControls({ label, role, range, disabled, onChange }: { label: 
     <FormField label={`${label}: colour`}>
       <input type="color" value={role.color} disabled={disabled} onChange={(event) => onChange({ ...role, color: event.target.value })} />
     </FormField>
+    <FormField label={`${label}: marked words' weight`} description={mark.weight === role.weight && mark.color === role.color ? "The same as the rest: give them a weight or a colour to stand out." : undefined}>
+      <select value={mark.weight} disabled={disabled} onChange={(event) => onChange({ ...role, mark: { ...mark, weight: Number(event.target.value) } })}>
+        {(font?.weights ?? [mark.weight]).map((weight) => <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>)}
+      </select>
+    </FormField>
+    <FormField label={`${label}: marked words' colour`}>
+      <input type="color" value={mark.color} disabled={disabled} onChange={(event) => onChange({ ...role, mark: { ...mark, color: event.target.value } })} />
+    </FormField>
+    <FormField label={`${label}: letter spacing`} description={`${WORDS_TRACKING[0]} to ${WORDS_TRACKING[1]}, in thousandths of the size`}>
+      <input type="number" min={WORDS_TRACKING[0]} max={WORDS_TRACKING[1]} step={10} value={role.tracking ?? 0} disabled={disabled} onChange={(event) => { const tracking = Number(event.target.value); if (Number.isFinite(tracking)) { const { tracking: _old, ...rest } = role; void _old; const next = Math.min(WORDS_TRACKING[1], Math.max(WORDS_TRACKING[0], Math.round(tracking))); onChange(next ? { ...rest, tracking: next } : rest); } }} />
+    </FormField>
+    <label className={styles.factMeta}><input type="checkbox" checked={Boolean(role.upper)} disabled={disabled} onChange={(event) => { const { upper: _old, ...rest } = role; void _old; onChange(event.target.checked ? { ...rest, upper: true } : rest); }} /> {label} in capitals</label>
   </>;
 }
 
@@ -2385,6 +2418,8 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
   onDecide: (input: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Draft2WordsLayout>(layout);
+  // The words the program set on the image shown: what "how it reads" must keep.
+  const words = shownAttempt(slide)?.words;
   const [all, setAll] = useState(false);
   const [preview, setPreview] = useState<{ src: string; bottom: number }>();
   const [previewError, setPreviewError] = useState<string>();
@@ -2455,6 +2490,7 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
       </FormField>
       <WordsRoleControls label="Headline" role={draft.headline} range={WORDS_SIZE.headline} disabled={disabled} onChange={(headline) => setDraft({ ...draft, headline })} />
       <WordsRoleControls label="Text" role={draft.text} range={WORDS_SIZE.text} disabled={disabled} onChange={(text) => setDraft({ ...draft, text })} />
+      <label className={styles.factMeta}><input type="checkbox" checked={Boolean(draft.shadow)} disabled={disabled} onChange={(event) => { const { shadow: _old, ...rest } = draft; void _old; setDraft(event.target.checked ? { ...rest, shadow: true } : rest); }} /> A soft shadow under the letters (for words straight on a photo)</label>
       <FormField label="Behind the words">
         <select value={draft.background.kind} disabled={disabled} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, kind: event.target.value as Draft2WordsLayout["background"]["kind"] } })}>
           {WORDS_BACKGROUNDS.map((kind) => <option key={kind} value={kind}>{WORDS_BACKGROUND_LABEL[kind]}</option>)}
@@ -2469,7 +2505,11 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
         </FormField>
       </> : null}
     </div>
-    <label className={styles.factMeta}><input type="checkbox" checked={all} disabled={disabled} onChange={(event) => setAll(event.target.checked)} /> Give every slide this style (fonts, sizes, colours, background, alignment); each keeps its own place</label>
+    {words ? <>
+      <ReadsAsField label="headline" words={words.headline} value={draft.setAs?.headline} disabled={disabled} onChange={(headline) => setDraft(withSetAs(draft, "headline", headline))} />
+      {words.text ? <ReadsAsField label="text" words={words.text} value={draft.setAs?.text} disabled={disabled} onChange={(value) => setDraft(withSetAs(draft, "text", value))} /> : null}
+    </> : null}
+    <label className={styles.factMeta}><input type="checkbox" checked={all} disabled={disabled} onChange={(event) => setAll(event.target.checked)} /> Give every slide this style (fonts, sizes, colours, marks, capitals, spacing, shadow, background, alignment); each keeps its own place and its own line breaks</label>
     <ActionRow>
       <Button size="compact" variant="secondary" busy={saving} disabled={disabled || (!changed && !all)} onClick={() => onDecide({ action: "layout", slide: slide.slide, layout: draft, all })}>Apply</Button>
       <Button size="compact" variant="quiet" disabled={disabled || JSON.stringify(draft) === JSON.stringify(layout)} onClick={() => setDraft(layout)}>Undo the changes</Button>
@@ -2483,13 +2523,15 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
   onRefreshCharacters: () => void;
   refreshingCharacters: boolean;
   runId: string;
-  story: { topicId: string; sessionId: string; secret: string };
+  story: ImagesScope;
   saving: boolean;
   locked: boolean;
   onDecide: (input: Record<string, unknown>) => void;
 }) {
   const [instruction, setInstruction] = useState("");
   const [edit, setEdit] = useState(false);
+  // What opens below the image is read from the server only once the editor opens it.
+  const [opened, setOpened] = useState<{ words?: boolean; own?: boolean }>({});
   // The cast for the next image: the slide's own until the editor changes it.
   const [cast, setCast] = useState<string[]>();
   // A verified photo keeps the brand's characters off; a map slide may carry one beside the card.
@@ -2502,21 +2544,22 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
   const corrected = shown?.kind === "correct" ? slide.attempts.find((attempt) => attempt.version === (shown.baseVersion ?? shown.correctsVersion)) : undefined;
   const map = slide.material.find((entry) => entry.kind === "map");
   const mapPosition = map?.kind === "map" && map.panel ? map.panel.position ?? "bottom-right" : undefined;
-  const tone: StatusTone = !shown ? (latest?.status === "failed" ? "error" : "info") : shown.review?.status === "passed" ? "success" : "warning";
+  const tone: StatusTone = !shown ? (latest?.status === "failed" ? "error" : "info") : imageCleared(shown) ? "success" : "warning";
   const url = shown ? `/api/radar/draft2/images/file?topicId=${encodeURIComponent(story.topicId)}&sessionId=${encodeURIComponent(story.sessionId)}&run=${encodeURIComponent(runId)}&slide=${encodeURIComponent(slide.slide)}&version=${shown.version}` : undefined;
   return <li className={styles.imageCard}>
     <div className={styles.factHead}>
       <strong>{slide.label}</strong>
-      <StatusBadge tone={tone}>{shown ? (shown.review?.status === "passed" ? "Passed" : shown.kind === "correct" ? "Corrected" : shown.review?.status === "issues" ? "Issues" : "Made") : latest ? IMAGE_STATUS_LABEL[latest.status] : "No image"}</StatusBadge>
+      <StatusBadge tone={tone}>{shown ? (shown.own ? "Yours" : shown.review?.status === "passed" ? "Passed" : shown.kind === "correct" ? "Corrected" : shown.review?.status === "issues" ? "Issues" : "Made") : latest ? IMAGE_STATUS_LABEL[latest.status] : "No image"}</StatusBadge>
       {shown ? <span className={styles.factMeta}>v{shown.version}</span> : null}
     </div>
     {url ? <PrivateDraft2Image url={url} secret={story.secret} alt={`${slide.label}, version ${shown?.version}`} /> : <div className={styles.imageFrame}><p className={styles.factMeta}>{latest?.status === "failed" ? latest.error : pending ? "Being made…" : "No image"}</p></div>}
     {generated.length > 1 ? <div className={styles.imageVersions} role="group" aria-label={`${slide.label}: versions`}>
       {generated.map((attempt) => <Button key={attempt.version} size="compact" variant={attempt.version === shown?.version ? "secondary" : "quiet"} disabled={locked || attempt.version === shown?.version} onClick={() => onDecide({ action: "choose", slide: slide.slide, version: attempt.version })}>
-        v{attempt.version}{attempt.kind === "correct" ? " · corrected" : attempt.kind === "regenerate" ? " · yours" : attempt.kind === "words" ? " · new words" : attempt.kind === "section" ? " · panorama" : ""}
+        v{attempt.version}{attempt.kind === "correct" ? " · corrected" : attempt.kind === "regenerate" ? " · yours" : attempt.kind === "words" ? " · new words" : attempt.kind === "section" ? (attempt.own ? " · your scene" : " · panorama") : attempt.kind === "own" ? " · your image" : ""}
       </Button>)}
     </div> : null}
     {shown?.review ? <ImageReviewLines review={shown.review} /> : null}
+    {shown?.own ? <p className={styles.factMeta}>{shown.own.fill === "slide" ? `Your image: ${shown.own.name}` : `A section of your scene, ${shown.own.name}`} ({shown.own.rights === "licensed" ? "licensed, credited in the caption" : "your own"}). Sol does not review it.</p> : null}
     {corrected?.review ? <p className={styles.factMeta}>{shown?.correctsVersion ? "Made again" : "Corrected"} from v{corrected.version} for: {corrected.review.issues.join(" ")}{shown?.review ? "" : " Not reviewed again: look at it yourself."}</p> : null}
     {latest && latest !== shown && latest.status === "failed" ? <p className={styles.factMeta}>v{latest.version} failed: {latest.error}</p> : null}
     {slide.notes.map((entry) => <p key={entry} className={styles.factMeta}>{entry}</p>)}
@@ -2525,10 +2568,14 @@ function SlideImageCard({ slide, characters, runId, story, saving, locked, onDec
         {MAP_PANEL_POSITIONS.map((position) => <option key={position} value={position}>{MAP_POSITION_LABEL[position]}</option>)}
       </select>
     </FormField> : null}
-    {shown?.words ? <details>
+    {shown?.words ? <details onToggle={(event) => { const open = event.currentTarget.open; setOpened((current) => ({ ...current, words: open })); }}>
       <summary>Words: place and style</summary>
-      <WordsEditor key={shown.version} slide={slide} layout={shown.wordsLayout} story={story} saving={Boolean(saving)} locked={locked || pending} onDecide={onDecide} />
+      {opened.words ? <WordsEditor key={shown.version} slide={slide} layout={shown.wordsLayout} story={story} saving={Boolean(saving)} locked={locked || pending} onDecide={onDecide} /> : null}
     </details> : null}
+    <details onToggle={(event) => { const open = event.currentTarget.open; setOpened((current) => ({ ...current, own: open })); }}>
+      <summary>Your own image</summary>
+      {opened.own ? <OwnImageChooser label={slide.label} scope={{ topicId: story.topicId, storyId: story.storyId, secret: story.secret }} saving={Boolean(saving)} locked={locked || pending} onUse={({ storyPhotoId, fit }) => onDecide({ action: "own", slide: slide.slide, storyPhotoId, fit })} /> : null}
+    </details>
     <details>
       <summary>Another image</summary>
       <FormField label="What to change" description="Optional for a new image; needed to edit this one.">

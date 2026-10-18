@@ -77,3 +77,38 @@ test("a slide lettered before layouts were kept: the program finds again the lay
   assert.deepEqual(found, set.layout);
   assert.equal(await changedPixels(set.image, await drawWords({ image: cream, words, layout: found }), { left: 0, top: 0, width: 1080, height: 1350 }), 0);
 });
+
+/** The pixels of a region close to a colour (within 40 on each channel). */
+async function pixelsOf(image: Uint8Array, region: { left: number; top: number; width: number; height: number }, color: [number, number, number]): Promise<number> {
+  const raw = await sharp(Buffer.from(image)).extract(region).removeAlpha().raw().toBuffer();
+  let count = 0;
+  for (let at = 0; at < raw.length; at += 3) if (Math.abs(raw[at] - color[0]) < 40 && Math.abs(raw[at + 1] - color[1]) < 40 && Math.abs(raw[at + 2] - color[2]) < 40) count++;
+  return count;
+}
+
+test("the editor's styles on the words: a marked word in its colour, a line broken where they broke it, capitals, letter spacing and a shadow; the words themselves never change", async () => {
+  const { drawWords, wordsBlockBottom } = await import("./draft2-text-layer");
+  const cream = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#F6F0E4" } }).png().toBuffer());
+  const words = { headline: "El anillo del café", text: "El agua se va por el borde." };
+  const base = {
+    box: { left: 72, top: 64, width: 936 }, align: "left" as const, background: { kind: "none" as const, color: "#F6F0E4", opacity: 0.92 },
+    headline: { font: "fraunces-soft", weight: 900, size: 88, color: "#253746" }, text: { font: "dm-sans", weight: 500, size: 40, color: "#253746" },
+  };
+  const whole = { left: 0, top: 0, width: 1080, height: 400 };
+  const plain = await drawWords({ image: cream, words, layout: base });
+  assert.equal(await pixelsOf(plain, whole, [0x96, 0x3f, 0x2d]), 0, "no terracotta before a mark");
+  // "anillo" marked in terracotta: the rest stays ink.
+  const marked = await drawWords({ image: cream, words, layout: { ...base, headline: { ...base.headline, mark: { weight: 900, color: "#963F2D" } }, setAs: { headline: "El **anillo** del café" } } });
+  assert.ok(await pixelsOf(marked, whole, [0x96, 0x3f, 0x2d]) > 800, "the marked word in its colour");
+  assert.ok(await pixelsOf(marked, whole, [0x25, 0x37, 0x46]) > 800, "the others in the role's");
+  // A break where the editor wants it adds the headline's line; the block ends lower.
+  const broken = { ...base, setAs: { headline: "El anillo\ndel café" } };
+  assert.equal(wordsBlockBottom(words, broken) - wordsBlockBottom(words, base), Math.round(88 * 1.08), "one more headline line");
+  // Words that are not the slide's are ignored: the slide reads as written.
+  const other = await drawWords({ image: cream, words, layout: { ...base, setAs: { headline: "La mancha del té" } } });
+  assert.equal(await changedPixels(plain, other, { left: 0, top: 0, width: 1080, height: 1350 }), 0, "never other words than the slide's");
+  // Capitals and letter spacing widen the line; a shadow darkens around the letters.
+  assert.ok(await changedPixels(plain, await drawWords({ image: cream, words, layout: { ...base, headline: { ...base.headline, upper: true } } }), whole) > 1_000);
+  assert.ok(await changedPixels(plain, await drawWords({ image: cream, words, layout: { ...base, headline: { ...base.headline, tracking: 120 } } }), whole) > 1_000);
+  assert.ok(await changedPixels(plain, await drawWords({ image: cream, words, layout: { ...base, shadow: true } }), whole) > 1_000);
+});

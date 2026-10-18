@@ -37,7 +37,7 @@ const profile = { name: "Salut Longueuil", audience: "Families" };
 
 type Row = Record<string, unknown> & { publication: Draft2Publication | null };
 
-function harness({ session, approves = true, refreshed = "completed", provider = "draft2", retired = false }: { session?: Record<string, unknown>; approves?: boolean; refreshed?: string; provider?: string; retired?: boolean } = {}) {
+function harness({ session, approves = true, refreshed = "completed", provider = "draft2", retired = false, photos = {} }: { session?: Record<string, unknown>; approves?: boolean; refreshed?: string; provider?: string; retired?: boolean; photos?: Record<string, { active: boolean; publicationRights: string }> } = {}) {
   const calls = { briefs: [] as Record<string, unknown>[], drafts: [] as Record<string, unknown>[], batches: [] as Record<string, unknown>[], completed: [] as [string, Record<string, unknown>][], approvals: [] as unknown[] };
   let row: Row = { id: sessionId, topicId, storyId, step: "caption", status: "ready", facts, visual: VISUAL, images: IMAGES, caption: CAPTION, mentions: null, publication: null, ...session };
   /** The v1 asset rows created so far, by id, as findCreativeAssetById reads them. */
@@ -67,6 +67,8 @@ function harness({ session, approves = true, refreshed = "completed", provider =
       findCreativeAssetBatchById: async (id: string) => ({ id, draftId: id.replace("batch", "draft"), draftVersion: 1, status: retired ? "stale" : "completed", assets: IMAGES.slides.map(() => ({ status: retired ? "generated" : "approved" })) }),
     },
     "../stories/creative-image-prompt-contracts": { creativeImageModelVisibleText: (unit: { headline: string }) => unit.headline },
+    // The story's photos as the editor declared them now: the one an own image shows is looked up by id.
+    "../stories/story-materials.repository": { findStoryPhoto: async (_topic: string, _story: string, id: string) => photos[id] },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
       getDraft2Session: async (topic: string, id: string) => topic === topicId && id === row.id ? row : undefined,
@@ -165,4 +167,15 @@ test("v1 reads a copied slide's image from Draft 2's storage, and only while it 
   const v1 = harness({ provider: "fal" });
   await v1.prepare();
   await assert.rejects(v1.image("asset-1-1"), /not a Draft 2 publication image/, "an image of another provider is never read here");
+});
+
+test("the editor's own photo publishes under the rights declared now: one taken back to reference only, or removed, stops the approval; one still their own goes without a review", async () => {
+  const photo = "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e10";
+  const own = { fill: "slide" as const, source: "story-photo" as const, name: "Taza en la mesa", rights: "own" as const, storyPhotoId: photo, sha256: "a", width: 2048, height: 1536, fit: "cover" as const };
+  const images: Draft2Images = { ...IMAGES, slides: [slideImage("cover", "Cover", 1, [attempt("cover", 1), attempt("cover", 2, { kind: "own", review: undefined, own })]), slideImage("last", "Slide 2", 2)] };
+  for (const [photos, refused] of [[{ [photo]: { active: true, publicationRights: "reference" } }, true], [{}, true], [{ [photo]: { active: false, publicationRights: "own" } }, true], [{ [photo]: { active: true, publicationRights: "own" } }, false]] as const) {
+    const h = harness({ session: { images }, photos });
+    if (refused) await assert.rejects(h.prepare(), /Cover shows Taza en la mesa, which is no longer declared your own or licensed/);
+    else assert.equal((await h.prepare()).publication?.slides[0].version, 2, "the editor's own image, approved with no review to acknowledge");
+  }
 });

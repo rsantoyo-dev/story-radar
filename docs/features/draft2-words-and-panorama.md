@@ -185,3 +185,60 @@ text object that sits on top".
   (headline 28–160, text 18–80), and takes colours as `#rrggbb`.
 - Styles in `draft-2-canvas.module.uxdsl` use the theme's tokens: the box's
   edge is `border(dashed-primary)`, its focus the shared `border(focus)` ring.
+
+## 2026-10-18: the editor's own images, and styles in the words
+
+The editor asked to upload their own image for a slide or to cut ("a
+gallery of photos I took, and the program did not take them all"), and for
+bold and other styles in the words. Both are optional; nothing changes for a
+carousel that does not use them. No migration: everything lives in the
+versioned images record.
+
+**Your own image (each slide card).** "Your own image" lists the story's
+photos with their rights; "Use on this slide" puts one there, fitted to the
+slide: cropped around the photo's focal point (or where the eye goes when it
+has none), or whole on the brand's lightest colour. "Upload and use it" adds
+a photo to the story's photos (and so the photo bank), with its rights and
+credit, and uses it at once. The result is a new version of kind `own`
+(`placeOwnImage`, `PATCH /images { action: "own", slide, storyPhotoId, fit }`):
+no model, no cost, the earlier versions kept. The program sets the slide's
+words on it whatever the presentation, then the page number and the logo; no
+portrait or map is pasted on it, since the photo is the slide. Sol never
+reviews it (`imageCleared`): the run is ready with it, and approval lists no
+issue for it.
+
+- Only a photo declared own or licensed goes on a slide. Approval looks the
+  photo up again (`prepareDraft2Publication`): one taken back to reference
+  only, or removed, stops the approval.
+- A licensed photo carries its credit to the caption (`captionCredits`), in
+  place of the credits of the slide's material, which is not on it.
+- Its words can be moved and restyled like any the program set; the version
+  keeps its `own` record (`words` attempts copy it).
+
+**Your own scene (a panorama's scene editor).** "Use your own scene" uploads
+a JPG, PNG or WebP up to 25 MB (`POST /api/radar/draft2/images/scene`,
+`placeOwnDraft2Scene`), with its rights and, when licensed, its credit. The
+file is kept as sent (`master-scene-vN-own.<ext>`), and the scene, brought to
+at most 3840 × 2160, becomes the scene's next version; the drawn one stays in
+its history. Every slide is cut from it at once (`cutEverySlide`, shared with
+"Cut again"), with its words, free and never reviewed. The cuts are the
+largest 4:5 sections the scene holds (`cutSections` now reads the scene's own
+size); a scene too small to give each slide 540 pixels of height is refused,
+with the size it needs.
+
+**Styles in the words (the words' editor).** On top of the box, alignment,
+fonts, sizes, colours and background:
+
+- **How it reads**: the headline and the text as they sit on the slide, with
+  line breaks where the editor wants them and `**marked**` words ("Mark the
+  selection" wraps the selected words). Only breaks and marks may change: the
+  words stay the slide's (`readsAs`, `setAsMismatches`; the server refuses
+  other words, and words changed later in the Deck set the slide as written).
+  Kept per slide: "Give every slide this style" never copies it.
+- **Marked words** take their own weight and colour (default: the font's
+  heaviest weight in the role's colour).
+- **Capitals**, **letter spacing** (−50 to 300 thousandths of the size) per
+  role, and a **soft shadow** under the letters for words straight on a photo.
+
+The renderer (`draft2-text-layer.ts`) places each line by its own width and
+draws its runs one after the other, switching face for marked words.

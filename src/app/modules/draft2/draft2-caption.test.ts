@@ -218,6 +218,19 @@ test("the credits the post owes, as v1 owes them: a photo pasted unchanged, a Co
   assert.equal(json(h.credits({ slides: [slideImage("cover", 1, [{ kind: "pasted-photo", storyPhotoId: "p1", name: "Mayor", person: true }], [generated(1, { status: "failed", review: undefined })])] }, inventory)), json([]), "a slide without an image owes nothing");
 });
 
+test("the editor's own images owe their own credit when licensed: a photo on a slide instead of the slide's material, a section of their scene beside it", () => {
+  const h = harness();
+  const inventory = { entities: [], storyPhotos: [{ id: "p1", name: "Mayor", provenance: "Photo: Ville de Longueuil" }] };
+  const own = (fill: "slide" | "scene", rights: "own" | "licensed", provenance?: string) => ({ fill, source: fill === "slide" ? "story-photo" as const : "upload" as const, name: "x", rights, ...(provenance ? { provenance } : {}), sha256: "a", width: 1, height: 1 });
+  const images = { slides: [
+    slideImage("cover", 1, [{ kind: "pasted-photo", storyPhotoId: "p1", name: "Mayor", person: true }], [generated(1), generated(2, { kind: "own", review: undefined, own: own("slide", "licensed", "Photo: Ana Ruiz · CC BY 4.0") })]),
+    slideImage("slide2", 2, [], [generated(1, { kind: "own", review: undefined, own: own("slide", "own") })]),
+    slideImage("last", 3, [{ kind: "pasted-photo", storyPhotoId: "p1", name: "Mayor", person: true }], [generated(1, { kind: "section", review: undefined, own: own("scene", "licensed", "Scene: Luis Paz · CC BY 4.0") })]),
+  ] };
+  assert.equal(json(h.credits(images, inventory)), json(["Portrait: Photo: Ana Ruiz · CC BY 4.0", "Portrait: Scene: Luis Paz · CC BY 4.0", "Portrait: Photo: Ville de Longueuil"]),
+    "the cover's portrait is not on the editor's photo; their own photo owes nothing; a section of their scene keeps its slide's portrait");
+});
+
 test("the editor shows or leaves out the photo credits: no provider call, the choice stays with the next run, never while a run writes", async () => {
   const h = harness({ writes: [writer, writer], judgments: [judge("accept", "c1", { c1: 96 }), judge("accept", "c1", { c1: 96 })] });
   await h.run();

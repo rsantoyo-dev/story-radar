@@ -51,6 +51,12 @@ export function captionCredits(images: Pick<Draft2ImagesRun, "slides">, inventor
   for (const slide of [...images.slides].sort((a, b) => a.order - b.order)) {
     const shown = shownAttempt(slide);
     if (!shown) continue;
+    // The editor's own photo is the whole slide: it owes its own credit when licensed, and the slide's material is not on it.
+    if (shown.own?.fill === "slide") {
+      if (shown.own.rights === "licensed" && shown.own.provenance) credits.push(portraitCreditLine(shown.own.provenance));
+      continue;
+    }
+    if (shown.own?.fill === "scene" && shown.own.rights === "licensed" && shown.own.provenance) credits.push(portraitCreditLine(shown.own.provenance));
     for (const material of slide.material) {
       const photo = "storyPhotoId" in material ? inventory?.storyPhotos.find((entry) => entry.id === material.storyPhotoId) : undefined;
       if (material.kind === "pasted-photo" && photo?.provenance) credits.push(portraitCreditLine(photo.provenance));

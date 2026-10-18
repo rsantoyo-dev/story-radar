@@ -7,7 +7,7 @@ import { lightness } from "../stories/creative-brand-logo-versions";
 import type { CreativeBrandPaletteColor } from "../stories/creative-content.types";
 import type { PortraitLayoutId } from "../stories/creative-portrait-composite";
 import type { MapPanelPosition } from "../stories/map-panel-position";
-import type { Draft2SlideWords, Draft2WordsLayout, Draft2WordsRole } from "./draft2-images.types";
+import { readsAs, type Draft2SlideWords, type Draft2WordsLayout, type Draft2WordsRole } from "./draft2-images.types";
 
 /**
  * The slide's words set by the program (2026-10-17, the editor: "put the
@@ -19,7 +19,9 @@ import type { Draft2SlideWords, Draft2WordsLayout, Draft2WordsRole } from "./dra
  * again. Since the same day the words are drawn by Skia (@napi-rs/canvas) in
  * the brand's fonts (brand-fonts.ts), which it reads from their files on every
  * host; each slide keeps its layout (Draft2WordsLayout), which the editor
- * moves, resizes and restyles.
+ * moves, resizes and restyles. Since 2026-10-18 a line may mix the role's
+ * weight with **marked** words, break where the editor broke it, run in
+ * capitals or with letter spacing, and carry a soft shadow on a photo.
  */
 
 export const TEXT_CANVAS = { width: 1080, height: 1350 } as const;
@@ -97,25 +99,75 @@ const PANEL_PADDING = 32;
 const BLOCK_GAP = 0.6;
 const LINE_HEIGHT = { headline: 1.08, text: 1.3 } as const;
 
-type Line = { text: string; width: number };
-type Block = { lines: Line[]; size: number; lineHeight: number; role: Draft2WordsRole; weight: number; family: Draft2WordsRole["font"] };
+/** A stretch of a line in one face: the role's, or its mark's. */
+type Run = { text: string; marked: boolean };
+type Line = { runs: Run[]; width: number };
+type Block = { lines: Line[]; size: number; lineHeight: number; role: Draft2WordsRole };
 
-/** The words wrapped to a width in a role's font: by words, a word longer than the line kept whole. */
-function wrap(ctx: SKRSContext2D, words: string, role: Draft2WordsRole, width: number): Line[] {
-  const { font, variations } = canvasFont({ font: role.font, weight: role.weight }, role.size);
+/** How a role's marked words stand out: as the editor set it, else the font's heaviest weight in the role's colour. */
+function markOf(role: Draft2WordsRole): { weight: number; color: string } {
+  if (role.mark) return role.mark;
+  const font = brandFontById(role.font);
+  return { weight: font ? Math.max(...font.weights) : role.weight, color: role.color };
+}
+
+/** Sets the canvas to a role's face (its mark's when marked), with its letter spacing. */
+function setFace(ctx: SKRSContext2D, role: Draft2WordsRole, marked: boolean): void {
+  const { font, variations } = canvasFont({ font: role.font, weight: marked ? markOf(role).weight : role.weight }, role.size);
   ctx.font = font;
   ctx.fontVariationSettings = variations;
+  ctx.letterSpacing = `${Math.round((role.size * (role.tracking ?? 0)) / 100) / 10}px`;
+}
+
+const runWidth = (ctx: SKRSContext2D, role: Draft2WordsRole, run: Run) => { setFace(ctx, role, run.marked); return ctx.measureText(run.text).width; };
+
+/**
+ * A role's words as paragraphs of words, each word its runs: ** turns the
+ * mark on and off, a line break starts a paragraph (blank ones fall away), in
+ * capitals when the role asks.
+ */
+function paragraphsOf(words: string, role: Draft2WordsRole): Run[][][] {
+  const text = role.upper ? words.toLocaleUpperCase() : words;
+  const paragraphs: Run[][][] = [[]];
+  let word: Run[] = [];
+  let marked = false;
+  const endWord = () => { if (word.length) paragraphs[paragraphs.length - 1].push(word); word = []; };
+  for (let at = 0; at < text.length; at++) {
+    if (text.startsWith("**", at)) { marked = !marked; at++; continue; }
+    const character = text[at];
+    if (character === "\n") { endWord(); if (paragraphs[paragraphs.length - 1].length) paragraphs.push([]); continue; }
+    if (/\s/u.test(character)) { endWord(); continue; }
+    const last = word[word.length - 1];
+    if (last && last.marked === marked) last.text += character;
+    else word.push({ text: character, marked });
+  }
+  endWord();
+  return paragraphs.filter((paragraph) => paragraph.length);
+}
+
+/** The words wrapped to a width in a role's faces: by words, a word longer than the line kept whole, each paragraph on its own lines. */
+function wrap(ctx: SKRSContext2D, words: string, role: Draft2WordsRole, width: number): Line[] {
+  const space = runWidth(ctx, role, { text: " ", marked: false });
   const lines: Line[] = [];
-  for (const paragraph of words.split(/\n+/u)) {
-    let current = "";
-    for (const word of paragraph.split(/\s+/u).filter(Boolean)) {
-      const next = current ? `${current} ${word}` : word;
-      if (current && ctx.measureText(next).width > width) {
-        lines.push({ text: current, width: ctx.measureText(current).width });
-        current = word;
-      } else current = next;
+  for (const paragraph of paragraphsOf(words, role)) {
+    let runs: Run[] = [];
+    let used = 0;
+    for (const word of paragraph) {
+      const wide = word.reduce((sum, run) => sum + runWidth(ctx, role, run), 0);
+      if (runs.length && used + space + wide > width) {
+        lines.push({ runs, width: used });
+        runs = [];
+        used = 0;
+      }
+      const pieces = runs.length ? [{ text: " ", marked: false }, ...word] : word;
+      for (const piece of pieces) {
+        const last = runs[runs.length - 1];
+        if (last && last.marked === piece.marked) last.text += piece.text;
+        else runs.push({ ...piece });
+      }
+      used += (pieces.length > word.length ? space : 0) + wide;
     }
-    if (current) lines.push({ text: current, width: ctx.measureText(current).width });
+    if (runs.length) lines.push({ runs, width: used });
   }
   return lines;
 }
@@ -127,13 +179,13 @@ function blocks(ctx: SKRSContext2D, words: Draft2SlideWords, layout: Draft2Words
     return { ...role, weight: font ? font.weights.reduce((best, weight) => Math.abs(weight - 700) < Math.abs(best - 700) ? weight : best, role.weight) : role.weight };
   };
   const parts: { words: string; role: Draft2WordsRole; lineHeight: number }[] = [
-    { words: words.headline, role: layout.headline, lineHeight: LINE_HEIGHT.headline },
-    { words: words.text, role: layout.text, lineHeight: LINE_HEIGHT.text },
+    { words: readsAs(words.headline, layout.setAs?.headline), role: layout.headline, lineHeight: LINE_HEIGHT.headline },
+    { words: readsAs(words.text, layout.setAs?.text), role: layout.text, lineHeight: LINE_HEIGHT.text },
     { words: words.practical ?? "", role: { ...layout.text, size: Math.round(layout.text.size * 0.8) }, lineHeight: LINE_HEIGHT.text },
     { words: words.cta ?? "", role: heavier({ ...layout.text, size: Math.round(layout.text.size * 0.9) }), lineHeight: LINE_HEIGHT.text },
   ];
   return parts.filter((part) => part.words.trim()).map((part) => ({
-    lines: wrap(ctx, part.words.trim(), part.role, width), size: part.role.size, lineHeight: part.lineHeight, role: part.role, weight: part.role.weight, family: part.role.font,
+    lines: wrap(ctx, part.words.trim(), part.role, width), size: part.role.size, lineHeight: part.lineHeight, role: part.role,
   }));
 }
 
@@ -170,21 +222,34 @@ function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: B
     ctx.globalAlpha = 1;
   }
   ctx.textBaseline = "top";
-  ctx.textAlign = layout.align;
-  const x = layout.align === "center" ? layout.box.left + layout.box.width / 2 : layout.align === "right" ? layout.box.left + layout.box.width - padding : layout.box.left + padding;
+  // Each line is placed by its own width, its runs one after the other.
+  ctx.textAlign = "left";
+  const start = layout.box.left + padding;
+  const end = layout.box.left + layout.box.width - padding;
   let y = top;
   for (const block of list) {
-    const { font, variations } = canvasFont({ font: block.family, weight: block.weight }, block.size);
-    ctx.font = font;
-    ctx.fontVariationSettings = variations;
-    ctx.fillStyle = block.role.color;
+    if (layout.shadow) {
+      ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+      ctx.shadowBlur = Math.max(4, Math.round(block.size * 0.18));
+      ctx.shadowOffsetY = Math.max(1, Math.round(block.size * 0.05));
+    }
     for (const line of block.lines) {
+      let x = layout.align === "center" ? (start + end - line.width) / 2 : layout.align === "right" ? end - line.width : start;
       // The line's box is lineHeight tall; the glyphs sit a little below its top so the leading falls evenly.
-      ctx.fillText(line.text, x, y + Math.round(block.size * (block.lineHeight - 1) / 2));
+      const baseline = y + Math.round(block.size * (block.lineHeight - 1) / 2);
+      for (const run of line.runs) {
+        setFace(ctx, block.role, run.marked);
+        ctx.fillStyle = run.marked ? markOf(block.role).color : block.role.color;
+        ctx.fillText(run.text, x, baseline);
+        x += ctx.measureText(run.text).width;
+      }
       y += Math.round(block.size * block.lineHeight);
     }
     y += gap;
   }
+  ctx.shadowColor = "rgba(0, 0, 0, 0)";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
   return { png: canvas.toBuffer("image/png"), bottom: top + height + padding };
 }
 

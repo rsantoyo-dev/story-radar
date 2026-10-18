@@ -55,7 +55,7 @@ import { failedCall } from "./draft2-funnel";
 import { draft2ModelName, draft2PortraitModel, draft2SolModel } from "./draft2-models";
 import { placeMention } from "./draft2-inventory";
 import {
-  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, anchorPlateSettled, cutSections, masterPlateFile, nextSceneVersion, sceneBefore, standingScene, masterPlatePromptFile, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
+  ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, OWN_SCENE_MIN_SECTION, anchorPlateSettled, cutSections, masterPlateFile, nextSceneVersion, ownSceneOriginalFile, sceneBefore, setAsMismatches, standingScene, masterPlatePromptFile, type Draft2OwnFit, type Draft2OwnImage, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
   awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
   movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
@@ -633,7 +633,9 @@ function attemptPortrait(slide: Draft2SlideImage, attempt: Draft2ImageAttempt, p
 /** v1's post-production, in v1's order: the pasted photo, the map panel, the page number, the logo (the version that reads best there). */
 async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2ImageAttempt, image: Uint8Array): Promise<Uint8Array> {
   let out: Uint8Array = image;
-  const pasted = slide.material.find(isPasted);
+  // The editor's own photo is the whole slide: no portrait or map is pasted on it, and the program sets its words whatever the presentation.
+  const whole = attempt.own?.fill === "slide";
+  const pasted = whole ? undefined : slide.material.find(isPasted);
   if (pasted?.sha256) {
     const photo = await loadDocumentaryPortraitPhoto(pasted.storyPhotoId, pasted.sha256);
     // The window chosen on the person before the image was made; one made before that crops around the editor's focal point, or on its own.
@@ -644,7 +646,7 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
       ...(fit.crop ? { crop: fit.crop } : focus ? { focus } : {}),
     });
   }
-  const panel = slide.material.find(isMap)?.panel;
+  const panel = whole ? undefined : slide.material.find(isMap)?.panel;
   if (panel) {
     const file = await readPrivateR2ImageFile({ objectKey: objectKey(ctx, mapFile(slide.slide)), contentType: "image/png", fileName: mapFile(slide.slide) });
     const map = new Uint8Array(await file.arrayBuffer());
@@ -653,7 +655,7 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
     out = await compositeMapPanel({ image: out, map, matColor: color ?? "#1f2933", layout: panel.layout, ...(panel.position ? { position: panel.position } : {}), ...(panel.label ? { label: panel.label } : {}), ...(color ? { ink: color } : {}) });
   }
   // The program's words, before the page number and the logo, in the band the prompt kept calm.
-  if (ctx.presentation.text === "program") {
+  if (ctx.presentation.text === "program" || attempt.own) {
     const words = wordsFor(ctx, slide);
     // A layout the attempt already carries (the editor's, or the one its words are set again with) is kept; otherwise the program chooses one.
     if (attempt.wordsLayout) out = await drawWords({ image: out, words, layout: attempt.wordsLayout });
@@ -688,7 +690,8 @@ async function cutSection(ctx: Context, slide: Draft2SlideImage, attempt: Draft2
     const sha256 = hash(final);
     await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
     await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: raw, contentType: "image/png", metadata: { sha256: hash(raw) } });
-    Object.assign(attempt, { status: "generated", sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), costMicros: 0, completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+    const own = ctx.run.masterPlate?.own;
+    Object.assign(attempt, { status: "generated", sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), costMicros: 0, completedAt: new Date().toISOString(), ...(own ? { own: { ...own, fill: "scene" as const } } : {}) } satisfies Partial<Draft2ImageAttempt>);
     finished.set(attempt, final);
   } catch (error) {
     Object.assign(attempt, { status: "failed", error: message(error), completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
@@ -1049,6 +1052,7 @@ export async function editDraft2Images({ topicId, sessionId, input }: { topicId:
   if (action.action === "scene") return remakeScene({ session, images, instruction: action.instruction });
   if (action.action === "cut") return cutSceneAgain({ topicId, session, images, offset: action.offset });
   if (action.action === "layout") return applyWordsLayout({ topicId, session, images, slide: action.slide, layout: action.layout, all: action.all });
+  if (action.action === "own") return placeOwnImage({ topicId, session, images, slide: action.slide, storyPhotoId: action.storyPhotoId, fit: action.fit });
   const slide = images.slides.find((entry) => entry.slide === action.slide);
   if (!slide) throw new Draft2InputError(`${action.slide} is not one of this carousel's slides.`);
   const now = new Date();
@@ -1106,7 +1110,7 @@ async function setChangedWords({ topicId, session, images }: { topicId: string; 
     const base = new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, baseName), contentType: "image/png", fileName: baseName })).arrayBuffer());
     const attempt: Draft2ImageAttempt = {
       version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
-      ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(shown.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}), queuedAt: now, costMicros: 0,
+      ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(shown.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}), ...(shown.own ? { own: shown.own } : {}), queuedAt: now, costMicros: 0,
     };
     const final = await finish(ctx, slide, attempt, base);
     const sha256 = hash(final);
@@ -1156,10 +1160,12 @@ async function shownBase(ctx: Context, slide: Draft2SlideImage): Promise<{ shown
  * words the program set, each keeping its own box.
  */
 async function applyWordsLayout({ topicId, session, images, slide: name, layout, all }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; slide: string; layout: Draft2WordsLayout; all: boolean }): Promise<Draft2SessionRow> {
-  if (images.presentation?.text !== "program") throw new Draft2InputError("The image model lettered these words: only words the program set can be moved or restyled.");
   if (!images.slides.every(slideSettled)) throw new Draft2InputError("The slides are still being made; edit the words when they finish.");
-  if (!images.slides.some((entry) => entry.slide === name)) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  const target = images.slides.find((entry) => entry.slide === name);
+  if (!target) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  if (!shownAttempt(target)?.words) throw new Draft2InputError("The image model lettered these words: only words the program set can be moved or restyled.");
   const ctx = await editContext(topicId, session, withoutHistory(images));
+  assertReadsAsWords(wordsFor(ctx, target), layout);
   const now = new Date().toISOString();
   const slides = await Promise.all(images.slides.map(async (slide) => {
     const own = slide.slide === name;
@@ -1171,7 +1177,7 @@ async function applyWordsLayout({ topicId, session, images, slide: name, layout,
     const next = own ? layout : withStyleOf(place, layout);
     const attempt: Draft2ImageAttempt = {
       version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,
-      ...(shown.portrait ? { portrait: shown.portrait } : {}), wordsLayout: next, queuedAt: now, costMicros: 0,
+      ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(shown.own ? { own: shown.own } : {}), wordsLayout: next, queuedAt: now, costMicros: 0,
     };
     const final = await finish(ctx, slide, attempt, base);
     const sha256 = hash(final);
@@ -1197,13 +1203,14 @@ export async function previewDraft2Words({ topicId, sessionId, slide: name, layo
   const session = await getDraft2Session(topicId, sessionId);
   const images = session?.images;
   if (!session || !images) throw new Draft2InputError("Generate the images first.");
-  if (images.presentation?.text !== "program") throw new Draft2InputError("The image model lettered these words.");
   const slide = images.slides.find((entry) => entry.slide === name);
   if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  if (!shownAttempt(slide)?.words) throw new Draft2InputError("The image model lettered these words.");
   const ctx = await editContext(topicId, session, withoutHistory(images));
+  if (layout) assertReadsAsWords(wordsFor(ctx, slide), layout);
   const { shown, base } = await shownBase(ctx, slide);
   // No layout yet (a slide lettered before layouts were kept): the program chooses one now, in the brand's fonts, and the editor starts from it.
-  const attempt: Draft2ImageAttempt = { version: 0, kind: "words", status: "generated", ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(layout ?? shown.wordsLayout ? { wordsLayout: layout ?? shown.wordsLayout } : {}), queuedAt: new Date().toISOString() };
+  const attempt: Draft2ImageAttempt = { version: 0, kind: "words", status: "generated", ...(shown.portrait ? { portrait: shown.portrait } : {}), ...(shown.own ? { own: shown.own } : {}), ...(layout ?? shown.wordsLayout ? { wordsLayout: layout ?? shown.wordsLayout } : {}), queuedAt: new Date().toISOString() };
   const final = await finish(ctx, slide, attempt, base);
   const used = attempt.wordsLayout!;
   const image = new Uint8Array(await sharp(Buffer.from(final)).resize({ width: 864 }).jpeg({ quality: 84 }).toBuffer());
@@ -1264,21 +1271,19 @@ async function cutSceneAgain({ topicId, session, images, offset }: { topicId: st
   const cut = cutSections(plate, offset);
   const same = plate.sections.every((section, index) => section.left === cut.sections[index].left && section.top === cut.sections[index].top && section.width === cut.sections[index].width);
   if (same) throw new Draft2InputError("The cuts are where they already are.");
-  const target = imagesTarget(session);
-  let fal: Context["fal"];
-  try {
-    fal = getFalImageRuntimeConfig("4:5", IMAGES_QUALITY);
-  } catch (error) {
-    if (error instanceof FalImageConfigurationError) throw new Draft2InputError("FAL_KEY is not configured.");
-    throw error;
-  }
-  const moved: Draft2MasterPlate = { ...plate, sections: cut.sections, offset: cut.offset };
-  const run = { ...withoutHistory(images), masterPlate: moved };
-  const profile = await getCreativeProfile(topicId);
-  const ctx = await imagesContext({
-    topicId, storyId: session.storyId, sessionId: session.id, run, target, facts: session.facts ?? [], profile, fal,
-    descriptor: creativeImageModel(resolveDefaultCreativeImageModel()), signal: new AbortController().signal, trace: [...session.trace],
-  });
+  return cutEverySlide({ topicId, session, images, plate: { ...plate, sections: cut.sections, offset: cut.offset }, keepReview: true });
+}
+
+/**
+ * Every slide cut again from a scene (the one there, its cuts moved, or one
+ * the editor uploaded): a new version each, its section with its words, the
+ * page number and the logo. No model is called and nothing is charged; the
+ * earlier versions stay. With keepReview, each keeps the review of the
+ * version it replaces, since the scene is the one reviewed.
+ */
+async function cutEverySlide({ topicId, session, images, plate, keepReview }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; plate: Draft2MasterPlate; keepReview: boolean }): Promise<Draft2SessionRow> {
+  const run = { ...withoutHistory(images), masterPlate: plate };
+  const ctx = await editContext(topicId, session, run);
   const now = new Date().toISOString();
   const slides = await Promise.all(images.slides.map(async (slide) => {
     const shown = shownAttempt(slide);
@@ -1287,14 +1292,130 @@ async function cutSceneAgain({ topicId, session, images, offset }: { topicId: st
       ...(shown?.wordsLayout ? { wordsLayout: shown.wordsLayout } : {}),
     };
     await cutSection(ctx, slide, attempt, new Map(), async () => undefined);
-    if (attempt.status === "generated" && shown?.review) attempt.review = { ...shown.review, note: `Cut again from the same scene as v${shown.version}.${shown.review.note ? ` ${shown.review.note}` : ""}` };
+    if (keepReview && attempt.status === "generated" && shown?.review) attempt.review = { ...shown.review, note: `Cut again from the same scene as v${shown.version}.${shown.review.note ? ` ${shown.review.note}` : ""}` };
     return { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined };
   }));
   const status = settledStatus(slides);
-  const next: Draft2Images = { ...images, masterPlate: moved, slides, status, updatedAt: now, error: imagesNote(slides) };
+  const next: Draft2Images = { ...images, masterPlate: plate, slides, status, updatedAt: now, error: imagesNote(slides) };
   const updated = await updateDraft2Session(session.id, { images: next, ...(session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
+}
+
+/** "How it reads" must keep the slide's words: only line breaks and ** marks are the editor's there. */
+function assertReadsAsWords(words: ReturnType<typeof wordsFor>, layout: Draft2WordsLayout): void {
+  const roles = setAsMismatches(words, layout);
+  if (roles.length) throw new Draft2InputError(`How the ${roles.join(" and the ")} ${roles.length === 1 ? "reads" : "read"} must keep the slide's words: only line breaks and ** marks may change. Change the words themselves in the Deck.`);
+}
+
+/** A file the editor sent, decoded and checked: a still JPG, PNG or WebP. */
+async function decodedImage(bytes: Uint8Array): Promise<{ width: number; height: number; format: "jpeg" | "png" | "webp" }> {
+  try {
+    const metadata = await sharp(Buffer.from(bytes), { limitInputPixels: 80_000_000, animated: false }).metadata();
+    const format = metadata.format === "jpeg" || metadata.format === "png" || metadata.format === "webp" ? metadata.format : undefined;
+    if (!format || !metadata.width || !metadata.height || (metadata.pages ?? 1) > 1) throw new Error("Invalid image");
+    // A photo turned by its EXIF orientation is as wide as it is tall the other way.
+    const turned = (metadata.orientation ?? 1) >= 5;
+    return { width: turned ? metadata.height : metadata.width, height: turned ? metadata.width : metadata.height, format };
+  } catch {
+    throw new Draft2InputError("This image cannot be read. Use a still JPG, PNG or WebP.");
+  }
+}
+
+/**
+ * The editor's photo brought to the slide: cropped to fill it, around the
+ * photo's focal point when the editor set one (else where the eye goes), or
+ * whole on the brand's colour.
+ */
+async function fittedOwnImage(bytes: Uint8Array, size: { width: number; height: number }, fit: Draft2OwnFit, focus: { x: number; y: number } | undefined, paper: string): Promise<Uint8Array> {
+  const upright = sharp(Buffer.from(bytes)).rotate();
+  if (fit === "contain") return new Uint8Array(await upright.resize(OUTPUT.width, OUTPUT.height, { fit: "contain", background: paper }).flatten({ background: paper }).png().toBuffer());
+  if (!focus) return new Uint8Array(await upright.resize(OUTPUT.width, OUTPUT.height, { fit: "cover", position: "attention" }).png().toBuffer());
+  const ratio = OUTPUT.width / OUTPUT.height;
+  const width = Math.min(size.width, Math.round(size.height * ratio));
+  const height = Math.min(size.height, Math.round(width / ratio));
+  const left = Math.round(Math.min(size.width - width, Math.max(0, focus.x * size.width - width / 2)));
+  const top = Math.round(Math.min(size.height - height, Math.max(0, focus.y * size.height - height / 2)));
+  return new Uint8Array(await upright.extract({ left, top, width, height }).resize(OUTPUT.width, OUTPUT.height, { fit: "fill" }).png().toBuffer());
+}
+
+/**
+ * One of the story's photos as a slide's image, the editor's own (2026-10-18,
+ * the editor: "upload one of my own… a gallery of photos I took, and the
+ * program did not take them all"): fitted to the slide, with the slide's
+ * words, the page number and the logo set by the program. A new version: no
+ * model, no cost, the earlier ones kept. Sol does not review it; only a photo
+ * declared own or licensed goes on a slide.
+ */
+async function placeOwnImage({ topicId, session, images, slide: name, storyPhotoId, fit }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; slide: string; storyPhotoId: string; fit: Draft2OwnFit }): Promise<Draft2SessionRow> {
+  const slide = images.slides.find((entry) => entry.slide === name);
+  if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  if (!slideSettled(slide)) throw new Draft2InputError(`${slide.label} is still being made; wait for it to finish.`);
+  // Composed here and never sent to the image model, as a documentary portrait is.
+  const [photo] = await resolveStoryReferences(topicId, session.storyId, [{ id: storyPhotoId, purpose: "documentary-portrait" }]);
+  if (!photo || !publishablePhoto(photo.publicationRights)) throw new Draft2InputError(`${photo?.name ?? "That photo"} is reference only: declare it your own or licensed in the story's photos to put it on a slide.`);
+  const [file] = await loadStoryReferenceImages([photo]);
+  const original = new Uint8Array(await file.arrayBuffer());
+  const size = await decodedImage(original);
+  const ctx = await editContext(topicId, session, withoutHistory(images));
+  const base = await fittedOwnImage(original, size, fit, photo.focus, ctx.wordsPalette.paper);
+  const own: Draft2OwnImage = {
+    fill: "slide", source: "story-photo", name: photo.name, rights: photo.publicationRights === "licensed" ? "licensed" : "own",
+    ...(photo.publicationRights === "licensed" && photo.provenance ? { provenance: photo.provenance } : {}), storyPhotoId: photo.id, sha256: hash(original), width: size.width, height: size.height, fit,
+  };
+  const now = new Date().toISOString();
+  const attempt: Draft2ImageAttempt = { version: Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1, kind: "own", status: "generated", own, queuedAt: now, costMicros: 0 };
+  const final = await finish(ctx, slide, attempt, base);
+  const sha256 = hash(final);
+  await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
+  await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: base, contentType: "image/png", metadata: { sha256: hash(base) } });
+  Object.assign(attempt, { sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+  const slides = images.slides.map((entry) => entry === slide ? { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined } : entry);
+  const settled = slides.every(slideSettled);
+  const status = settled ? settledStatus(slides) : "paused";
+  const next: Draft2Images = { ...images, slides, status, updatedAt: now, error: settled ? imagesNote(slides) : images.error };
+  const updated = await updateDraft2Session(session.id, { images: next, ...(settled && session.step === "images" ? { status: status === "ready" ? "ready" : "needs-review", error: next.error ?? null } : {}) });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/** The longest side an uploaded scene keeps, as a drawn one: what the slides are cut from. */
+const OWN_SCENE_MAX = { width: 3840, height: 2160 } as const;
+
+/**
+ * A panorama's scene the editor uploaded (2026-10-18, the editor: "I should
+ * be able to upload my own image to cut"): kept as sent and, brought to the
+ * size a drawn scene has, as the scene's next version, the earlier ones in
+ * its history; every slide is cut from it at once with its words, the page
+ * number and the logo. No model, no cost; rights declared as the editor sent it.
+ */
+export async function placeOwnDraft2Scene({ topicId, sessionId, image, name, rights, credit }: { topicId: string; sessionId: string; image: Uint8Array; name: string; rights: "own" | "licensed"; credit?: string }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  const images = session.images;
+  if (!images) throw new Draft2InputError("Generate the images first.");
+  if (session.status === "running" && Date.now() - new Date(session.updatedAt).getTime() < OPENING_STALL_MS) throw new Draft2BusyError("The images are still being made; decide when they finish.");
+  const plate = panoramaScene(images);
+  if (!images.slides.every(slideSettled)) throw new Draft2InputError("The slides are still being made; use your scene when they finish.");
+  const size = await decodedImage(image);
+  const { data, info } = await sharp(Buffer.from(image), { limitInputPixels: 80_000_000 }).rotate().resize({ ...OWN_SCENE_MAX, fit: "inside", withoutEnlargement: true }).png().toBuffer({ resolveWithObject: true });
+  const count = plate.sections.length;
+  const largest = Math.min(info.height, Math.floor(info.width / ((4 / 5) * count)));
+  if (largest < OWN_SCENE_MIN_SECTION) throw new Draft2InputError(`For ${count} slides the scene needs at least ${Math.ceil((4 * count * OWN_SCENE_MIN_SECTION) / 5)} × ${OWN_SCENE_MIN_SECTION} pixels, wide enough for ${count} portrait sections side by side; this one gives each slide ${largest} pixels of height.`);
+  const version = nextSceneVersion(plate);
+  const scene = new Uint8Array(data);
+  const ctx = await editContext(topicId, session, withoutHistory(images));
+  const original = ownSceneOriginalFile(version, size.format === "jpeg" ? "jpg" : size.format);
+  await putPrivateR2Object({ objectKey: objectKey(ctx, original), body: image, contentType: `image/${size.format}`, metadata: { sha256: hash(image) } });
+  await putPrivateR2Object({ objectKey: objectKey(ctx, masterPlateFile(version)), body: scene, contentType: "image/png", metadata: { sha256: hash(scene) } });
+  const now = new Date().toISOString();
+  const cut = cutSections({ width: info.width, height: info.height, sections: plate.sections }, {});
+  const next: Draft2MasterPlate = {
+    anchor: plate.anchor, status: "generated", queuedAt: now, completedAt: now, width: info.width, height: info.height, sections: cut.sections, offset: cut.offset,
+    version, sha256: hash(scene), costMicros: 0, own: { fill: "scene", source: "upload", name: name.slice(0, 150) || "Your scene", rights, ...(credit ? { provenance: credit } : {}), sha256: hash(image), width: size.width, height: size.height },
+    previous: [...(plate.previous ?? []), plateRecord(plate)],
+  };
+  return cutEverySlide({ topicId, session, images, plate: next, keepReview: false });
 }
 
 /**

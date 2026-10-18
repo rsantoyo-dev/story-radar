@@ -1,6 +1,6 @@
 import { Draft2InputError } from "./draft2-facts.types";
 import { funnelVersions } from "./draft2-funnel";
-import { shownAttempt, slideSettled, type Draft2Images, type Draft2SlideImage } from "./draft2-images.types";
+import { imageCleared, shownAttempt, slideSettled, type Draft2Images, type Draft2SlideImage } from "./draft2-images.types";
 import { captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
 import { confirmedMentions, sameMentions, type Draft2Mentions } from "./draft2-mentions.types";
 
@@ -74,7 +74,8 @@ export function publicationTarget(session: { images?: Draft2Images | null; capti
   if (!sameMentions(caption.mentions, confirmedMentions(session.mentions))) throw new Draft2InputError("The accounts to tag changed since this caption was written. Write the caption again.");
   const issues = shown.flatMap(({ slide, attempt }) => {
     const review = attempt!.review;
-    if (review?.status === "passed") return [];
+    // The editor's own image is theirs to answer for: Sol never looks at it.
+    if (imageCleared(attempt)) return [];
     if (attempt!.kind === "correct" && !review) return [`${slide.label}: corrected and not reviewed again.`];
     if (review?.status === "issues") return [`${slide.label}: ${review.issues.join(" ")}`];
     return [`${slide.label}: not reviewed.`];
