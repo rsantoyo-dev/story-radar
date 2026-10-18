@@ -155,7 +155,7 @@ async function prepare(topicId: string, storyId: string, format: CreativeFormat,
             } else reasons.push("Map unavailable: verified precise coordinates and enabled export plan required.");
           } catch { original = undefined; snapshot.representation = "typography"; delete snapshot.map; reasons.push("Map provider unavailable; using source text."); }
         }
-      } else reasons.push(profile.geoProviderContact?.trim() || process.env.CREATIVE_GEO_CONTACT?.trim() ? "Place identity or geographic scope is unresolved; no approximate marker used." : "Configure a geographic provider contact email in the brand profile or CREATIVE_GEO_CONTACT before resolving places.");
+      } else reasons.push(profile.geoProviderContact?.trim() || process.env.CREATIVE_GEO_CONTACT?.trim() ? "Place identity or geographic scope is unresolved; no approximate marker used." : "Add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\"), or CREATIVE_GEO_CONTACT on the server, before resolving places.");
     } catch { reasons.push("Geographic lookup unavailable or bounded lookup budget exhausted."); }
   } else if (!blocked) reasons.push(scene.purpose === "current-state" ? "This slide reports a physical change or current condition; an archive photo cannot document it." : "This slide has no single supported named venue; no location was chosen arbitrarily.");
   if (snapshot.representation === "typography") reasons.push("No verified photograph used. No place was generated.");

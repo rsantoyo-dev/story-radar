@@ -224,10 +224,10 @@ test("without a Wikimedia contact, Wikidata is not asked and the note says so; G
   const h = harness({ contact: "", google: true, googlePlaces: { "Vieux-Longueuil": googleMatch("Vieux-Longueuil", "Vieux-Longueuil, Longueuil, QC, Canada") } });
   const [, street, quarter] = (await h.find()).inventory!.entities;
   assert.deepEqual(h.calls.resolve, [], "no Wikidata request without a contact");
-  assert.equal(json([street.place?.status, street.place?.note]), json(["not-found", "Wikidata was not checked: add a Wikimedia contact (an email) in the Topic's creative profile. Google Maps has no single match for it within the Topic's geo scope."]));
+  assert.equal(json([street.place?.status, street.place?.note]), json(["not-found", "Wikidata was not checked: add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\"). Google Maps has no single match for it within the Topic's geo scope."]));
   assert.equal(json([quarter.place?.status, quarter.place?.google?.name, quarter.place?.map]), json(["verified", "Vieux-Longueuil", true]));
   const neither = await harness({ contact: "", google: false }).find();
-  assert.equal(json(neither.inventory!.entities[1].place), json({ status: "unavailable", map: false, note: "Add a Wikimedia contact (an email) in the Topic's creative profile so places can be looked up in Wikidata." }));
+  assert.equal(json(neither.inventory!.entities[1].place), json({ status: "unavailable", map: false, note: "Add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\") so places can be looked up in Wikidata." }));
 });
 
 test("the editor gives a person or place one of the story's photos and takes it back; the photos are read again after one is added or removed", async () => {

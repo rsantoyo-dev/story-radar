@@ -71,7 +71,7 @@ async function lookupContext(topicId: string) {
   const profile = await getCreativeProfile(topicId);
   const contact = resolveGeoContact(profile.geoProviderContact, process.env.CREATIVE_GEO_CONTACT);
   if (!contact) {
-    throw new CommonsPersonError("Add a Wikimedia contact (email or URL) in the Topic creative profile before searching Wikimedia Commons.");
+    throw new CommonsPersonError("Add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\"), save it, then search again.");
   }
   return { contact, language: providerLanguage(profile.language ?? "en") };
 }

@@ -183,7 +183,7 @@ async function lookUpPlace(entity: Draft2InventoryEntity, { providers, maps, pro
       notes.push(`Wikidata: ${note(error)}`);
     }
   } else {
-    notes.push("Wikidata was not checked: add a Wikimedia contact (an email) in the Topic's creative profile.");
+    notes.push("Wikidata was not checked: add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\").");
   }
   let google: Draft2GooglePlace | undefined;
   if (maps && !wikidata?.map && !outOfTime()) {
@@ -239,7 +239,7 @@ async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, pro
       }
       if (places.includes(entity.id)) {
         if (!scoped) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "The Topic's geo scope (municipality, region and country) is incomplete, so no place can be verified." } }); continue; }
-        if (!providers && !maps) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "Add a Wikimedia contact (an email) in the Topic's creative profile so places can be looked up in Wikidata." } }); continue; }
+        if (!providers && !maps) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "Add a Wikimedia contact email in the brand's Creative identity → Profile (\"Wikimedia contact email\") so places can be looked up in Wikidata." } }); continue; }
         if (outOfTime()) { result.push({ ...entity, place: { status: "unavailable", map: false, note: "The lookups ran out of time; search again." } }); continue; }
         result.push({ ...entity, place: await lookUpPlace(entity, lookup) });
         continue;

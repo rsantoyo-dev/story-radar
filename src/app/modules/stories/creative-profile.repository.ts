@@ -1,10 +1,10 @@
 import { parseCreativeWordsStyle } from "./brand-fonts";
 import "server-only";
 import { creativeIdentityIsEmpty, CreativeIdentityValidationError, parseCreativeIdentityInput, type CreativeIdentity } from "./creative-identity";
-import { parseGeoContact } from "./creative-geo-contact";
+import { parseGeoContact, workspaceGeoContact } from "./creative-geo-contact";
 import { CreativeWritingValidationError, narrativeFormsField, writingGuidanceValue } from "./creative-writing-validation";
 
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import { creativeBrandAssets, creativeProfiles, topics } from "@/db/schema";
@@ -89,13 +89,32 @@ const DEFAULT_PROFILE: EditableCreativeProfile = {
     "Use one natural call to action aligned with the primary conversion goal. State a concrete audience benefit without engagement bait or artificial urgency.",
 };
 
+/**
+ * Wikidata and Wikimedia Commons ask every request for a contact: whoever runs
+ * the lookups, the same for every brand of a workspace. A brand that saved
+ * none uses the contact its workspace's other brands saved
+ * (workspaceGeoContact), so a new brand's People and places works at once;
+ * the profile shows it, and saving the profile keeps it as the brand's own.
+ * Fogón Lab, created on 2026-10-15, had none, and its People and places could
+ * not look anyone up while the browser's autofill made the field look filled.
+ */
+async function withWorkspaceGeoContact(topicId: string, profile: CreativeProfile): Promise<CreativeProfile> {
+  if (profile.geoProviderContact?.trim()) return profile;
+  const rows = await db.select({ contact: creativeProfiles.geoProviderContact }).from(creativeProfiles)
+    .innerJoin(topics, eq(topics.id, creativeProfiles.topicId))
+    .where(and(sql`${topics.workspaceId} = (select ${topics.workspaceId} from ${topics} where ${topics.id} = ${topicId})`, ne(creativeProfiles.geoProviderContact, "")))
+    .orderBy(desc(creativeProfiles.updatedAt));
+  const contact = workspaceGeoContact(rows.map((row) => row.contact));
+  return contact ? { ...profile, geoProviderContact: contact } : profile;
+}
+
 export async function getCreativeProfile(
   topicId: string,
 ): Promise<CreativeProfile> {
   const existing = await findStoredCreativeProfile(topicId);
 
   if (existing) {
-    return withLogoVersionAssets(topicId, mapCreativeProfile(existing.profile, existing.brandAsset));
+    return withWorkspaceGeoContact(topicId, await withLogoVersionAssets(topicId, mapCreativeProfile(existing.profile, existing.brandAsset)));
   }
 
   const [topic] = await db
@@ -114,7 +133,7 @@ export async function getCreativeProfile(
     .returning();
 
   if (created) {
-    return mapCreativeProfile(created);
+    return withWorkspaceGeoContact(topicId, mapCreativeProfile(created));
   }
 
   const concurrent = await findStoredCreativeProfile(topicId);
@@ -123,7 +142,7 @@ export async function getCreativeProfile(
     throw new Error("The creative profile could not be initialized");
   }
 
-  return withLogoVersionAssets(topicId, mapCreativeProfile(concurrent.profile, concurrent.brandAsset));
+  return withWorkspaceGeoContact(topicId, await withLogoVersionAssets(topicId, mapCreativeProfile(concurrent.profile, concurrent.brandAsset)));
 }
 
 /** UI theme reads must not initialize a creative profile as a side effect. */
