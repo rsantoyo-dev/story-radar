@@ -213,7 +213,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
             instructions: editorInstructions,
             contents: {
               task: "shorten", slide: patch.slide, field: patch.field, headline: headlineOf(patch.slide), before: patch.before, after: patch.after, reason: patch.reason, limit, words, findings,
-              instruction: `Return the same change in ${limit} words or fewer; the replacement has ${words} as the program counts them: every group of characters between spaces is a word, numbers and symbols included ("4 000 $" is three words). Drop words, never a figure, a qualifier or an attribution the facts give.`,
+              instruction: `Return the same change in ${limit} words or fewer; the replacement has ${words} as the program counts them: every group of characters between spaces that has a letter or a digit is a word: numbers count ("4 000 $" is two words, 4 and 000), a symbol alone does not. Drop words, never a figure, a qualifier or an attribution the facts give.`,
             },
             schema: DRAFT2_REVIEW_SHORTEN_SCHEMA, maxOutputTokens: SHORTEN_MAX_OUTPUT_TOKENS, reasoningEffort: "low", timeoutMs: READER_TIMEOUT_MS, skillVersions: editor.skillVersions,
           });

@@ -24,11 +24,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * both its truth patches (40 and 33 words on a 30-word body) and applied one
  * that opened a body with its headline: the editor reads each slide's word
  * limits (limits.words), a patch over its limit alone is asked shorter once
- * (task "shorten"), and no text repeats its slide's headline.
+ * (task "shorten"), and no text repeats its slide's headline. Version 8,
+ * 2026-10-18: the program's count said rightly (a symbol alone is no word:
+ * "4 000 $" is two), after version 7 said three.
  */
 export const REVIEW_SKILL: Draft2Skill = {
   name: "review",
-  version: "7",
+  version: "8",
   text: `# Reviewing a carousel
 
 A carousel is read one swipe at a time, on a phone, by someone who did not ask
@@ -118,9 +120,9 @@ in the kinds below is needed.
 - Asked to shorten (task "shorten", with the slide, the text, the patch, its
   limit and the program\x27s count of its words): return the same change within
   the limit, as the replacement alone (after). The program counts every group
-  of characters between spaces as a word, numbers and symbols included ("4
-  000 $" is three words): drop words, never a figure, a qualifier or an
-  attribution the facts give.
+  of characters between spaces that has a letter or a digit as a word:
+  numbers count ("4 000 $" is two words, 4 and 000), a symbol alone does not.
+  Drop words, never a figure, a qualifier or an attribution the facts give.
 - The smallest change that fixes the fault. Name what works in strengths
   first: a patch must not cost any of it.
 - Fewer is better, at most six: a carousel that needs none gets none.

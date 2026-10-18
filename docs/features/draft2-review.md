@@ -167,8 +167,9 @@ went on to the images with the 68.
   and facts) returns the same change within the limit
   (`DRAFT2_REVIEW_SHORTEN_SCHEMA`, `parseShortenAnswer`, the skill's task
   "shorten"). The ask states the limit, the program's count of the
-  replacement and how it counts (every group of characters between spaces,
-  "4 000 $" is three words): the first Saint-Jean reviews under this net
+  replacement and how it counts (every group of characters between spaces
+  that has a letter or a digit: "4 000 $" is two words; review skill v8 fixed
+  v7's "three"): the first Saint-Jean reviews under this net
   lost their patches because the model's count was not the program's. The
   patch is checked again and offered with the note "Shortened to the slide's
   limit of N words"; still over, it is asked once more with the count of
