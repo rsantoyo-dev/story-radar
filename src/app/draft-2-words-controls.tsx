@@ -9,7 +9,7 @@ export type BrandSwatch = { name: string; color: string };
 
 const WORDS_ALIGN_LABEL: Record<Draft2WordsLayout["align"], string> = { left: "Left", center: "Centre", right: "Right" };
 const WORDS_BACKGROUND_LABEL: Record<Draft2WordsLayout["background"]["kind"], string> = { none: "None: on the image", card: "A card behind the words", band: "A band across the slide" };
-const FONT_CATEGORY_NAME: Record<string, string> = { "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", condensed: "Condensed", handwritten: "Handwritten" };
+const FONT_CATEGORY_NAME: Record<string, string> = { "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", "display sans": "Display sans", condensed: "Condensed", handwritten: "Handwritten" };
 
 /**
  * A colour for the words or what is behind them (2026-10-18, the editor: "our
