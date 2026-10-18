@@ -7,7 +7,7 @@ import { lightness } from "../stories/creative-brand-logo-versions";
 import type { CreativeBrandPaletteColor } from "../stories/creative-content.types";
 import type { PortraitLayoutId } from "../stories/creative-portrait-composite";
 import type { MapPanelPosition } from "../stories/map-panel-position";
-import { readsAs, type Draft2SlideWords, type Draft2WordsLayout, type Draft2WordsRole } from "./draft2-images.types";
+import { readsAs, type Draft2SlideWords, type Draft2WordsLayout, type Draft2WordsPlace, type Draft2WordsRole } from "./draft2-images.types";
 
 /**
  * The slide's words set by the program (2026-10-17, the editor: "put the
@@ -102,7 +102,8 @@ const LINE_HEIGHT = { headline: 1.08, text: 1.3 } as const;
 /** A stretch of a line in one face: the role's, or its mark's. */
 type Run = { text: string; marked: boolean };
 type Line = { runs: Run[]; width: number };
-type Block = { lines: Line[]; size: number; lineHeight: number; role: Draft2WordsRole };
+/** One part's words: the headline, or the text (with the practical line and the call to action, set in the text's font). */
+type Block = { lines: Line[]; size: number; lineHeight: number; role: Draft2WordsRole; part: "headline" | "text" };
 
 /** How a role's marked words stand out: as the editor set it, else the font's heaviest weight in the role's colour. */
 function markOf(role: Draft2WordsRole): { weight: number; color: string } {
@@ -178,45 +179,43 @@ function blocks(ctx: SKRSContext2D, words: Draft2SlideWords, layout: Draft2Words
     const font = brandFontById(role.font);
     return { ...role, weight: font ? font.weights.reduce((best, weight) => Math.abs(weight - 700) < Math.abs(best - 700) ? weight : best, role.weight) : role.weight };
   };
-  const parts: { words: string; role: Draft2WordsRole; lineHeight: number }[] = [
-    { words: readsAs(words.headline, layout.setAs?.headline), role: layout.headline, lineHeight: LINE_HEIGHT.headline },
-    { words: readsAs(words.text, layout.setAs?.text), role: layout.text, lineHeight: LINE_HEIGHT.text },
-    { words: words.practical ?? "", role: { ...layout.text, size: Math.round(layout.text.size * 0.8) }, lineHeight: LINE_HEIGHT.text },
-    { words: words.cta ?? "", role: heavier({ ...layout.text, size: Math.round(layout.text.size * 0.9) }), lineHeight: LINE_HEIGHT.text },
+  const parts: { words: string; role: Draft2WordsRole; lineHeight: number; part: Block["part"] }[] = [
+    { words: readsAs(words.headline, layout.setAs?.headline), role: layout.headline, lineHeight: LINE_HEIGHT.headline, part: "headline" },
+    { words: readsAs(words.text, layout.setAs?.text), role: layout.text, lineHeight: LINE_HEIGHT.text, part: "text" },
+    { words: words.practical ?? "", role: { ...layout.text, size: Math.round(layout.text.size * 0.8) }, lineHeight: LINE_HEIGHT.text, part: "text" },
+    { words: words.cta ?? "", role: heavier({ ...layout.text, size: Math.round(layout.text.size * 0.9) }), lineHeight: LINE_HEIGHT.text, part: "text" },
   ];
   return parts.filter((part) => part.words.trim()).map((part) => ({
-    lines: wrap(ctx, part.words.trim(), part.role, width), size: part.role.size, lineHeight: part.lineHeight, role: part.role,
+    lines: wrap(ctx, part.words.trim(), part.role, width), size: part.role.size, lineHeight: part.lineHeight, role: part.role, part: part.part,
   }));
 }
 
 const blockHeight = (block: Block) => Math.round(block.lines.length * block.size * block.lineHeight);
 const blocksHeight = (list: readonly Block[], gap: number) => list.reduce((sum, block) => sum + blockHeight(block), 0) + gap * Math.max(0, list.length - 1);
 
+/** Where each part of the words sits on the slide, top to bottom in slide pixels: what the editor's boxes show. */
+export type Draft2WordsParts = { headline: { top: number; bottom: number }; text?: { top: number; bottom: number } };
+
 /**
- * Draws a layout's words on a transparent sheet of the slide's size: what is
- * behind them (a card around the block, a band across the slide), then each
- * line in its font and colour. Returns the sheet and where the block ended.
+ * Draws one place's blocks: what is behind them (a card around them, a band
+ * across the slide), then each line in its faces and colours, placed by its
+ * own width. Returns where each block starts and ends.
  */
-function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: Buffer; bottom: number } {
-  registerBrandFonts();
-  const canvas = createCanvas(TEXT_CANVAS.width, TEXT_CANVAS.height);
-  const ctx = canvas.getContext("2d");
-  const padding = layout.background.kind === "none" ? 0 : PANEL_PADDING;
-  const inner = Math.max(80, layout.box.width - padding * 2);
-  const list = blocks(ctx, words, layout, inner);
+function drawGroup(ctx: SKRSContext2D, list: readonly Block[], place: Draft2WordsPlace, layout: Draft2WordsLayout): { top: number; bottom: number; spans: { part: Block["part"]; top: number; bottom: number }[] } {
+  const padding = place.background.kind === "none" ? 0 : PANEL_PADDING;
   const gap = Math.round(layout.text.size * BLOCK_GAP);
   const height = blocksHeight(list, gap);
-  const top = layout.box.top + padding;
-  if (layout.background.kind !== "none") {
-    ctx.globalAlpha = Math.min(1, Math.max(0, layout.background.opacity));
-    ctx.fillStyle = layout.background.color;
+  const top = place.box.top + padding;
+  if (place.background.kind !== "none" && list.length) {
+    ctx.globalAlpha = Math.min(1, Math.max(0, place.background.opacity));
+    ctx.fillStyle = place.background.color;
     const widest = Math.max(...list.flatMap((block) => block.lines.map((line) => line.width)), 0);
-    if (layout.background.kind === "band") ctx.fillRect(0, layout.box.top, TEXT_CANVAS.width, height + padding * 2);
+    if (place.background.kind === "band") ctx.fillRect(0, place.box.top, TEXT_CANVAS.width, height + padding * 2);
     else {
-      const cardWidth = Math.min(layout.box.width, widest + padding * 2);
-      const cardLeft = layout.align === "center" ? layout.box.left + (layout.box.width - cardWidth) / 2 : layout.align === "right" ? layout.box.left + layout.box.width - cardWidth : layout.box.left;
+      const cardWidth = Math.min(place.box.width, widest + padding * 2);
+      const cardLeft = place.align === "center" ? place.box.left + (place.box.width - cardWidth) / 2 : place.align === "right" ? place.box.left + place.box.width - cardWidth : place.box.left;
       ctx.beginPath();
-      ctx.roundRect(cardLeft, layout.box.top, cardWidth, height + padding * 2, 18);
+      ctx.roundRect(cardLeft, place.box.top, cardWidth, height + padding * 2, 18);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -224,17 +223,20 @@ function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: B
   ctx.textBaseline = "top";
   // Each line is placed by its own width, its runs one after the other.
   ctx.textAlign = "left";
-  const start = layout.box.left + padding;
-  const end = layout.box.left + layout.box.width - padding;
+  const start = place.box.left + padding;
+  const end = place.box.left + place.box.width - padding;
+  const spans: { part: Block["part"]; top: number; bottom: number }[] = [];
   let y = top;
   for (const block of list) {
-    if (layout.shadow) {
+    const blockTop = y;
+    // The shadow lifts words straight on the image; on a card or a band they need none.
+    if (layout.shadow && place.background.kind === "none") {
       ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
       ctx.shadowBlur = Math.max(4, Math.round(block.size * 0.18));
       ctx.shadowOffsetY = Math.max(1, Math.round(block.size * 0.05));
     }
     for (const line of block.lines) {
-      let x = layout.align === "center" ? (start + end - line.width) / 2 : layout.align === "right" ? end - line.width : start;
+      let x = place.align === "center" ? (start + end - line.width) / 2 : place.align === "right" ? end - line.width : start;
       // The line's box is lineHeight tall; the glyphs sit a little below its top so the leading falls evenly.
       const baseline = y + Math.round(block.size * (block.lineHeight - 1) / 2);
       for (const run of line.runs) {
@@ -245,17 +247,46 @@ function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: B
       }
       y += Math.round(block.size * block.lineHeight);
     }
+    spans.push({ part: block.part, top: blockTop, bottom: y });
     y += gap;
   }
   ctx.shadowColor = "rgba(0, 0, 0, 0)";
   ctx.shadowBlur = 0;
   ctx.shadowOffsetY = 0;
-  return { png: canvas.toBuffer("image/png"), bottom: top + height + padding };
+  return { top: place.box.top, bottom: top + height + padding, spans };
+}
+
+/**
+ * Draws a layout's words on a transparent sheet of the slide's size: the
+ * headline and the text in one block, or each in its own place when the
+ * editor set the text apart. Returns the sheet, where the headline's block
+ * ended, and where each part sits.
+ */
+function drawSheet(words: Draft2SlideWords, layout: Draft2WordsLayout): { png: Buffer; bottom: number; parts: Draft2WordsParts } {
+  registerBrandFonts();
+  const canvas = createCanvas(TEXT_CANVAS.width, TEXT_CANVAS.height);
+  const ctx = canvas.getContext("2d");
+  const inner = (place: Draft2WordsPlace) => Math.max(80, place.box.width - (place.background.kind === "none" ? 0 : PANEL_PADDING) * 2);
+  const apart = layout.textBlock;
+  const first = drawGroup(ctx, blocks(ctx, words, layout, inner(layout)).filter((block) => !apart || block.part === "headline"), layout, layout);
+  const second = apart ? drawGroup(ctx, blocks(ctx, words, layout, inner(apart)).filter((block) => block.part === "text"), apart, layout) : undefined;
+  const headline = first.spans.find((span) => span.part === "headline");
+  const textSpans = (second ?? first).spans.filter((span) => span.part === "text");
+  const parts: Draft2WordsParts = {
+    headline: { top: first.top, bottom: apart ? first.bottom : headline?.bottom ?? first.bottom },
+    ...(textSpans.length ? { text: { top: apart ? second!.top : textSpans[0].top, bottom: (second ?? first).bottom } } : {}),
+  };
+  return { png: canvas.toBuffer("image/png"), bottom: first.bottom, parts };
 }
 
 /** Where a layout's block of words ends on the slide (its box's bottom), for the editor's box. */
 export function wordsBlockBottom(words: Draft2SlideWords, layout: Draft2WordsLayout): number {
   return drawSheet(words, layout).bottom;
+}
+
+/** Where the headline and the text sit on the slide, for the editor's two boxes. */
+export function wordsParts(words: Draft2SlideWords, layout: Draft2WordsLayout): Draft2WordsParts {
+  return drawSheet(words, layout).parts;
 }
 
 /** The slide with a layout's words set on it. */

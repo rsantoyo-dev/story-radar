@@ -231,8 +231,17 @@
 .wordsStage { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); touch-action: none; }
 .wordsBox { position: absolute; border: border(dashed-primary); border-radius: radius(1); cursor: move; touch-action: none; }
 .wordsBox:focus-visible { outline: border(focus); outline-offset: space(1); }
+/* The text's box, set apart from the headline's or following it, and each box's name. */
+.wordsBoxText { position: absolute; border: border(dashed-control); border-radius: radius(1); cursor: move; touch-action: none; }
+.wordsBoxText:focus-visible { outline: border(focus); outline-offset: space(1); }
+.wordsTag { @ds-typo (label); position: absolute; top: 0; left: 0; padding: 0 density(1); border-radius: radius(1); background: palette(light-light); color: palette(primary-dark); pointer-events: none; }
 .wordsHandle { position: absolute; top: 50%; right: -8px; width: 14px; height: 36px; transform: translateY(-50%); border-radius: radius(1); background: palette(primary-main); cursor: ew-resize; touch-action: none; }
 .wordsControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: density(2); }
+/* A colour: the brand's swatches first, then any other, and an opacity for a background. */
+.colorField { display: grid; gap: density(1); align-content: start; }
+.colorLabel { @ds-typo (small-strong); color: palette(dark-main); }
+.swatches { display: flex; flex-wrap: wrap; align-items: center; gap: density(1); }
+.swatch[aria-pressed="true"] { outline: border(focus); outline-offset: space(1); }
 /* The editor's own image for a slide: the story's photos to choose from, each with its rights. */
 .ownPhotoGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 7rem), 1fr)); gap: density(2); margin: 0; padding: 0; list-style: none; }
 .ownPhoto { display: flex; flex-direction: column; gap: density(1); min-width: 0; }

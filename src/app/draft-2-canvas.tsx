@@ -25,7 +25,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_ALIGNS, WORDS_BACKGROUNDS, WORDS_MIN_WIDTH, WORDS_SIZE, WORDS_TRACKING, cutSections, imageCleared, standingScene, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, WORDS_MIN_WIDTH, WORDS_SIZE, cutSections, imageCleared, standingScene, type Draft2WordsLayout, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2ImageAttempt, type Draft2ImageReview, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -45,9 +45,9 @@ import {
   Draft2Rail, OverviewBoard, PipelineStrip, Prerequisite, ScreenLink, SourcePanel, StepPager, StepScreen, screenStatusLabel, useScreenMemory, useScreenShortcuts, useScreenTitle,
   type ScreenStep,
 } from "./draft-2-canvas-shell";
-import { BRAND_FONTS, FONT_WEIGHT_NAME, brandFontById } from "@/app/modules/stories/brand-fonts";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import { OwnImageChooser, OwnSceneForm, PrivateThumb, ReadsAsField } from "./draft-2-own-images";
+import { PlaceControls, WordsRoleControls, type BrandSwatch } from "./draft-2-words-controls";
 import { HandEdits, OwnOpening, type HandEditChange, type HandEditField } from "./draft-2-hand-edits";
 import type { Draft2EditStep, Draft2OwnOpening } from "./modules/draft2/draft2-edits.types";
 import { publishablePhoto } from "./modules/stories/story-materials.types";
@@ -2304,9 +2304,6 @@ function SceneEditor({ images, plate, story, saving, locked, onDecide, onUploadS
   </div>;
 }
 
-const WORDS_ALIGN_LABEL: Record<Draft2WordsLayout["align"], string> = { left: "Left", center: "Centre", right: "Right" };
-const WORDS_BACKGROUND_LABEL: Record<Draft2WordsLayout["background"]["kind"], string> = { none: "None: on the image", card: "A card behind the words", band: "A band across the slide" };
-const FONT_CATEGORY_NAME: Record<string, string> = { "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", condensed: "Condensed", handwritten: "Handwritten" };
 const SLIDE_PX = { width: 1080, height: 1350 } as const;
 
 /** Where the images are read from and the story's photos with them; the secret authorizes it when the editor is not signed in. */
@@ -2322,55 +2319,6 @@ function withSetAs(layout: Draft2WordsLayout, role: "headline" | "text", value: 
 }
 
 /** One role's controls: its font (the bundled catalog), weight, size in slide pixels and colour. */
-function WordsRoleControls({ label, role, range, disabled, onChange }: { label: string; role: Draft2WordsLayout["headline"]; range: readonly [number, number]; disabled: boolean; onChange: (role: Draft2WordsLayout["headline"]) => void }) {
-  const font = brandFontById(role.font);
-  // The marked words' style as the renderer reads it: the editor's, else the font's heaviest weight in the role's colour.
-  const mark = role.mark ?? { weight: font ? Math.max(...font.weights) : role.weight, color: role.color };
-  const categories = [...new Set(BRAND_FONTS.map((entry) => entry.category))];
-  return <>
-    <FormField label={`${label}: font`}>
-      <select value={role.font} disabled={disabled} onChange={(event) => { const next = brandFontById(event.target.value); onChange({ ...role, font: event.target.value, weight: next?.weights.includes(role.weight) ? role.weight : next?.weights[next.weights.length - 1] ?? role.weight, ...(role.mark ? { mark: { ...role.mark, weight: next?.weights.includes(role.mark.weight) ? role.mark.weight : next?.weights[next.weights.length - 1] ?? role.mark.weight } } : {}) }); }}>
-        {categories.map((category) => <optgroup key={category} label={FONT_CATEGORY_NAME[category] ?? category}>
-          {BRAND_FONTS.filter((entry) => entry.category === category).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-        </optgroup>)}
-      </select>
-    </FormField>
-    <FormField label={`${label}: weight`}>
-      <select value={role.weight} disabled={disabled} onChange={(event) => onChange({ ...role, weight: Number(event.target.value) })}>
-        {(font?.weights ?? [role.weight]).map((weight) => <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>)}
-      </select>
-    </FormField>
-    <FormField label={`${label}: size`} description={`${range[0]} to ${range[1]} px on a 1080 px slide`}>
-      <input type="number" min={range[0]} max={range[1]} step={2} value={role.size} disabled={disabled} onChange={(event) => { const size = Number(event.target.value); if (Number.isFinite(size)) onChange({ ...role, size: Math.min(range[1], Math.max(range[0], Math.round(size))) }); }} />
-    </FormField>
-    <FormField label={`${label}: colour`}>
-      <input type="color" value={role.color} disabled={disabled} onChange={(event) => onChange({ ...role, color: event.target.value })} />
-    </FormField>
-    <FormField label={`${label}: marked words' weight`} description={mark.weight === role.weight && mark.color === role.color ? "The same as the rest: give them a weight or a colour to stand out." : undefined}>
-      <select value={mark.weight} disabled={disabled} onChange={(event) => onChange({ ...role, mark: { ...mark, weight: Number(event.target.value) } })}>
-        {(font?.weights ?? [mark.weight]).map((weight) => <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>)}
-      </select>
-    </FormField>
-    <FormField label={`${label}: marked words' colour`}>
-      <input type="color" value={mark.color} disabled={disabled} onChange={(event) => onChange({ ...role, mark: { ...mark, color: event.target.value } })} />
-    </FormField>
-    <FormField label={`${label}: letter spacing`} description={`${WORDS_TRACKING[0]} to ${WORDS_TRACKING[1]}, in thousandths of the size`}>
-      <input type="number" min={WORDS_TRACKING[0]} max={WORDS_TRACKING[1]} step={10} value={role.tracking ?? 0} disabled={disabled} onChange={(event) => { const tracking = Number(event.target.value); if (Number.isFinite(tracking)) { const { tracking: _old, ...rest } = role; void _old; const next = Math.min(WORDS_TRACKING[1], Math.max(WORDS_TRACKING[0], Math.round(tracking))); onChange(next ? { ...rest, tracking: next } : rest); } }} />
-    </FormField>
-    <label className={styles.factMeta}><input type="checkbox" checked={Boolean(role.upper)} disabled={disabled} onChange={(event) => { const { upper: _old, ...rest } = role; void _old; onChange(event.target.checked ? { ...rest, upper: true } : rest); }} /> {label} in capitals</label>
-  </>;
-}
-
-/**
- * A slide's words as an object (2026-10-17, the editor: "a graphic editor of
- * the text object: move it, size it, adjust it by hand, a background or not,
- * styles"): the slide as the server sets it, with the box of the words to
- * drag (or move with the arrow keys) and to widen from its edge; alignment,
- * each role's font, weight, size and colour, and what sits behind them. Each
- * change is tried on the slide after a moment, so what shows is what will be
- * published; "Apply" makes a new version from the same image, free. The
- * style can go to every slide, each keeping its own place.
- */
 /** One slide's preview with its words set as tried; with no layout, the program chooses one and says which. */
 async function previewWords(story: { topicId: string; sessionId: string; secret: string }, slide: string, layout: Draft2WordsLayout | undefined, signal: AbortSignal) {
   const response = await fetch(`/api/radar/draft2/images/words?topicId=${encodeURIComponent(story.topicId)}`, {
@@ -2379,9 +2327,8 @@ async function previewWords(story: { topicId: string; sessionId: string; secret:
     body: JSON.stringify({ sessionId: story.sessionId, slide, ...(layout ? { layout } : {}) }),
   });
   if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error ?? "The preview could not be made.");
-  const bottom = Number(response.headers.get("X-Words-Bottom"));
-  const chosen = JSON.parse(decodeURIComponent(response.headers.get("X-Words-Layout") ?? "null")) as Draft2WordsLayout | null;
-  return { blob: await response.blob(), bottom: Number.isFinite(bottom) ? bottom : undefined, chosen };
+  const read = <T,>(name: string): T | undefined => { const value = response.headers.get(name); return value ? JSON.parse(decodeURIComponent(value)) as T : undefined; };
+  return { blob: await response.blob(), chosen: read<Draft2WordsLayout>("X-Words-Layout"), parts: read<WordsParts>("X-Words-Parts"), palette: read<BrandSwatch[]>("X-Brand-Palette") ?? [] };
 }
 
 /**
@@ -2407,6 +2354,23 @@ function WordsEditor({ layout, ...props }: Omit<Parameters<typeof WordsLayoutEdi
   return <WordsLayoutEditor {...props} layout={start} fresh={!layout} />;
 }
 
+/** Where the headline and the text sat when the slide was last set, in slide pixels. */
+type WordsParts = { headline: { top: number; bottom: number }; text?: { top: number; bottom: number } };
+type WordsPart = keyof WordsParts;
+type WordsBox = Draft2WordsLayout["box"];
+
+/**
+ * A slide's words as objects (2026-10-17, the editor: "a graphic editor of
+ * the text object: move it, size it, adjust it by hand, a background or not,
+ * styles"): the slide as the server sets it, with the headline's box and the
+ * text's to drag (or move with the arrow keys) and to widen from their edge.
+ * The text follows the headline until the editor moves its box (2026-10-18:
+ * "the title and the subtitle handled differently"); then each has its own
+ * alignment and background. Fonts, sizes, colours (the brand's first) and
+ * marks per role. Each change is tried on the slide after a moment, so what
+ * shows is what will be published; "Apply" makes a new version from the same
+ * image, free. The style can go to every slide, each keeping its own places.
+ */
 function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDecide }: {
   slide: Draft2SlideImage;
   layout: Draft2WordsLayout;
@@ -2421,10 +2385,12 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
   // The words the program set on the image shown: what "how it reads" must keep.
   const words = shownAttempt(slide)?.words;
   const [all, setAll] = useState(false);
-  const [preview, setPreview] = useState<{ src: string; bottom: number }>();
+  // The slide as last set, where its parts sat, and the headline's box it was set with.
+  const [preview, setPreview] = useState<{ src: string; parts?: WordsParts; at: WordsBox }>();
+  const [palette, setPalette] = useState<BrandSwatch[]>([]);
   const [previewError, setPreviewError] = useState<string>();
   const stage = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ mode: "move" | "width"; x: number; y: number; box: Draft2WordsLayout["box"] } | undefined>(undefined);
+  const drag = useRef<{ part: WordsPart; mode: "move" | "width"; x: number; y: number; box: WordsBox } | undefined>(undefined);
   const changed = fresh || JSON.stringify(draft) !== JSON.stringify(layout);
   const disabled = locked || saving;
   // The server sets the words as tried, a moment after the last change: the preview is the slide as it would be published.
@@ -2432,25 +2398,37 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
     const controller = new AbortController();
     const timer = setTimeout(() => {
       previewWords({ topicId: story.topicId, sessionId: story.sessionId, secret: story.secret }, slide.slide, draft, controller.signal)
-        .then(({ blob, bottom }) => ({ src: URL.createObjectURL(blob), bottom: bottom ?? draft.box.top + 300 }))
-        .then((next) => { setPreviewError(undefined); setPreview((current) => { if (current) URL.revokeObjectURL(current.src); return next; }); })
+        .then(({ blob, parts, palette: colours }) => {
+          setPreviewError(undefined);
+          setPreview((current) => { if (current) URL.revokeObjectURL(current.src); return { src: URL.createObjectURL(blob), ...(parts ? { parts } : {}), at: draft.box }; });
+          if (colours.length) setPalette(colours);
+        })
         .catch((cause) => { if (!controller.signal.aborted) setPreviewError(cause instanceof Error ? cause.message : "The preview could not be made."); });
     }, 350);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [draft, slide.slide, story.secret, story.sessionId, story.topicId]);
   useEffect(() => () => { setPreview((current) => { if (current) URL.revokeObjectURL(current.src); return undefined; }); }, []);
 
-  const clampBox = (box: Draft2WordsLayout["box"]): Draft2WordsLayout["box"] => {
+  const clampBox = (box: WordsBox): WordsBox => {
     const width = Math.round(Math.min(SLIDE_PX.width, Math.max(WORDS_MIN_WIDTH, box.width)));
     return { width, left: Math.round(Math.min(SLIDE_PX.width - width, Math.max(0, box.left))), top: Math.round(Math.min(SLIDE_PX.height - 50, Math.max(0, box.top))) };
   };
-  const setBox = (box: Draft2WordsLayout["box"]) => setDraft((current) => ({ ...current, box: clampBox(box) }));
-  // A drag starts on the box (to move it) or on its edge (to widen it); the ref holds where it started, read only in the pointer events.
-  function beginDrag(mode: "move" | "width", event: React.PointerEvent<HTMLElement>) {
-    if (disabled) return;
+  // The text's box: its own once set apart; else where it follows the headline, moving with the headline's box while it is dragged.
+  const joined = preview?.parts?.text ? { left: draft.box.left, top: draft.box.top + (preview.parts.text.top - preview.at.top), width: draft.box.width } : undefined;
+  const textBox = draft.textBlock?.box ?? joined;
+  const apart = Boolean(draft.textBlock);
+  const boxOf = (part: WordsPart) => part === "headline" ? draft.box : textBox;
+  // Moving the text's box sets it apart, with the alignment and the background it had under the headline.
+  const setBox = (part: WordsPart, box: WordsBox) => setDraft((current) => part === "headline"
+    ? { ...current, box: clampBox(box) }
+    : { ...current, textBlock: { align: current.textBlock?.align ?? current.align, background: current.textBlock?.background ?? current.background, box: clampBox(box) } });
+  // A drag starts on a box (to move it) or on its edge (to widen it); the ref holds where it started, read only in the pointer events.
+  function beginDrag(part: WordsPart, mode: "move" | "width", event: React.PointerEvent<HTMLElement>) {
+    const box = boxOf(part);
+    if (disabled || !box) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { mode, x: event.clientX, y: event.clientY, box: draft.box };
+    drag.current = { part, mode, x: event.clientX, y: event.clientY, box };
   }
   const move = (event: React.PointerEvent<HTMLElement>) => {
     const start = drag.current;
@@ -2458,58 +2436,57 @@ function WordsLayoutEditor({ slide, layout, fresh, story, saving, locked, onDeci
     if (!start || !rect) return;
     const dx = ((event.clientX - start.x) / rect.width) * SLIDE_PX.width;
     const dy = ((event.clientY - start.y) / rect.height) * SLIDE_PX.height;
-    setBox(start.mode === "move" ? { ...start.box, left: start.box.left + dx, top: start.box.top + dy } : { ...start.box, width: start.box.width + dx });
+    setBox(start.part, start.mode === "move" ? { ...start.box, left: start.box.left + dx, top: start.box.top + dy } : { ...start.box, width: start.box.width + dx });
   };
   const release = () => { drag.current = undefined; };
-  const keys = (event: React.KeyboardEvent<HTMLElement>) => {
+  const keys = (part: WordsPart) => (event: React.KeyboardEvent<HTMLElement>) => {
     const step = event.shiftKey ? 32 : 8;
     const delta = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
-    if (!delta || disabled) return;
+    const box = boxOf(part);
+    if (!delta || disabled || !box) return;
     event.preventDefault();
-    setBox({ ...draft.box, left: draft.box.left + delta[0], top: draft.box.top + delta[1] });
+    setBox(part, { ...box, left: box.left + delta[0], top: box.top + delta[1] });
   };
-  const bottom = Math.max(draft.box.top + 40, preview?.bottom ?? draft.box.top + 300);
-  const boxStyle: CSSProperties = {
-    left: `${(draft.box.left / SLIDE_PX.width) * 100}%`, top: `${(draft.box.top / SLIDE_PX.height) * 100}%`,
-    width: `${(draft.box.width / SLIDE_PX.width) * 100}%`, height: `${((bottom - draft.box.top) / SLIDE_PX.height) * 100}%`,
-  };
+  // Each box as tall as its part was set, at least a line's.
+  const heightOf = (part: WordsPart) => { const span = preview?.parts?.[part]; return Math.max(40, span ? span.bottom - span.top : part === "headline" ? 200 : 120); };
+  const styleOf = (box: WordsBox, height: number): CSSProperties => ({
+    left: `${(box.left / SLIDE_PX.width) * 100}%`, top: `${(box.top / SLIDE_PX.height) * 100}%`,
+    width: `${(box.width / SLIDE_PX.width) * 100}%`, height: `${(height / SLIDE_PX.height) * 100}%`,
+  });
+  const where = (box: WordsBox) => `left ${box.left}, top ${box.top}, width ${box.width}`;
   return <div className={styles.focusBody}>
     <div ref={stage} className={styles.wordsStage} onPointerMove={move} onPointerUp={release} onPointerCancel={release}>
       {preview ? <Image className={styles.imageFill} src={preview.src} alt={`${slide.label} with the words as tried`} width={432} height={540} unoptimized /> : <p className={styles.factMeta}>{previewError ?? "Setting the words…"}</p>}
-      <div className={styles.wordsBox} style={boxStyle} role="slider" tabIndex={0} aria-label="The words' box: drag it, or move it with the arrow keys (Shift for larger steps)" aria-valuenow={draft.box.top} aria-valuemin={0} aria-valuemax={SLIDE_PX.height} aria-valuetext={`left ${draft.box.left}, top ${draft.box.top}, width ${draft.box.width}`} onPointerDown={(event) => beginDrag("move", event)} onKeyDown={keys}>
-        <span className={styles.wordsHandle} onPointerDown={(event) => beginDrag("width", event)} aria-hidden="true" />
+      <div className={styles.wordsBox} style={styleOf(draft.box, heightOf("headline"))} role="slider" tabIndex={0} aria-label="The headline's box: drag it, or move it with the arrow keys (Shift for larger steps)" aria-valuenow={draft.box.top} aria-valuemin={0} aria-valuemax={SLIDE_PX.height} aria-valuetext={where(draft.box)} onPointerDown={(event) => beginDrag("headline", "move", event)} onKeyDown={keys("headline")}>
+        <span className={styles.wordsTag} aria-hidden="true">Headline</span>
+        <span className={styles.wordsHandle} onPointerDown={(event) => beginDrag("headline", "width", event)} aria-hidden="true" />
       </div>
+      {textBox && words?.text ? <div className={styles.wordsBoxText} style={styleOf(textBox, heightOf("text"))} role="slider" tabIndex={0} aria-label={apart ? "The text's box: drag it, or move it with the arrow keys (Shift for larger steps)" : "The text, under the headline: drag it or move it with the arrow keys to set it apart"} aria-valuenow={textBox.top} aria-valuemin={0} aria-valuemax={SLIDE_PX.height} aria-valuetext={where(textBox)} onPointerDown={(event) => beginDrag("text", "move", event)} onKeyDown={keys("text")}>
+        <span className={styles.wordsTag} aria-hidden="true">Text</span>
+        <span className={styles.wordsHandle} onPointerDown={(event) => beginDrag("text", "width", event)} aria-hidden="true" />
+      </div> : null}
     </div>
     {previewError && preview ? <p className={styles.factMeta}>{previewError}</p> : null}
-    <p className={styles.factMeta}>Drag the box to move the words, its right edge to widen them; the arrow keys move it too. Box: left {draft.box.left}, top {draft.box.top}, width {draft.box.width} px.</p>
+    <p className={styles.factMeta}>{apart
+      ? `The headline and the text each in its own box: drag one to move it, its right edge to widen it; the arrow keys move it too. Headline: ${where(draft.box)}. Text: ${textBox ? where(textBox) : ""} px.`
+      : `Drag the headline's box to move the words, its right edge to widen them; drag the text's box to set it apart from the headline. Box: ${where(draft.box)} px.`}</p>
+    <ActionRow>
+      {apart
+        ? <Button size="compact" variant="quiet" disabled={disabled} onClick={() => { const { textBlock: _old, ...rest } = draft; void _old; setDraft(rest); }}>Put the text back under the headline</Button>
+        : textBox && words?.text ? <Button size="compact" variant="quiet" disabled={disabled} onClick={() => setBox("text", textBox)}>Set the text apart</Button> : null}
+    </ActionRow>
     <div className={styles.wordsControls}>
-      <FormField label="Alignment">
-        <select value={draft.align} disabled={disabled} onChange={(event) => setDraft({ ...draft, align: event.target.value as Draft2WordsLayout["align"] })}>
-          {WORDS_ALIGNS.map((align) => <option key={align} value={align}>{WORDS_ALIGN_LABEL[align]}</option>)}
-        </select>
-      </FormField>
-      <WordsRoleControls label="Headline" role={draft.headline} range={WORDS_SIZE.headline} disabled={disabled} onChange={(headline) => setDraft({ ...draft, headline })} />
-      <WordsRoleControls label="Text" role={draft.text} range={WORDS_SIZE.text} disabled={disabled} onChange={(text) => setDraft({ ...draft, text })} />
+      <PlaceControls label={apart ? "Headline" : "Words"} place={draft} palette={palette} disabled={disabled} onChange={(place) => setDraft({ ...draft, ...place })} />
+      {draft.textBlock ? <PlaceControls label="Text" place={draft.textBlock} palette={palette} disabled={disabled} onChange={(place) => setDraft({ ...draft, textBlock: place })} /> : null}
+      <WordsRoleControls label="Headline" role={draft.headline} range={WORDS_SIZE.headline} palette={palette} disabled={disabled} onChange={(headline) => setDraft({ ...draft, headline })} />
+      <WordsRoleControls label="Text" role={draft.text} range={WORDS_SIZE.text} palette={palette} disabled={disabled} onChange={(role) => setDraft({ ...draft, text: role })} />
       <label className={styles.factMeta}><input type="checkbox" checked={Boolean(draft.shadow)} disabled={disabled} onChange={(event) => { const { shadow: _old, ...rest } = draft; void _old; setDraft(event.target.checked ? { ...rest, shadow: true } : rest); }} /> A soft shadow under the letters (for words straight on a photo)</label>
-      <FormField label="Behind the words">
-        <select value={draft.background.kind} disabled={disabled} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, kind: event.target.value as Draft2WordsLayout["background"]["kind"] } })}>
-          {WORDS_BACKGROUNDS.map((kind) => <option key={kind} value={kind}>{WORDS_BACKGROUND_LABEL[kind]}</option>)}
-        </select>
-      </FormField>
-      {draft.background.kind !== "none" ? <>
-        <FormField label="Background colour">
-          <input type="color" value={draft.background.color} disabled={disabled} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, color: event.target.value } })} />
-        </FormField>
-        <FormField label="Background opacity" description={`${Math.round(draft.background.opacity * 100)} %`}>
-          <input type="range" min={0} max={100} step={5} value={Math.round(draft.background.opacity * 100)} disabled={disabled} onChange={(event) => setDraft({ ...draft, background: { ...draft.background, opacity: Number(event.target.value) / 100 } })} />
-        </FormField>
-      </> : null}
     </div>
     {words ? <>
       <ReadsAsField label="headline" words={words.headline} value={draft.setAs?.headline} disabled={disabled} onChange={(headline) => setDraft(withSetAs(draft, "headline", headline))} />
       {words.text ? <ReadsAsField label="text" words={words.text} value={draft.setAs?.text} disabled={disabled} onChange={(value) => setDraft(withSetAs(draft, "text", value))} /> : null}
     </> : null}
-    <label className={styles.factMeta}><input type="checkbox" checked={all} disabled={disabled} onChange={(event) => setAll(event.target.checked)} /> Give every slide this style (fonts, sizes, colours, marks, capitals, spacing, shadow, background, alignment); each keeps its own place and its own line breaks</label>
+    <label className={styles.factMeta}><input type="checkbox" checked={all} disabled={disabled} onChange={(event) => setAll(event.target.checked)} /> Give every slide this style (fonts, sizes, colours, marks, capitals, spacing, shadow, backgrounds, alignment); each keeps its own places and its own line breaks</label>
     <ActionRow>
       <Button size="compact" variant="secondary" busy={saving} disabled={disabled || (!changed && !all)} onClick={() => onDecide({ action: "layout", slide: slide.slide, layout: draft, all })}>Apply</Button>
       <Button size="compact" variant="quiet" disabled={disabled || JSON.stringify(draft) === JSON.stringify(layout)} onClick={() => setDraft(layout)}>Undo the changes</Button>

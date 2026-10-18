@@ -242,3 +242,27 @@ fonts, sizes, colours and background:
 
 The renderer (`draft2-text-layer.ts`) places each line by its own width and
 draws its runs one after the other, switching face for marked words.
+
+### The headline and the text apart, and the brand's colours (2026-10-18)
+
+The editor asked for the title and the subtitle to be handled apart, to use
+the space better, and for the brand's colours to be quick to pick.
+
+- **Two boxes.** The words' editor shows the headline's box and the text's.
+  The text follows the headline until the editor drags its box (or presses
+  "Set the text apart"); from then on it has its own place
+  (`Draft2WordsLayout.textBlock`: box, alignment and background with its
+  colour and opacity), and the headline keeps the layout's. "Put the text back
+  under the headline" joins them again. The practical line and the call to
+  action go with the text.
+- **The renderer** draws each part as its own group (`drawGroup`): its card or
+  band, its lines placed by their width. The preview reports where each part
+  sits (`wordsParts`, header `X-Words-Parts`) for the editor's boxes. The
+  shadow lifts only words straight on the image, never on a card or a band.
+- **The brand's colours first.** Every colour (each role's, the marked
+  words', each background's) shows the creative profile's palette as
+  swatches (header `X-Brand-Palette`), then the browser's picker for any
+  other; a background keeps its opacity slider beside its colour.
+- **To every slide**: a slide whose text is apart keeps its text's place and
+  takes the text's alignment and background; a slide whose text follows its
+  headline keeps it so (`withStyleOf`).

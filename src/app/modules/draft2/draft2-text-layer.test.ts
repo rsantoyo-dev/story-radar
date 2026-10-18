@@ -112,3 +112,24 @@ test("the editor's styles on the words: a marked word in its colour, a line brok
   assert.ok(await changedPixels(plain, await drawWords({ image: cream, words, layout: { ...base, headline: { ...base.headline, tracking: 120 } } }), whole) > 1_000);
   assert.ok(await changedPixels(plain, await drawWords({ image: cream, words, layout: { ...base, shadow: true } }), whole) > 1_000);
 });
+
+test("the text set apart: the headline in its box, the text in its own with its own card, nothing between; each part's place reported for the editor's boxes", async () => {
+  const { drawWords, wordsParts } = await import("./draft2-text-layer");
+  const teal = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#185B5C" } }).png().toBuffer());
+  const words = { headline: "El anillo del café", text: "El agua se va por el borde y arrastra el polvo con ella." };
+  const base = {
+    box: { left: 72, top: 64, width: 936 }, align: "left" as const, background: { kind: "none" as const, color: "#F6F0E4", opacity: 0.92 },
+    headline: { font: "fraunces-soft", weight: 900, size: 88, color: "#F6F0E4" }, text: { font: "dm-sans", weight: 500, size: 40, color: "#253746" },
+  };
+  const joined = wordsParts(words, base);
+  assert.equal(joined.headline.top, 64);
+  assert.ok(joined.text && joined.text.top > joined.headline.bottom && joined.text.top - joined.headline.bottom < 40, "joined: the text right under the headline");
+  const apart = { ...base, textBlock: { box: { left: 120, top: 1000, width: 840 }, align: "center" as const, background: { kind: "card" as const, color: "#F6F0E4", opacity: 1 } } };
+  const parts = wordsParts(words, apart);
+  assert.deepEqual([parts.headline.top, parts.text?.top], [64, 1000]);
+  assert.ok(parts.headline.bottom < 300 && parts.text!.bottom > 1050);
+  const set = await drawWords({ image: teal, words, layout: apart });
+  assert.equal(await changedPixels(teal, set, { left: 0, top: 320, width: 1080, height: 660 }), 0, "nothing between the two parts");
+  assert.ok(await pixelsOf(set, { left: 120, top: 1000, width: 840, height: 60 }, [0xf6, 0xf0, 0xe4]) > 5_000, "the text's own card");
+  assert.equal(await pixelsOf(set, { left: 0, top: 64, width: 60, height: 200 }, [0xf6, 0xf0, 0xe4]), 0, "no card behind the headline");
+});

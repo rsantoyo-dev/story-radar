@@ -6,7 +6,7 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
 import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
-import { autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, type Draft2TextBand, type Draft2WordsPalette } from "./draft2-text-layer";
+import { autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, wordsParts, type Draft2TextBand, type Draft2WordsPalette, type Draft2WordsParts } from "./draft2-text-layer";
 import { DEFAULT_WORDS_STYLE, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
@@ -1199,7 +1199,7 @@ async function applyWordsLayout({ topicId, session, images, slide: name, layout,
  * tries it: nothing is stored. Returns a JPEG of the finished slide (its words,
  * the page number, the logo) and where the block of words ends, for the box.
  */
-export async function previewDraft2Words({ topicId, sessionId, slide: name, layout }: { topicId: string; sessionId: string; slide: string; layout?: Draft2WordsLayout }): Promise<{ image: Uint8Array; bottom: number; layout: Draft2WordsLayout }> {
+export async function previewDraft2Words({ topicId, sessionId, slide: name, layout }: { topicId: string; sessionId: string; slide: string; layout?: Draft2WordsLayout }): Promise<{ image: Uint8Array; bottom: number; layout: Draft2WordsLayout; parts: Draft2WordsParts; palette: { name: string; color: string }[] }> {
   const session = await getDraft2Session(topicId, sessionId);
   const images = session?.images;
   if (!session || !images) throw new Draft2InputError("Generate the images first.");
@@ -1214,7 +1214,10 @@ export async function previewDraft2Words({ topicId, sessionId, slide: name, layo
   const final = await finish(ctx, slide, attempt, base);
   const used = attempt.wordsLayout!;
   const image = new Uint8Array(await sharp(Buffer.from(final)).resize({ width: 864 }).jpeg({ quality: 84 }).toBuffer());
-  return { image, bottom: wordsBlockBottom(wordsFor(ctx, slide), used), layout: used };
+  const words = wordsFor(ctx, slide);
+  // The brand's colours, for the editor to pick at once.
+  const palette = (ctx.profile.brandPalette ?? []).flatMap((entry) => /^#?[0-9a-f]{6}$/iu.test(entry.color.trim()) ? [{ name: entry.name || entry.color, color: `#${entry.color.trim().replace(/^#/u, "").toLowerCase()}` }] : []);
+  return { image, bottom: wordsBlockBottom(words, used), layout: used, parts: wordsParts(words, used), palette };
 }
 
 /** A panorama's scene the editor can act on: made (or the one before a remake that failed), under the editor's panorama, in the run that stands. */

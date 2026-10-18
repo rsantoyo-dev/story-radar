@@ -11,8 +11,10 @@ export const runtime = "nodejs";
  * A slide's words set with the layout the editor is trying ({ sessionId,
  * slide, layout }), on the image the slide shows: a JPEG of the finished
  * slide, nothing stored, no model called. X-Words-Bottom says where the block
- * of words ends, for the editor's box. Without a layout the program chooses
- * one, and X-Words-Layout carries it (URI-encoded JSON).
+ * of words ends, for the editor's box; X-Words-Parts where the headline and
+ * the text each sit, for its two boxes; X-Brand-Palette the brand's colours.
+ * Without a layout the program chooses one, and X-Words-Layout carries it
+ * (each URI-encoded JSON).
  */
 export async function POST(request: Request) {
   const denied = await authorizeRadarCollector(request);
@@ -25,8 +27,12 @@ export async function POST(request: Request) {
     const topicId = await requireActiveRequestTopic(request);
     // No layout: a slide lettered before layouts were kept, the editor's starting point.
     const tried = body?.layout ? parseWordsLayout(body.layout) : undefined;
-    const { image, bottom, layout } = await previewDraft2Words({ topicId, sessionId, slide, ...(tried ? { layout: tried } : {}) });
-    return new Response(Buffer.from(image), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "X-Words-Bottom": String(bottom), "X-Words-Layout": encodeURIComponent(JSON.stringify(layout)) } });
+    const { image, bottom, layout, parts, palette } = await previewDraft2Words({ topicId, sessionId, slide, ...(tried ? { layout: tried } : {}) });
+    const header = (value: unknown) => encodeURIComponent(JSON.stringify(value));
+    return new Response(Buffer.from(image), { headers: {
+      "Content-Type": "image/jpeg", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+      "X-Words-Bottom": String(bottom), "X-Words-Layout": header(layout), "X-Words-Parts": header(parts), "X-Brand-Palette": header(palette),
+    } });
   } catch (error) {
     return draft2ErrorResponse(error, "preview the words");
   }

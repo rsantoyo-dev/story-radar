@@ -67,12 +67,22 @@ export type Draft2WordsRole = {
   /** Letter spacing, in thousandths of the size (negative tightens). */
   tracking?: number;
 };
-export type Draft2WordsLayout = {
+/** Where a part of the words sits and what is behind it: its box (its height follows the words), alignment and background. */
+export type Draft2WordsPlace = {
   box: { left: number; top: number; width: number };
   align: "left" | "center" | "right";
+  background: { kind: "none" | "card" | "band"; color: string; opacity: number };
+};
+export type Draft2WordsLayout = Draft2WordsPlace & {
   headline: Draft2WordsRole;
   text: Draft2WordsRole;
-  background: { kind: "none" | "card" | "band"; color: string; opacity: number };
+  /**
+   * The text set apart from the headline (2026-10-18, the editor: "the title
+   * and the subtitle handled differently, to use the space better"): its own
+   * box, alignment and background, the headline keeping the layout's. Absent,
+   * the text follows the headline in one block.
+   */
+  textBlock?: Draft2WordsPlace;
   /** A soft shadow under the letters, for words straight on a photo. */
   shadow?: true;
   /**
@@ -118,10 +128,8 @@ export function setAsMismatches(words: Draft2SlideWords, layout: Pick<Draft2Word
  */
 export function parseWordsLayout(value: unknown): Draft2WordsLayout {
   const body = record(value);
-  const box = record(body.box);
   const number = (entry: unknown, fallback: number) => typeof entry === "number" && Number.isFinite(entry) ? entry : fallback;
   const clamp = (entry: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, entry)));
-  const width = clamp(number(box.width, 936), WORDS_MIN_WIDTH, 1080);
   const color = (entry: unknown, fallback: string) => typeof entry === "string" && /^#[0-9a-f]{6}$/iu.test(entry.trim()) ? entry.trim() : fallback;
   const role = (entry: unknown, [min, max]: readonly [number, number], fallback: Draft2WordsRole): Draft2WordsRole => {
     const given = record(entry);
@@ -137,7 +145,22 @@ export function parseWordsLayout(value: unknown): Draft2WordsLayout {
       ...(tracking ? { tracking } : {}),
     };
   };
-  const background = record(body.background);
+  const place = (entry: Record<string, unknown>, fallback?: Draft2WordsPlace): Draft2WordsPlace => {
+    const given = record(entry.box);
+    const placeWidth = clamp(number(given.width, fallback?.box.width ?? 936), WORDS_MIN_WIDTH, 1080);
+    const behind = record(entry.background);
+    return {
+      box: { left: clamp(number(given.left, fallback?.box.left ?? 72), 0, 1080 - placeWidth), top: clamp(number(given.top, fallback?.box.top ?? 64), 0, 1300), width: placeWidth },
+      align: WORDS_ALIGNS.find((option) => option === entry.align) ?? fallback?.align ?? "left",
+      background: {
+        kind: WORDS_BACKGROUNDS.find((option) => option === behind.kind) ?? fallback?.background.kind ?? "none",
+        color: color(behind.color, fallback?.background.color ?? "#ffffff"),
+        opacity: Math.min(1, Math.max(0, number(behind.opacity, fallback?.background.opacity ?? 0.92))),
+      },
+    };
+  };
+  const headlinePlace = place(body);
+  const textBlock = body.textBlock && typeof body.textBlock === "object" ? place(record(body.textBlock), headlinePlace) : undefined;
   const setAs = record(body.setAs);
   const readAs = (entry: unknown): string | undefined => {
     if (typeof entry !== "string") return undefined;
@@ -150,23 +173,28 @@ export function parseWordsLayout(value: unknown): Draft2WordsLayout {
   return {
     ...(body.shadow === true ? { shadow: true as const } : {}),
     ...(headlineAs || textAs ? { setAs: { ...(headlineAs ? { headline: headlineAs } : {}), ...(textAs ? { text: textAs } : {}) } } : {}),
-    box: { left: clamp(number(box.left, 72), 0, 1080 - width), top: clamp(number(box.top, 64), 0, 1300), width },
-    align: WORDS_ALIGNS.find((entry) => entry === body.align) ?? "left",
+    ...headlinePlace,
     headline: role(body.headline, WORDS_SIZE.headline, { font: "liberation-sans", weight: 700, size: 66, color: "#1b1f24" }),
     text: role(body.text, WORDS_SIZE.text, { font: "liberation-sans", weight: 400, size: 38, color: "#1b1f24" }),
-    background: {
-      kind: WORDS_BACKGROUNDS.find((entry) => entry === background.kind) ?? "none",
-      color: color(background.color, "#ffffff"),
-      opacity: Math.min(1, Math.max(0, number(background.opacity, 0.92))),
-    },
+    ...(textBlock ? { textBlock } : {}),
   };
 }
 
-/** A layout's style without its place: what "apply to every slide" carries, each slide keeping its own box and how its own words read. */
+/**
+ * A layout's style without its place: what "apply to every slide" carries,
+ * each slide keeping its own box, whether its text is set apart (and where),
+ * and how its own words read. A slide whose text is apart takes the text's
+ * alignment and background from the style.
+ */
 export function withStyleOf(layout: Draft2WordsLayout, style: Draft2WordsLayout): Draft2WordsLayout {
-  const { setAs, ...rest } = style;
+  const { setAs, textBlock, ...rest } = style;
   void setAs;
-  return { ...rest, box: layout.box, ...(layout.setAs ? { setAs: layout.setAs } : {}) };
+  const textStyle = textBlock ?? style;
+  return {
+    ...rest, box: layout.box,
+    ...(layout.textBlock ? { textBlock: { box: layout.textBlock.box, align: textStyle.align, background: textStyle.background } } : {}),
+    ...(layout.setAs ? { setAs: layout.setAs } : {}),
+  };
 }
 
 /** The words a slide shows, from the carousel's slide. */

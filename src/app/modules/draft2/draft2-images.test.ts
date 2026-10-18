@@ -265,6 +265,7 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     decide: (input: Record<string, unknown>) => exports.editDraft2Images({ topicId, sessionId, input }),
     file: (input: Record<string, unknown>) => exports.draft2ImageFile({ topicId, sessionId, ...input }) as unknown as Promise<File>,
     ownScene: (input: { image: Uint8Array; name: string; rights: "own" | "licensed"; credit?: string }) => exports.placeOwnDraft2Scene({ topicId, sessionId, ...input }),
+    preview: (input: Record<string, unknown>) => exports.previewDraft2Words({ topicId, sessionId, ...input }),
     archive: () => exports.draft2ImagesArchive({ topicId, sessionId }) as unknown as Promise<{ fileName: string; archive: Buffer; count: number; reviewCopies: number }>,
     calls,
     r2,
@@ -700,4 +701,16 @@ test("the editor's own panorama scene: kept as sent, brought to a drawn scene's 
   await small.run();
   small.setRow({ images: { ...small.row().images!, presentation: { images: "panorama", text: "program" } } });
   await assert.rejects(small.ownScene({ image: Buffer.from("tiny"), name: "tiny.png", rights: "own" }), /For 3 slides the scene needs at least 1296 × 540 pixels/);
+});
+
+test("the words' preview says where the headline and the text sit and gives the brand's colours, for the editor's boxes and swatches", async () => {
+  const h = harness();
+  await h.run();
+  h.setRow({ images: { ...h.row().images!, presentation: { images: "slides", text: "program" } } });
+  // The slides were lettered by the image model in this run: the shown version carries words as the program would have set them.
+  const images = h.row().images!;
+  h.setRow({ images: { ...images, slides: images.slides.map((slide) => ({ ...slide, attempts: slide.attempts.map((attempt) => ({ ...attempt, words: { headline: "Treats for the animals", text: "A free rally on Saturday." } })) })) } });
+  const preview = await (h.preview as unknown as (input: Record<string, unknown>) => Promise<{ parts: { headline: { top: number }; text?: { top: number } }; palette: { name: string; color: string }[] }>)({ slide: "cover", layout: { ...WORDS_LAYOUT, textBlock: { box: { left: 72, top: 1000, width: 936 }, align: "left", background: WORDS_LAYOUT.background } } });
+  assert.equal(json([preview.parts.headline.top, preview.parts.text?.top]), json([WORDS_LAYOUT.box.top, 1000]));
+  assert.equal(json(preview.palette), json([{ name: "Navy", color: "#173f52" }, { name: "Cream", color: "#f6f0e4" }, { name: "Gold", color: "#e3a62f" }]));
 });

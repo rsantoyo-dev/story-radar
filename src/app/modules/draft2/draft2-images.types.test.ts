@@ -356,3 +356,15 @@ test("the editor's own image stands without Sol: it settles at once, clears the 
   const cut = cutSections({ width: 3840, height: 1080, sections }, {});
   assert.equal(json([cut.sections[0], cut.sections[5].left + cut.sections[5].width]), json([{ slide: "cover", left: 3, top: 140, width: 639, height: 799 }, 3837]));
 });
+
+test("the text set apart from the headline: its own box, alignment and background, checked as the headline's, from the headline's where it says nothing; every slide's own place kept when a style goes to all", async () => {
+  const { parseWordsLayout, withStyleOf } = await import("./draft2-images.types");
+  const layout = parseWordsLayout({ box: { left: 72, top: 64, width: 936 }, align: "left", background: { kind: "none", color: "#F6F0E4", opacity: 0.9 }, textBlock: { box: { left: 900, top: 1400, width: 100 }, align: "right", background: { kind: "card", opacity: 3 } } });
+  assert.equal(json(layout.textBlock), json({ box: { left: 840, top: 1300, width: 240 }, align: "right", background: { kind: "card", color: "#F6F0E4", opacity: 1 } }), "kept inside the slide, at least 240 wide, the headline's colour where it gives none");
+  assert.equal(parseWordsLayout({ textBlock: "below" }).textBlock, undefined);
+  const joined = parseWordsLayout({ box: { left: 72, top: 900, width: 600 } });
+  const apart = parseWordsLayout({ box: { left: 72, top: 64, width: 936 }, textBlock: { box: { left: 72, top: 1000, width: 500 }, align: "center", background: { kind: "band", color: "#173F52", opacity: 0.8 } } });
+  assert.equal(withStyleOf(joined, layout).textBlock, undefined, "a slide whose text follows its headline keeps it so");
+  assert.equal(json(withStyleOf(apart, layout).textBlock), json({ box: apart.textBlock!.box, align: "right", background: layout.textBlock!.background }), "a slide whose text is apart keeps its place and takes the text's style");
+  assert.equal(json(withStyleOf(apart, joined).textBlock), json({ box: apart.textBlock!.box, align: joined.align, background: joined.background }), "from a joined style, the words' alignment and background");
+});
