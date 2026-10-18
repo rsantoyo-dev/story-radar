@@ -84,12 +84,23 @@ export const OPENING_MAX_ROUNDS = OPENING_ROUND_PLAN.length;
 export const OPENING_STALL_MS = 2 * 60_000;
 export const OPENING_ACCEPT_SCORE = 95;
 export const OPENING_CRITERION_FLOOR = 85;
-export const COVER_HEADLINE_MAX_WORDS = 8;
-export const COVER_SUBHEADLINE_MAX_WORDS = 12;
-export const SLIDE2_HEADLINE_MAX_WORDS = 8;
+/** What the writer aims for in its headlines and the cover's subheadline (each request's wordLimits, the hooks skill's aim). */
+export const COVER_HEADLINE_TARGET_WORDS = 8;
+export const COVER_SUBHEADLINE_TARGET_WORDS = 12;
+export const SLIDE2_HEADLINE_TARGET_WORDS = 8;
+/**
+ * What the program accepts, and the judge reads as the limit. Since
+ * 2026-10-18 the editor tolerates more than the aim ("hasta 10 en titular y
+ * 16 en subtítulo"): in the eight runs before, 22% of the openings were
+ * blocked for length, nearly always that alone and most by one word, which
+ * cost a fix pass in 17 of 24 rounds and two points of the judge's score.
+ */
+export const COVER_HEADLINE_MAX_WORDS = 10;
+export const COVER_SUBHEADLINE_MAX_WORDS = 16;
+export const SLIDE2_HEADLINE_MAX_WORDS = 10;
 export const SLIDE2_BODY_MAX_WORDS = 30;
-/** The opening's word limits as the writer reads them in each request (the program checks the same constants). */
-export const OPENING_WORD_LIMITS = { coverHeadline: COVER_HEADLINE_MAX_WORDS, coverSubheadline: COVER_SUBHEADLINE_MAX_WORDS, slide2Headline: SLIDE2_HEADLINE_MAX_WORDS, slide2Body: SLIDE2_BODY_MAX_WORDS } as const;
+/** The opening's word limits as the writer reads them in each request: the aims, with the body's limit; the program checks the maxima. */
+export const OPENING_WORD_LIMITS = { coverHeadline: COVER_HEADLINE_TARGET_WORDS, coverSubheadline: COVER_SUBHEADLINE_TARGET_WORDS, slide2Headline: SLIDE2_HEADLINE_TARGET_WORDS, slide2Body: SLIDE2_BODY_MAX_WORDS } as const;
 /** Slide 2 restates the cover when this share of their longer words is the same. */
 export const SLIDE2_RESTATEMENT_OVERLAP = 0.5;
 

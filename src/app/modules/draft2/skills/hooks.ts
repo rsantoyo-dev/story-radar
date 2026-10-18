@@ -30,11 +30,14 @@ import type { Draft2Skill } from "./draft2-skills";
  * cover or slide 2 states the focus's guards (MISLEADS when it does not).
  * Version 9: a guard is prevented with what the facts say (what the measure
  * is, when it starts, the period), never a reassurance they do not give
- * ("it is not closed"); one of its facts is enough.
+ * ("it is not closed"); one of its facts is enough. Version 11, 2026-10-18:
+ * the headlines' and the subheadline's numbers are an aim with a tolerance
+ * (8 words, 10 at the very most; 12, 16 at the very most): a text past the aim
+ * but within the tolerance is not a flaw, for the writer or the judge.
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "10",
+  version: "11",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -83,8 +86,9 @@ guard's facts; the judge names one whose words leave the misreading open
 (MISLEADS).
 
 ## Cover headline
-- At most 8 words, a complete thought with a verb, readable at a glance on a
-  phone. The story's tension, consequence or surprise for *this* audience,
+- At most 8 words is the aim, 10 at the very most: a complete thought with a
+  verb, readable at a glance on a phone; 9 or 10 when the thought needs them
+  is no flaw. The story's tension, consequence or surprise for *this* audience,
   never a label of the event ("X announces Y", "Company launches product").
 - No attribution in the headline ("according to", "says", "reports"). Avoid
   hedge words there too, but never by dropping a qualifier: without its
@@ -107,14 +111,15 @@ guard's facts; the judge names one whose words leave the misreading open
   venue) when the facts give it: a local reader places the story at once.
 
 ## Cover subheadline
-- At most 12 words, one short line: the one concrete draw that makes the
+- At most 12 words is the aim, 16 at the very most, one short line: the one concrete draw that makes the
   promise credible (a date, a price, a count, a limit, or the cause when the
   headline states the consequence), never a sentence of details; the
   headline carries the cover and the details belong to the slides after it. Carries any qualifier the claim needs ("could",
   "proposed", "reported"). Never restates the headline.
 
 ## Slide 2
-- Headline at most 8 words; body at most 30 words.
+- Headline at most 8 words is the aim, 10 at the very most; body at most 30
+  words.
 - The first payoff: it delivers the first concrete thing the cover promised,
   using at least one fact the cover did not use. It advances; it never
   restates or explains the cover.

@@ -95,9 +95,12 @@ test("a clean candidate has no mechanical finding; unknown or missing fact ids a
 test("lengths are counted in words a reader sees, against each part's limit", () => {
   assert.equal(openingWordCount("Weeks — not years — to an award"), 6, "a dash is not a word");
   assert.deepEqual(findings({ cover: { headline: "Pentagon buyers now judge short product demo videos" } }), [], "8 words is the limit");
-  assert.deepEqual(findings({ cover: { headline: "Pentagon buyers now judge short product demo videos quickly" } }), ["COVER_TOO_LONG c1 cover"]);
+  assert.deepEqual(findings({ cover: { headline: "Pentagon buyers now judge short product demo videos quickly" } }), [], "9 words: past the aim of 8, within the tolerance of 10");
+  assert.deepEqual(findings({ cover: { headline: "Pentagon buyers now judge short product demo videos quickly and fairly" } }), ["COVER_TOO_LONG c1 cover"]);
+  assert.deepEqual(findings({ cover: { subheadline: "Product demos replace months of paperwork in a new buying program for small firms." } }), [], "15 words: within the subheadline's 16");
   assert.deepEqual(findings({ cover: { subheadline: "Product demos replace months of paperwork in a new buying program that judges five minute videos from small companies." } }), ["SUBHEADLINE_TOO_LONG c1 cover"]);
-  assert.deepEqual(findings({ slide2: { headline: "Awards now arrive in under a single short week" } }), ["SLIDE2_HEADLINE_TOO_LONG c1 slide2"]);
+  assert.deepEqual(findings({ slide2: { headline: "Awards now arrive in under a single short week" } }), [], "9 words: within the tolerance");
+  assert.deepEqual(findings({ slide2: { headline: "Awards now arrive in well under a single short work week" } }), ["SLIDE2_HEADLINE_TOO_LONG c1 slide2"]);
   assert.deepEqual(findings({ slide2: { body: "A DOD official says awards took less than a week in several instances, which means small companies with a working product can now get paid while the larger contractors still wait for their paperwork to clear." } }), ["SLIDE2_BODY_TOO_LONG c1 slide2"]);
 });
 

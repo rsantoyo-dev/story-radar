@@ -762,7 +762,8 @@ studio beyond additive adapter options.
 
 The editor: "en el hook debe prevalecer un texto fuerte y evitar mucha info;
 la presentación debe ser fuerte e impactante, limpia, al estilo de la marca".
-The cover subheadline is now at most 12 words (`COVER_SUBHEADLINE_MAX_WORDS`,
+(Superseded on 2026-10-18, see the last section: 12 is now the aim and 16 the
+limit.) The cover subheadline is now at most 12 words (`COVER_SUBHEADLINE_MAX_WORDS`,
 was 18): one short line with the one draw that makes the promise credible (a
 date, a price, a count, a limit), never a sentence of details. The images
 step letters the cover with the headline dominant (`COVER_PROMPT`,
@@ -774,3 +775,25 @@ The cover says the cause of a sanction or ruling when it is the draw, names
 things as the facts do and the place readers recognize; the cover or slide 2
 cites every guard's facts (`GUARD_LATE`) and states them (`MISLEADS`). The
 fairness skill joins the writer and the judge. See draft2-news-integrity.md.
+
+## Addendum, 2026-10-18: an aim and a tolerance (hooks v11)
+
+The editor felt the word limits slowed the Opening and lowered its score.
+Measured over the eight runs since the word-of-margin rule (2026-10-16): 22%
+of the 123 candidates were blocked for length, in 26 of 27 cases that alone,
+mostly by one word (21 of 33 findings); length was 73% of the program's
+findings, cost a fix pass in 17 of 24 rounds, and the judge scored those
+candidates two points lower. The editor's decision: tolerate up to 10 words
+in a headline and 16 in the subheadline.
+
+- The writer's aim is unchanged: each request's `wordLimits` are the targets
+  (`COVER_HEADLINE_TARGET_WORDS` 8, `COVER_SUBHEADLINE_TARGET_WORDS` 12,
+  `SLIDE2_HEADLINE_TARGET_WORDS` 8, the body's 30), and the writer's standard
+  keeps a word of margin under them, so covers stay short.
+- The program blocks only past the tolerance (`COVER_HEADLINE_MAX_WORDS` 10,
+  `COVER_SUBHEADLINE_MAX_WORDS` 16, `SLIDE2_HEADLINE_MAX_WORDS` 10; slide 2's
+  body stays 30); hand edits and review patches are checked the same way.
+- The hooks skill (v11), which the writer and the judge both read, states
+  each as "8 words is the aim, 10 at the very most": past the aim and within
+  the tolerance is no flaw. The Review editor still reads the aims as its
+  limits.

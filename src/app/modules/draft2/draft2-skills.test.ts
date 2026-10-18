@@ -23,8 +23,8 @@ import {
   PENULTIMATE_BODY_MAX_WORDS, PENULTIMATE_HEADLINE_MAX_WORDS, callToActionBrief,
 } from "./draft2-closing.types";
 import {
-  COVER_HEADLINE_MAX_WORDS, COVER_SUBHEADLINE_MAX_WORDS, OPENING_ACCEPT_SCORE, OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_CRITERION_FLOOR,
-  SLIDE2_BODY_MAX_WORDS, SLIDE2_HEADLINE_MAX_WORDS,
+  COVER_HEADLINE_MAX_WORDS, COVER_HEADLINE_TARGET_WORDS, COVER_SUBHEADLINE_MAX_WORDS, COVER_SUBHEADLINE_TARGET_WORDS, OPENING_ACCEPT_SCORE, OPENING_CANDIDATES, OPENING_CRITERIA, OPENING_CRITERION_FLOOR,
+  SLIDE2_BODY_MAX_WORDS, SLIDE2_HEADLINE_MAX_WORDS, SLIDE2_HEADLINE_TARGET_WORDS,
 } from "./draft2-opening.types";
 
 const profile = {
@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@9", "levers@1", "fairness@2", "reader@2", "hooks@10", "closings@4", "decks@5", "review@8", "visuals@12", "images@6", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@9", "levers@1", "fairness@2", "reader@2", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@12", "images@6", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -55,9 +55,9 @@ test("the Facts prompts keep their words (the reviewer's say the article is cont
 });
 
 test("the openings rubric states the thresholds the program enforces", () => {
-  assert.match(HOOKS_SKILL.text, new RegExp(`## Cover headline\\n- At most ${COVER_HEADLINE_MAX_WORDS} words`));
-  assert.match(HOOKS_SKILL.text, new RegExp(`- At most ${COVER_SUBHEADLINE_MAX_WORDS} words, one short line`));
-  assert.match(HOOKS_SKILL.text, new RegExp(`- Headline at most ${SLIDE2_HEADLINE_MAX_WORDS} words; body at most ${SLIDE2_BODY_MAX_WORDS} words\\.`));
+  assert.match(HOOKS_SKILL.text, new RegExp(`## Cover headline\\n- At most ${COVER_HEADLINE_TARGET_WORDS} words is the aim, ${COVER_HEADLINE_MAX_WORDS} at the very most`));
+  assert.match(HOOKS_SKILL.text, new RegExp(`- At most ${COVER_SUBHEADLINE_TARGET_WORDS} words is the aim, ${COVER_SUBHEADLINE_MAX_WORDS} at the very most, one short line`));
+  assert.match(HOOKS_SKILL.text, new RegExp(`- Headline at most ${SLIDE2_HEADLINE_TARGET_WORDS} words is the aim, ${SLIDE2_HEADLINE_MAX_WORDS} at the very most; body at most ${SLIDE2_BODY_MAX_WORDS}\\s+words\\.`));
   assert.match(HOOKS_SKILL.text, new RegExp(`overall ≥ ${OPENING_ACCEPT_SCORE} and no criterion is below ${OPENING_CRITERION_FLOOR}`));
   for (const criterion of OPENING_CRITERIA) assert.match(HOOKS_SKILL.text, new RegExp(`\\n- ${criterion}: `));
   assert.match(OPENING_ROLES["opening-writer"], new RegExp(`ids c1…c${OPENING_CANDIDATES}\\.`));
