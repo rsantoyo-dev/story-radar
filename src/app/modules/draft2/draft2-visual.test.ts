@@ -8,6 +8,7 @@ import * as visualTypes from "./draft2-visual.types";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as visuals from "./skills/visuals";
+import { NARRATIVES_SKILL } from "./skills/narratives";
 import { loadInSandbox } from "./draft2-test-sandbox";
 import type { Draft2FocusValues } from "./draft2-focus.types";
 import type { Draft2Opening, Draft2OpeningCandidate } from "./draft2-opening.types";
@@ -147,7 +148,7 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
   assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([1, "medium", 1, "medium"]), "one script, and the judge's proposal");
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "15" }], ["visual", "draft2_visual_review", { visuals: "15" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "16" }], ["visual", "draft2_visual_review", { visuals: "16" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c1", "c3", 4, "auto", "illustration-editorial", 6]));
 });
@@ -168,10 +169,10 @@ test("one script, then it revised beside Sol's script as written and as edited, 
   assert.match(String(under.error), /under 90\/100\. This step takes no extra round on its own; ask for one if a revision would help\./);
 });
 
-test("v3: one script, then the judge's revision when the first is not accepted (2026-10-19), the judge at low effort and no proposal; the run records its plan", async () => {
+test("v3: one script, then the judge's revision when the first is not accepted (2026-10-19), the judge at medium (at low it scored 3 to 13 points under and accepted nothing) and no proposal; the run records its plan", async () => {
   const h = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c1", { c1: 88 }), judge("accept", "c1.2", { "c1.2": 92 })], session: { pipeline: "v3" } });
   const session = await h.run();
-  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "medium"], ["judge", "low"], ["writer", "medium"], ["judge", "low"]]));
+  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "medium"], ["judge", "medium"], ["writer", "medium"], ["judge", "medium"]]));
   assert.equal(h.judgeCalls().every((contents) => !("proposalsWanted" in contents)), true, "no proposal in either round");
   assert.equal(json([session.visual?.status, session.visual?.pipeline, session.visual?.plannedRounds, session.visual?.rounds.length, session.visual?.winnerId]), json(["ready", "v3", 2, 2, "c1.2"]));
   const first = await harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { pipeline: "v3" } }).run();
@@ -244,6 +245,37 @@ test("the editor casts the brand's characters on a slide of the chosen script, i
   assert.equal(json((funnel.funnelVersions(off.visual!.rounds).find((version) => version.candidate.id === chosenId)!.candidate as visualTypes.Draft2VisualCandidate).slides.find((slide) => slide.slide === target.slide)!.characterIds), json([]));
   await assert.rejects(h.cast(target.slide, ["char-zed"]), /char-zed is not one of the brand's characters/);
   await assert.rejects(h.cast("s9", ["char-mia"]), /s9 is not one of this script's slides/);
+});
+
+/** A six-beat spine with a panorama, one beat per slide of the harness's carousel (cover, slide 2, two deck slides, the penultimate, the last). */
+const PANORAMA_SPINE = {
+  beats: [
+    { slide: "cover", role: "hook", scene: "s", words: "w", image: "A young tree alone at the left end.", withholds: "x", factIds: ["f1"] },
+    { slide: "slide2", role: "setup", scene: "s", words: "w", image: "The tree gains a name.", withholds: "x", factIds: ["f1"] },
+    { slide: "middle", role: "rising", scene: "s", words: "w", image: "Plants of unequal heights.", withholds: "x", factIds: ["f2"] },
+    { slide: "middle", role: "climax", scene: "s", words: "w", image: "The turned soil.", withholds: "x", factIds: ["f2"] },
+    { slide: "penultimate", role: "rising", scene: "s", words: "w", image: "The planted tree.", withholds: "x", factIds: ["f3"] },
+    { slide: "last", role: "payoff", scene: "s", words: "w", image: "The gloves at the right end.", withholds: "", factIds: ["f1"] },
+  ],
+  panorama: {
+    world: "A long cream plane with a band of soil.", device: "journey", axis: "From the tree in its pot to the planted tree.", field: "cream", carrier: "the soil band", ending: "resolves",
+    stations: ["medium", "small", "medium", "large", "medium", "medium"].map((size, index) => ({ size, character: false, crossing: index === 5 ? "" : "the band" })),
+  },
+};
+
+test("a panorama: each slide's station travels beside its beat, the program sets every section's shot to wide, and the layout says the program sets the words", async () => {
+  const values = { ...VALUES, imageMode: "panorama", spine: PANORAMA_SPINE } as unknown as Draft2FocusValues;
+  const focus = { status: "ready", version: 2, edited: [], values };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { pipeline: "v3", focus, deck: { ...deckRun(), focus: { version: 2, values } } } });
+  const session = await h.run();
+  const context = h.calls[0].input.context as { stations?: Record<string, { size: string }>; spineBeats?: Record<string, string>; layout: { lettering: string } };
+  assert.deepEqual(Object.fromEntries(Object.entries(context.stations ?? {}).map(([slide, station]) => [slide, station.size])), { cover: "medium", slide2: "small", s1: "medium", s2: "large", penultimate: "medium", last: "medium" });
+  assert.equal(context.spineBeats?.s2, "The turned soil.");
+  assert.match(context.layout.lettering, /^The program sets each slide's words/);
+  assert.ok(String(h.calls[0].input.instructions).includes(NARRATIVES_SKILL.text), "the editor's panorama is the panorama form: both models read the narratives skill the visuals skill points to");
+  const chosen = funnel.funnelVersions(session.visual!.rounds).find((version) => version.candidate.id === "c1")!.candidate as visualTypes.Draft2VisualCandidate;
+  assert.deepEqual(chosen.slides.map((slide) => slide.shot), ["wide", "wide", "wide", "wide", "wide", "wide"], "the writer's shots gave way to the scene's one view");
+  assert.equal(json([session.visual?.status, session.visual?.rounds[0].mechanical.length]), json(["ready", 0]), "no shot finding on one wide scene");
 });
 
 test("the script reads the publication's last covers, and the run keeps them", async () => {

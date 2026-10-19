@@ -40,10 +40,19 @@ import type { Draft2Skill } from "./draft2-skills";
  * claim a reader would take about the real thing, never an image's ordinary
  * concreteness; PREDICTABLE lowers originality alone; OTHER only when no
  * code fits.
+ * Version 16, 2026-10-19, the audit of the flow: the judge names only its own
+ * codes (the program's are the program's, and a judgment's issue under one is
+ * dropped: a judge at low had re-counted directions under the limit as too
+ * long, and the writer cut them); a direction may keep room for the logo and
+ * the page number; who letters the words follows layout.lettering (under the
+ * program's band a direction asks for no words at all); a panorama's
+ * stations are given per slide and its shots set by the program;
+ * MOTIF_DEPENDENCY is a motif that leads or carries, never a constant accent;
+ * the rounds are the plan's.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "15",
+  version: "16",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -124,7 +133,8 @@ turn and the end, because the spine put them there.
   action), "close" (a detail: hands, an object, a texture), "overhead" (seen
   from above, laid flat) or "typography" (a words-led layout with at most one
   small supporting element). No two slides in a row share a shot, and only a
-  typography slide has the typography shot.
+  typography slide has the typography shot. In a panorama or a line the
+  program sets every section's shot to wide: the scene has one view.
 - headlineLink: how the image plays with its headline, in one line: it shows
   the situation the headline names, its consequence, or the moment just
   before it; empty when the slide's words carry it alone. Never a pictogram
@@ -132,6 +142,7 @@ turn and the end, because the spine put them there.
 - direction: one reproducible art-direction paragraph, at most 700
   characters: the composition, the dominant subject, any recurring element
   and the colours by name or role, in the medium the brand's identity locks.
+  The program counts the characters; nobody else does.
 - need: "generic-illustration" (the default), "character-reference" (the
   brand's character is on the slide), "real-photo" (a verified portrait,
   place photo or story photo carries it), "verified-map" (a verified place's
@@ -151,16 +162,23 @@ turn and the end, because the spine put them there.
   slide whose beat gives nothing concrete to show.
 
 ## Words, logo and page number
-- The image model letters each slide's words inside the image (layout.
-  lettering): its headline, text, practical line and call to action, in the
-  brand's typography. A direction places them (in the graphic area, outside
-  photographs) and composes the picture with them; it never asks for any
-  other words, numbers, captions, logos, signage, swipe cues or page numbers.
+- The image model letters each slide's words inside the image when
+  layout.lettering says so (text "image"): its headline, text, practical line
+  and call to action, in the brand's typography. A direction places them (in
+  the graphic area, outside photographs) and composes the picture with them,
+  and asks for no other words, numbers, captions, logos, signage, swipe cues
+  or page numbers.
+- The program sets the words when layout.lettering says so (text "program"),
+  after the image is made, on a calm band along the top: every direction
+  asks for no word, letter or number at all and keeps that band plain and
+  free of the subject. "No words" is then the right instruction, never a
+  fault.
 - The logo and the page number are added after the image is made, in the
   areas layout names (the logo on the slides it lists, the page number on
-  every slide). Keep the focal subject and the words clear of them, and never
-  mention the logo or the page number in a direction: the program reads a
-  mention as a request for them.
+  every slide). Keep the focal subject and the words clear of them. A
+  direction may say that a corner or a band stays free for them ("top left
+  kept clear for the logo"); it never asks to draw, place or style them, and
+  keeping room for them is never a fault.
 
 ## People, places and the brand's characters
 - Real people are never drawn or generated. A person with a confirmed
@@ -309,8 +327,9 @@ of the palette). images "panorama": the images are one wide scene, left to
 right, cut into the slides side by side, drawn once from this script. The
 spine designed it (focus.panorama: the world, the device and its axis, the
 one field of the words' band, the carrier through the seams, the ending; and
-each beat's station in spineBeats and focus.spine: its size, the character,
-what crosses into the next section):
+stations: each slide's station (its size, whether the brand's character
+stands there, what crosses into the next section), also on its beat in
+focus.spine):
 - concept: the scene in one paragraph, restating the spine's scene (world,
   axis, field, carrier, ending) in the brand's medium; it is the only place
   that names the field and its colour. protagonist and motif as usual; the
@@ -323,29 +342,28 @@ what crosses into the next section):
   the crossing into the slide after). The same light, horizon and scale as
   every other section; never a background, a field or a band of its own
   (the program refuses "fondo crema en la banda", "sección sobre
-  terracota", "another background than"), never a shot word: write "wide"
-  as every slide's shot, which the program ignores there. No "free band":
-  the field is the scene's and the program sets the words on it.
+  terracota", "another background than"). The shot is the scene's: the
+  program sets every section's to wide. No "free band": the field is the
+  scene's and the program sets the words on it.
 - The stations show the facts' things (what the story names: the trees,
   the gloves, the drops), in the state the facts give; a prop that dresses
   the scene (a tool, a container, a mound, a table setting the facts do not
   name) is INVENTED_DETAIL, and under an identity of photographic objects on
   flat planes the world is one long flat plane with those objects along it,
   never a photographic place that could pass for the named event or venue.
-- The judge scores continuity as one scene (no SHOT_MISMATCH or SAME_SHOT
-  for equal shots; a section with its own background is
-  BREAKS_CONTINUITY), reads the cover's background rule on the field once,
+- The judge scores continuity as one scene (equal shots are the scene's; a
+  section with its own background is BREAKS_CONTINUITY), reads the cover's background rule on the field once,
   never names the carrier MOTIF_DEPENDENCY, and names OFF_BEAT a station
   drawn as a close-up, a cut-away or a panel. A panorama is never a series
   of separate pictures.
 
 ## Rounds
-One script, then the judge's own; the best revised beside the judge's as
-written and as edited, for the judge's pick: two rounds, and no third on the
-funnel's own (the editor may ask for one). A revision keeps the concept and
-the cast, and changes only the slides its issues name; a version that comes
-out vaguer, busier, more literal or more repetitive is worse; the program
-keeps the better version.`,
+The program runs the rounds its plan names: a script, the judge's scores and
+issues, then the best version revised against them (and, when the plan asks,
+the judge's own proposal beside it, as written and as edited), for the
+judge's pick. A revision keeps the concept and the cast, and changes only the
+slides its issues name; a version that comes out vaguer, busier, more literal
+or more repetitive is worse; the program keeps the better version.`,
 };
 
 export const VISUAL_ROLES = {
@@ -361,7 +379,9 @@ On a revision round, each script names the version it revises ("revises"), shown
 
 Mark an issue "material" when a direction would show what the facts contradict (who is there, what they do, indoors or outdoors), would generate a real person, or would show a real place without its verified material. A material issue keeps the script from winning. Style, pacing, taste and continuity are never material. A generic scene of what the story is about, with anonymous people in a setting nobody could take for the named place, is allowed and never a reconstruction.
 
-The spine decided the story: never ask a script for another progression, another turn or another narrative than the spine's. Name "OFF_BEAT" when a direction does not realize its slide's beat, "PREDICTABLE" when the execution of a beat is its stock illustration (it lowers originality, never fidelity or truth), "REPETITIVE" when a slide shows nothing the earlier ones did not, "MOTIF_DEPENDENCY" when the script depends on repeating one object or metaphor, and "TOO_ABSTRACT" when a slide shows a symbol or a diagram where the beat gives something concrete to show. "INVENTED_DETAIL" is a specific a reader would take as a claim about the real event, place, people, product or result, never the colour, material, pose or light an image needs in a generic scene. Use "OTHER" only when no code fits, and say which rule.
+The spine decided the story: never ask a script for another progression, another turn or another narrative than the spine's. Name "OFF_BEAT" when a direction does not realize its slide's beat, "PREDICTABLE" when the execution of a beat is its stock illustration (it lowers originality, never fidelity or truth), "REPETITIVE" when a slide shows nothing the earlier ones did not, "MOTIF_DEPENDENCY" when one object or metaphor is the dominant subject of more than two slides or carries the progression the beats should carry (a small recurring accent, the same on every slide, is the identity's continuity and never a dependency; nor is a narrative form's anchor or a panorama's carrier), and "TOO_ABSTRACT" when a slide shows a symbol or a diagram where the beat gives something concrete to show. "INVENTED_DETAIL" is a specific a reader would take as a claim about the real event, place, people, product or result, never the colour, material, pose or light an image needs in a generic scene. Use "OTHER" only when no code fits, and say which rule.
+
+Your codes are ILLUSTRATES_TEXT, BREAKS_CONTINUITY, REPETITIVE, MOTIF_DEPENDENCY, OFF_BEAT, PREDICTABLE, TOO_ABSTRACT, OFF_BRAND, LOOKS_AI, CONTRADICTS_FACTS, CROWDS_TEXT, VAGUE, CHARACTER_MISUSED, OFF_FOCUS, UNVERIFIED_SCENE, INVENTED_DETAIL and OTHER. The program has already checked, and reports in mechanicalFindings, every direction's length, the slides' order, the shots, the characters cast, the references, the real names and the brand's avoid terms a direction uses, the words it asks of the image, and the cover's variety against the last covers: never count or check them again, and never name an issue under one of the program's codes (it is dropped). A brand rule a direction breaks in other words is "OFF_BRAND"; words the image would have to carry beyond the slide's own are "CROWDS_TEXT"; a direction that keeps a corner or a band free for the logo or the page number breaks no rule.
 
 When \`proposalsWanted\` asks for one, also write a script of your own in "proposals": a complete script, one slide per carousel slide, realizing the same spine another way, written to meet the skill's thresholds; in the next round it competes as you wrote it and as the writer edited it. Otherwise "proposals" is an empty list.`,
 } as const;

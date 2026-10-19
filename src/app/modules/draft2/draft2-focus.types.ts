@@ -505,11 +505,35 @@ const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, e
   ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
   : entry);
 
-/** The focus's values without the visual direction: what the words follow. */
-/** The fields the words follow: every one but those only the visual script and the images read (the visual direction, who sets the words, one image or a panorama). */
-const wordsValues = ({ visualDirection, textMode, imageMode, ...values }: Draft2FocusValues): Omit<Draft2FocusValues, "visualDirection" | "textMode" | "imageMode"> => {
+/** The parts of a spine only the images read: each beat's image line and dominant subject, and the panorama's scene. */
+const spineImages = (spine: Draft2FocusSpine) => ({ beats: spine.beats.map(({ image, subject }) => ({ image, ...(subject ? { subject } : {}) })), ...(spine.panorama ? { panorama: spine.panorama } : {}) });
+/** A spine without the parts only the images read: what the words follow. */
+const spineWords = (spine: Draft2FocusSpine) => spine.beats.map(({ image, subject, ...beat }) => { void image; void subject; return beat; });
+/** Whether two spines have the same beats, slide for slide: the images' parts of one can then stand on the other's words. */
+const sameBeats = (a: Draft2FocusSpine, b: Draft2FocusSpine) => a.beats.length === b.beats.length && a.beats.every((beat, index) => beat.slide === b.beats[index].slide);
+/**
+ * The spine a visual script follows: the words' beats with the image lines,
+ * subjects and scene as the focus has them now, while the beats are still the
+ * same slides (an image line or a station the editor rewrites by hand
+ * reaches the images without the words being written again: a real
+ * panorama's hand-fixed scene would otherwise have stayed on the Spine
+ * screen); the words' spine as it was otherwise.
+ */
+const spineForImages = (words: Draft2FocusSpine | undefined, now: Draft2FocusSpine | undefined): Draft2FocusSpine | undefined => {
+  if (!words || !now || !sameBeats(words, now)) return words;
+  const { panorama, ...rest } = words;
+  void panorama;
+  return {
+    ...rest,
+    beats: words.beats.map(({ subject, ...beat }, index) => { void subject; const image = now.beats[index]; return { ...beat, image: image.image, ...(image.subject ? { subject: image.subject } : {}) }; }),
+    ...(now.panorama ? { panorama: now.panorama } : {}),
+  };
+};
+
+/** The fields the words follow: every one but those only the visual script and the images read (the visual direction, who sets the words, one image or a panorama, and the spine's image lines, subjects and scene). */
+const wordsValues = ({ visualDirection, textMode, imageMode, spine, ...values }: Draft2FocusValues) => {
   void visualDirection; void textMode; void imageMode;
-  return values;
+  return { ...values, ...(spine ? { spine: spineWords(spine) } : {}) };
 };
 const samePresentation = (a: Pick<Draft2FocusValues, "textMode" | "imageMode">, b: Pick<Draft2FocusValues, "textMode" | "imageMode">) => {
   const left = focusPresentation(a);
@@ -530,20 +554,29 @@ export function wordsFollowFocus(snapshot: Draft2FocusSnapshot | undefined, focu
 
 /**
  * The focus a new visual script follows: the one its words followed, with
- * the visual direction as the focus has it now. The snapshot keeps the
- * words' version: the other fields are theirs.
+ * the visual direction, how the carousel is made and the spine's image lines,
+ * subjects and scene as the focus has them now (spineForImages). The snapshot
+ * keeps the words' version: the other fields are theirs. The words' snapshot
+ * itself when nothing the images read has changed.
  */
 export function visualFocus(words: Draft2FocusSnapshot, focus: { values?: Draft2FocusValues | null } | null | undefined): Draft2FocusSnapshot {
-  if (!focus?.values || (focus.values.visualDirection === words.values.visualDirection && samePresentation(focus.values, words.values))) return words;
+  if (!focus?.values) return words;
   const { visualDirection, textMode, imageMode } = focus.values;
-  return { ...words, values: { ...wordsValues(words.values), ...(visualDirection ? { visualDirection } : {}), ...(textMode ? { textMode } : {}), ...(imageMode ? { imageMode } : {}) } };
+  const { visualDirection: wordsDirection, textMode: wordsText, imageMode: wordsImages, ...rest } = words.values;
+  void wordsDirection; void wordsText; void wordsImages;
+  const spine = spineForImages(words.values.spine, focus.values.spine);
+  const values: Draft2FocusValues = { ...rest, ...(visualDirection ? { visualDirection } : {}), ...(textMode ? { textMode } : {}), ...(imageMode ? { imageMode } : {}), ...(spine ? { spine } : {}) };
+  return canonicalJson(values) === canonicalJson(words.values) ? words : { ...words, values };
 }
 
-/** Whether a visual script followed another visual direction than the focus has now. */
+/** Whether two spines show the same images: the same beats, slide for slide, with other image lines, subjects or scene. Spines whose beats differ are the words' concern (wordsFollowFocus). */
+const spineImagesChanged = (script: Draft2FocusSpine | undefined, now: Draft2FocusSpine | undefined): boolean =>
+  Boolean(script && now && sameBeats(script, now) && canonicalJson(spineImages(script)) !== canonicalJson(spineImages(now)));
+
+/** Whether a visual script followed another visual direction, another way of making the carousel or other spine images than the focus has now: any of them asks for another script, never for new words. */
 export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, focus: { values?: Draft2FocusValues | null } | null | undefined): boolean {
   if (!script || !focus?.values) return false;
-  // How the carousel is made counts too: words set by the program or a panorama ask for another script.
-  return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values);
+  return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values) || spineImagesChanged(script.values.spine, focus.values.spine);
 }
 
 export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED";

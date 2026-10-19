@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, JUDGE_STANDARD, WRITER_STANDARD, type Draft2Skill } from "./skills/draft2-skills";
+import { brandBrief, composeInstructions, DRAFT2_ROLES, DRAFT2_SKILLS, JUDGE_STANDARD, VISUAL_WRITER_STANDARD, WRITER_STANDARD, type Draft2Skill } from "./skills/draft2-skills";
 import { FACTS_ROLES, FACTS_SKILL } from "./skills/facts";
 import { CLOSING_ROLES, CLOSINGS_SKILL } from "./skills/closings";
 import { DECK_ROLES, DECKS_SKILL } from "./skills/decks";
@@ -38,8 +38,10 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(writer.instructions, `${OPENING_ROLES["opening-writer"]}\n\n${WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "a writer reads its standard after its role");
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
+  assert.equal(composeInstructions("visual-writer", [skill], "# Brand").instructions, `${VISUAL_ROLES["visual-writer"]}\n\n${VISUAL_WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "the visual writer reads its own standard: it writes no headline to count and cites no fact");
+  assert.match(VISUAL_WRITER_STANDARD, /every direction under 700 characters[^]*a corner or a band kept free for the logo is fine/);
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@11", "levers@1", "fairness@2", "reader@2", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@15", "images@6", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@11", "levers@1", "fairness@2", "reader@2", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@16", "images@6", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -190,7 +192,10 @@ test("the visual scripts rubric states the limits and thresholds the program enf
   assert.match(VISUALS_SKILL.text, /The image model letters each slide's words inside the image/);
   assert.match(VISUALS_SKILL.text, /is not a\s+reconstruction/);
   assert.match(VISUAL_ROLES["visual-judge"], /"REPETITIVE"/);
-  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "15" });
+  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "16" });
+  assert.match(VISUAL_ROLES["visual-judge"], /never name an issue under one of the program's codes \(it is dropped\)/, "the judge's codes are its own since visuals v16");
+  assert.match(VISUALS_SKILL.text, /keeping room for them is never a fault/);
+  assert.match(VISUALS_SKILL.text, /"No words" is then the right instruction, never a\s+fault/);
   assert.match(VISUALS_SKILL.text, /The script follows the focus's visualDirection when it has one/);
   assert.match(VISUAL_ROLES["visual-writer"], /ids c1, c2…/);
   assert.deepEqual(composeInstructions("people-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");

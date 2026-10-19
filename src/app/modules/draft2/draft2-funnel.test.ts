@@ -47,6 +47,14 @@ test("a judge that scores its own proposal, or names it the winner, does not end
   assert.throws(() => parse({ winnerId: "c7", scores: [score("c1", 84), score("c2", 91)] }), /winner c7 is not one of the candidates/);
 });
 
+test("an issue under a code the step gives as the program's is dropped: the program checked it, and a judge re-counting got it wrong", () => {
+  type Candidate = { id: string; angle: string; text: string };
+  const options = { criteria: ["tension"], codes: ["VAGUE", "OTHER"], dropCodes: ["TOO_LONG"], parts: ["cover"], maxProposals: 0, parseProposal: (): Candidate | undefined => undefined };
+  const answer = JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "x", suggestions: [], proposals: [], scores: [{ candidateId: "c1", tension: 80, overall: 80, note: "n" }], issues: [{ code: "TOO_LONG", candidateId: "c1", part: "cover", detail: "Too long." }, { code: "VAGUE", candidateId: "c1", part: "cover", detail: "Vague." }, { code: "ODD", candidateId: "c1", part: "cover", detail: "Odd." }] });
+  const parsed = funnelParseEvaluation<Candidate, { candidateId: string; overall: number; note: string; tension: number }, { code: string; detail: string }>(answer, ["c1"], options);
+  assert.deepEqual(parsed.issues.map((issue) => [issue.code, issue.detail]), [["VAGUE", "Vague."], ["OTHER", "Odd."]], "the program's code is dropped, an unknown one is OTHER");
+});
+
 test("the judge says what must survive revision: keep is read on every score and the revision request tells the writer to protect it", () => {
   type Candidate = { id: string; angle: string; text: string };
   const options = { criteria: ["tension"], codes: ["OTHER"], parts: [], maxProposals: 1, parseProposal: (raw: unknown, fallbackId: string): Candidate | undefined => { const item = raw as { id?: string; text?: string }; return item.text ? { id: item.id ?? fallbackId, angle: "", text: item.text } : undefined; } };
@@ -93,5 +101,6 @@ test("a Claude judge's evaluation schema has no enum inside an array, and keeps 
 test("a length finding says how many words to remove, at least: one more than the excess, so the fixed text ends under its limit", () => {
   assert.equal(lengthHint("The penultimate body has 31 words; the limit is 30."), "The penultimate body has 31 words; the limit is 30. Remove at least 2 words.");
   assert.equal(lengthHint("Slide 3's headline has 10 words; the limit is 8."), "Slide 3's headline has 10 words; the limit is 8. Remove at least 3 words.");
+  assert.equal(lengthHint("Slide 3's direction has 740 characters; the limit is 700."), "Slide 3's direction has 740 characters; the limit is 700. Remove at least 41 characters.", "a visual direction's limit is in characters");
   assert.equal(lengthHint("The cover cites f9, which is not a verified fact."), "The cover cites f9, which is not a verified fact.", "any other finding stays as it is");
 });

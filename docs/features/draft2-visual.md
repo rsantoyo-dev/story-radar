@@ -399,3 +399,65 @@ proposal, then the best revised beside the proposal as written and as
 edited, both rounds at medium, and no extra round on the funnel's own. Why:
 22 real runs under the earlier rubric, none accepted. Brief:
 `docs/features/draft2-spine.md`.
+
+## Addendum, 2026-10-19: the audit of the flow (visuals v16)
+
+The editor asked for a full review of the visual-script flow once it had
+become stable and cheap ("que nada se nos escape"). Measured on the 16 runs
+since 2026-10-15 and on the 25 scripts Luna had judged at both efforts
+(`round.shadow`, 2026-10-15/16):
+
+- **The judge at low under-scores.** Low scored 3 points under medium on
+  average, 7 to 13 under on a first script (b7e9c5b9 c1: 76 against 89),
+  named the same winner, and under v3 (ten runs, 55–85) accepted nothing
+  where medium's 86–91 would now pass the 90/85/70 gate. A judgment costs
+  0.001–0.005 $ at either effort; low saves a minute a round. `VISUAL_PLAN_V3`
+  judges at medium; the editor's choice per step still wins.
+- **The judge used the program's codes, wrongly.** In one run it named five
+  directions of 448–530 characters `DIRECTION_TOO_LONG` in both rounds; the
+  writer cut them and craft fell 52→45. Two panoramas were judged on
+  `SHOT_MISMATCH` ×7 and ×5 for shots the skill told the writer to ignore;
+  `SECTION_MISSING`, `DUPLICATE_CANDIDATE` and `DISCOVERY_MISSING` appeared
+  without a program finding. Now the judge's schema offers `VISUAL_JUDGE_CODES`
+  only, the parser drops an issue under a mechanical code
+  (`funnelParseEvaluation({ dropCodes })`), and the judge's role says what
+  the program has already checked.
+- **Three contradictions between the context and the skill**, each read in
+  the judge's `OTHER` issues: the skill forbade mentioning the logo while the
+  program allowed room kept for it (two runs faulted "no logos" / "esquina
+  libre para el logo"); `layout.lettering` said the image model letters the
+  words under the program's band, so the writer placed them where the model
+  would have (three `OTHER` issues in one judgment, 70accab8); the skill
+  pointed to stations "in spineBeats", where there were none (9e222181:
+  "the structure has no panorama field"). Now `visualLayout(profile,
+  carousel, presentation)` says who letters the words; the skill allows
+  room-keeping and says "no words" is right under the program's band; the
+  context carries `stations` (slide → size, character, crossing,
+  `spineStations`) and `bindPanoramaShots` sets every section's shot to wide
+  (no `SHOT_MISMATCH` or `SAME_SHOT` in one wide scene).
+- **A spine's image lines edited by hand never reached the script.**
+  `visualFocus` took only the visual direction and the presentation from the
+  focus as it stands; the spine stayed the deck's snapshot, so the Brossard
+  panorama's hand-fixed scene (focus v5) would have been ignored by the next
+  run (visual at v3). Now the spine's image lines, subjects and panorama
+  follow the focus while the beats are the same slides (`spineForImages`),
+  `wordsFollowFocus` ignores those parts (an image line is not the words'),
+  and `visualDirectionChanged` marks the script stale for them ("The focus's
+  images changed since this script").
+- **Smaller:** the fix pass counted words for a limit in characters
+  (`lengthHint` now says "Remove at least N characters", `VISUAL_FIX_INSTRUCTION`
+  cuts what a direction repeats, never its subject); the visual writer read
+  the text writers' standard (headline word counts, cited facts) and now
+  reads `VISUAL_WRITER_STANDARD`; `MOTIF_DEPENDENCY` was named on almost every
+  run for a constant accent and is now a motif that leads more than two
+  slides or carries the progression; the editor's panorama (imageMode) adds
+  the narratives skill the visuals skill points to; `VISUAL_PLAN_V3_PANORAMA`
+  and `visualPlan`'s panorama option, identical to the plain plan, are gone.
+
+Not changed, with the data for it: no extra round on the funnel's own (the
+third to fifth rounds never raised a script's best), the writer at medium,
+one script a round, the gate of 2026-10-19. The two `error` calls of 0 s in
+81386ecd were Anthropic's "credit balance too low", not the flow. Watch on
+the next runs: acceptance at medium, how often the judge's `OTHER` survives
+the removed contradictions, and whether `MOTIF_DEPENDENCY` still appears
+when the motif is an accent.

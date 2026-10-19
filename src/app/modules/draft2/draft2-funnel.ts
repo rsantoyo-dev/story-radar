@@ -410,14 +410,15 @@ export const FUNNEL_FIX_INSTRUCTION = "Fix only what each finding names, in as f
  * round its findings would have cost.
  */
 /**
- * A length finding ("has 31 words; the limit is 30") with the words to remove
- * at least, one more than the excess, so the fixed text ends under its limit:
- * the first fix passes asked only to fix the length and Claude, miscounting,
- * returned the same count.
+ * A length finding ("has 31 words; the limit is 30"; a visual direction's
+ * "has 740 characters; the limit is 700") with the words or characters to
+ * remove at least, one more than the excess, so the fixed text ends under its
+ * limit: the first fix passes asked only to fix the length and Claude,
+ * miscounting, returned the same count.
  */
 export function lengthHint(detail: string): string {
-  const length = /has (\d+) words?; the limit is (\d+)/.exec(detail);
-  return length ? `${detail} Remove at least ${Number(length[1]) - Number(length[2]) + 1} words.` : detail;
+  const length = /has (\d+) (words?|characters?); the limit is (\d+)/.exec(detail);
+  return length ? `${detail} Remove at least ${Number(length[1]) - Number(length[3]) + 1} ${length[2].startsWith("word") ? "words" : "characters"}.` : detail;
 }
 
 export function funnelFixRequest<C extends FunnelCandidate, K extends string>(words: FunnelWords<C, K>, flagged: readonly C[], findings: readonly FunnelIssue[]) {
@@ -625,21 +626,26 @@ export function funnelParseCandidates<C extends FunnelCandidate>(answer: string,
  * The judge's answer as an evaluation of these candidates. Every candidate
  * must be scored once, with integer scores on every criterion (clamped to
  * 1–100: the adapter strips the schema's bounds), and the winner must be one
- * of them. Issue codes outside the contract become OTHER; an issue naming no
- * known candidate keeps its detail without the id; a part outside the step's
- * parts is dropped. A malformed proposal is dropped, never fatal. A judge
+ * of them. Issue codes outside the contract become OTHER, and an issue under
+ * a code in `dropCodes` is dropped (a step gives the program's own codes: the
+ * program has checked them, and a judge re-counting five directions over 700
+ * characters that were 448–530 had the writer cut them until craft fell); an
+ * issue naming no known candidate keeps its detail without the id; a part
+ * outside the step's parts is dropped. A malformed proposal is dropped, never fatal. A judge
  * that scores its own proposal beside the candidates, or names it the
  * winner, is not fatal either: the proposal competes in the next round,
  * judged blind, so its score is dropped and the best scored candidate stands
  * as the round's winner, with the verdict "revise" (the first real run that
  * failed this way, 2026-10-11, lost a whole visual round to one such score).
  */
-export function funnelParseEvaluation<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue>(answer: string, candidateIds: readonly string[], { criteria, codes, parts, parseProposal, maxProposals }: {
+export function funnelParseEvaluation<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue>(answer: string, candidateIds: readonly string[], { criteria, codes, parts, parseProposal, maxProposals, dropCodes = [] }: {
   criteria: readonly string[];
   codes: readonly string[];
   parts: readonly string[];
   parseProposal: (raw: unknown, fallbackId: string) => C | undefined;
   maxProposals: number;
+  /** Codes the judge may not use (the program's own): an issue under one is dropped. */
+  dropCodes?: readonly string[];
 }): FunnelEvaluation<C, S, I> {
   const body = parseObject(answer, "judge");
   let verdict: "accept" | "revise" | undefined = body.verdict === "accept" || body.verdict === "revise" ? body.verdict : undefined;
@@ -683,7 +689,7 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
   const issues = (Array.isArray(body.issues) ? body.issues : []).slice(0, 40).flatMap((raw): I[] => {
     const item = funnelRecord(raw);
     const detail = funnelText(item.detail, 600);
-    if (!detail) return [];
+    if (!detail || dropCodes.includes(String(item.code))) return [];
     const code = codes.find((candidate) => candidate === item.code) ?? "OTHER";
     const candidateId = funnelText(item.candidateId, 24);
     const part = parts.find((candidate) => candidate === item.part);

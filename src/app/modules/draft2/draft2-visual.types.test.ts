@@ -3,8 +3,8 @@ import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import { editorCast,
   forbiddenElement,
-  VISUAL_CRITERIA, VISUAL_LONG_PLAN, VISUAL_PLAN, avoidTerms, bindSpineBeats, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual, spineImageLines,
-  visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
+  VISUAL_CRITERIA, VISUAL_FIX_INSTRUCTION, VISUAL_JUDGE_CODES, VISUAL_LONG_PLAN, VISUAL_MECHANICAL_CODES, VISUAL_PLAN, VISUAL_PLAN_V3, avoidTerms, bindPanoramaShots, bindSpineBeats, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual, spineImageLines, spineStations,
+  visualEvaluationSchema, visualExploreRequest, visualFixRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
 import { funnelExtendable, funnelScorePasses, funnelVersions } from "./draft2-funnel";
@@ -73,7 +73,7 @@ test("the carousel in order, from the opening, the deck and the closing; one scr
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
   assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[1, 0, 1, "medium"], [0, 1, 0, "medium"]], "one script and the judge's, then the best revised at medium");
   assert.equal(VISUAL_LONG_PLAN, VISUAL_PLAN, "a long carousel runs the same plan");
-  assert.deepEqual(visualPlan(carousel, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[1, 0, 0, "medium", "low"], [0, 1, 0, "medium", "low"]], "v3: one script, then the judge's revision when the first is not accepted, the judge at low, no proposal");
+  assert.deepEqual(visualPlan(carousel, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[1, 0, 0, "medium", "medium"], [0, 1, 0, "medium", "medium"]], "v3: one script, then the judge's revision when the first is not accepted, the judge at medium (at low it scored 3 to 13 points under and accepted nothing), no proposal");
   const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
   const unjudged = { ...judged, round: 2, evaluation: undefined };
   assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged] }, VISUAL_PLAN.length), true, "a run that ended after one round takes the second");
@@ -97,6 +97,7 @@ test("the layout tells the script what is added afterwards: the words the image 
   assert.deepEqual(layout.logo, { slides: ["cover"], area: "the top left corner, about 12% of the slide's width, plus a margin" });
   assert.match(String(layout.numbering?.area), /page-number badge centred on the bottom edge/);
   assert.match(layout.lettering, /The image model letters each slide's words/);
+  assert.match(visualLayout({ brandOverlay: overlay, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel, { text: "program" }).lettering, /^The program sets each slide's words after the image is made, on a calm band along the top[^]*asks for no word, letter or number at all/, "under the program's words a direction asks for none: a writer told the image model letters them placed them where it would have, three OTHER issues in one judgment");
   const everywhere = visualLayout({ brandOverlay: { ...overlay, scope: "all-units" }, carouselChrome: { ...chrome, enabled: false } } as unknown as Parameters<typeof visualLayout>[0], carousel);
   assert.deepEqual([everywhere.logo?.slides.length, everywhere.numbering], [6, null]);
   assert.equal(visualLayout({ brandOverlay: { ...overlay, enabled: false }, carouselChrome: chrome } as unknown as Parameters<typeof visualLayout>[0], carousel).logo, null, "no logo when it is off");
@@ -123,6 +124,8 @@ test("shots alternate: no two slides in a row share one, and a typography slide 
   assert.deepEqual(findings(withSlide("s2", { need: "typography" })), ["SHOT_MISMATCH c1 s2"]);
   assert.deepEqual(findings(withSlide("s2", { shot: "typography" })), ["SHOT_MISMATCH c1 s2"]);
   assert.deepEqual(findings(withSlide("s2", { need: "typography", shot: "typography" })), []);
+  const line = { form: "follow-the-line" as const, anchorKind: "line" as const, characterId: null, anchor: "The trail", anchorFactIds: [], progression: "What the trail reaches", ending: "resolves" as const };
+  assert.deepEqual(findings(withSlide("s2", { need: "typography" }), { narrative: line }).filter((code) => /^(SHOT_MISMATCH|SECTION_MISSING)/.test(code)), ["SECTION_MISSING c1 s2"], "in one wide scene the shot is the scene's: a typography card is refused as a section, never as a shot");
 });
 
 test("the writer's answer becomes scripts; a slide missing a part is rejected; the judge scores every visual criterion per carousel slide", () => {
@@ -132,8 +135,11 @@ test("the writer's answer becomes scripts; a slide missing a part is rejected; t
   const broken = { ...script("c1"), slides: [{ slide: "cover", beat: "x", need: "painting", characterIds: [], references: [] }] };
   assert.throws(() => parseVisualCandidates(JSON.stringify({ candidates: [broken] })), (error: Error) => error instanceof Draft2ResponseError && /c1 is incomplete/.test(error.message));
   const evaluation = parseVisualEvaluation(JSON.stringify({ verdict: "revise", winnerId: "c1", summary: "x", suggestions: [], proposals: [script("p1")], scores: [score("c1", 90)],
-    issues: [{ code: "ILLUSTRATES_TEXT", candidateId: "c1", part: "s2", detail: "Repeats the words.", material: false }, { code: "LOOKS_AI", candidateId: "c1", part: "slide9", detail: "Glossy." }] }), ["c1"], carousel.map((entry) => entry.slide));
-  assert.deepEqual(evaluation.issues.map((issue) => [issue.code, issue.part ?? null]), [["ILLUSTRATES_TEXT", "s2"], ["LOOKS_AI", null]]);
+    issues: [{ code: "ILLUSTRATES_TEXT", candidateId: "c1", part: "s2", detail: "Repeats the words.", material: false }, { code: "LOOKS_AI", candidateId: "c1", part: "slide9", detail: "Glossy." }, { code: "DIRECTION_TOO_LONG", candidateId: "c1", part: "s1", detail: "Over 700 characters." }, { code: "SHOT_MISMATCH", candidateId: "c1", part: "cover", detail: "A close shot." }, { code: "NO_SUCH_CODE", candidateId: "c1", part: "s1", detail: "Something else." }] }), ["c1"], carousel.map((entry) => entry.slide));
+  assert.deepEqual(evaluation.issues.map((issue) => [issue.code, issue.part ?? null]), [["ILLUSTRATES_TEXT", "s2"], ["LOOKS_AI", null], ["OTHER", "s1"]], "an issue under one of the program's codes is dropped (the program counted: a judge at low had named five directions of 448–530 characters too long), an unknown code is OTHER");
+  const judgeSchema = visualEvaluationSchema(carousel.map((entry) => entry.slide)) as { properties: { issues: { items: { properties: { code: { enum: string[] } } } } } };
+  assert.deepEqual(judgeSchema.properties.issues.items.properties.code.enum, [...VISUAL_JUDGE_CODES], "the judge's schema offers its own codes only");
+  assert.ok(VISUAL_MECHANICAL_CODES.every((code) => !(VISUAL_JUDGE_CODES as readonly string[]).includes(code)));
   assert.deepEqual([...VISUAL_CRITERIA], ["fidelity", "continuity", "brand", "truth", "craft", "originality"], "the narrative is the spine's, judged at the Focus; the images are judged on executing it, and on their originality");
   const [open] = parseVisualCandidates(JSON.stringify({ candidates: [{ ...script("c1"), protagonist: "", motif: "" }] }));
   assert.equal(json([open.protagonist, open.motif]), json(["", ""]), "the protagonist and the motif are optional: the identity can carry the continuity alone");
@@ -207,6 +213,9 @@ test("the requests name scripts, and the mode line says what may be generated", 
   assert.deepEqual(Object.keys(refine), ["task", "scripts", "develop", "suggestions", "instruction"]);
   assert.match(refine.instruction, /^Revise each script in scripts[^]*Keep its concept, its protagonist, its cast and its motif[^]*Edit the script in develop/);
   assert.equal(visualJudgeRequest(VISUAL_PLAN, 1, [script("c1")], [], []).proposalsWanted, 1);
+  const fix = visualFixRequest([script("c1")], [{ code: "DIRECTION_TOO_LONG", candidateId: "c1", part: "s1", detail: "Slide 3's direction has 740 characters; the limit is 700." }]) as unknown as { instruction: string; scripts: { findings: { detail: string }[] }[] };
+  assert.equal(fix.instruction, VISUAL_FIX_INSTRUCTION, "the fix pass counts characters, not words, and cuts what a direction repeats");
+  assert.match(fix.scripts[0].findings[0].detail, /Remove at least 41 characters\.$/);
   assert.match(visualModeLine("illustration-editorial"), /real people only through confirmed documentary portraits/);
   assert.match(visualModeLine("photo-required"), /Nothing is generated/);
 });
@@ -313,7 +322,6 @@ test("each slide's beat is the spine's image line: the cover's and slide 2's bea
 });
 
 test("a panorama's script is one scene: a direction that gives its section a background of its own breaks the continuity, and under v3 the judge's revision round is kept", async () => {
-  const { visualPlan, VISUAL_PLAN_V3, VISUAL_PLAN_V3_PANORAMA } = await import("./draft2-visual.types");
   const panorama = { form: "panorama" as const, anchorKind: "scene" as const, characterId: null, anchor: "A kitchen counter seen straight on", anchorFactIds: [], progression: "From the wet drop to the dry ring", ending: "resolves" as const };
   const sections = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, shot: "wide" as const, characterIds: [], need: "generic-illustration" as const, recurring: "accent" as const })) });
   const striped = { ...sections, slides: sections.slides.map((entry) => entry.slide === "slide2" ? { ...entry, direction: direction("the next drop, fondo crema plano en la banda superior") } : entry.slide === "last" ? { ...entry, direction: direction("the glass; the section on terracotta closes it") } : entry) };
@@ -321,11 +329,20 @@ test("a panorama's script is one scene: a direction that gives its section a bac
   assert.deepEqual(continuity(findings(striped, { narrative: panorama })), ["BREAKS_CONTINUITY c1 slide2", "BREAKS_CONTINUITY c1 last"]);
   assert.deepEqual(continuity(findings(sections, { narrative: panorama })), []);
   assert.deepEqual(continuity(findings(striped)), [], "one image per slide may have a background each");
-  assert.equal(visualPlan(carousel, "v3", { panorama: true }), VISUAL_PLAN_V3_PANORAMA);
-  assert.equal(VISUAL_PLAN_V3_PANORAMA.length, 2);
   assert.equal(visualPlan(carousel, "v3"), VISUAL_PLAN_V3);
-  assert.equal(visualPlan(carousel, "v3", { panorama: false }).length, 2, "since 2026-10-19 every v3 script keeps the judge's revision round, run only when the first is not accepted");
-  assert.deepEqual(VISUAL_PLAN_V3.map((round) => [round.revise, round.fresh, round.proposals, round.judgeEffort]), [[0, 1, 0, "low"], [1, 0, 0, "low"]]);
+  assert.equal(VISUAL_PLAN_V3.length, 2, "since 2026-10-19 every v3 script keeps the judge's revision round, run only when the first is not accepted");
+  assert.deepEqual(VISUAL_PLAN_V3.map((round) => [round.revise, round.fresh, round.proposals, round.judgeEffort]), [[0, 1, 0, "medium"], [1, 0, 0, "medium"]]);
+  // The sections' shots are the scene's: the program sets them to wide whatever the writer wrote (two real panoramas were judged on twelve shot mismatches).
+  const varied = script("c1");
+  const [bound] = bindPanoramaShots([{ ...varied, slides: varied.slides.map((entry) => entry.slide === "s2" ? { ...entry, need: "typography" as const, shot: "typography" as const } : entry) }]);
+  assert.deepEqual(bound.slides.map((entry) => entry.shot), ["wide", "wide", "wide", "typography", "wide", "wide"], "a typography card keeps its shot: the program refuses it as a section");
+  assert.deepEqual(findings(bindPanoramaShots([script("c1")])[0], { narrative: panorama }).filter((code) => /^(SAME_SHOT|SHOT_MISMATCH)/.test(code)), []);
+  // Each slide's station, for the writer and the judge, found as its beat is.
+  const station = (size: "large" | "medium" | "small", crossing: string) => ({ size, character: false, crossing });
+  const beat = (slide: "cover" | "slide2" | "middle" | "penultimate" | "last") => ({ slide, role: "setup" as const, scene: "s", words: "w", image: "i", withholds: "", factIds: [] });
+  const spine = { beats: [beat("cover"), beat("slide2"), beat("middle"), beat("penultimate"), beat("last")], panorama: { world: "A long cream plane", device: "journey" as const, axis: "left to right", field: "cream", carrier: "the soil band", ending: "resolves" as const, stations: [station("medium", "the band runs on"), station("small", "to the plants"), station("large", "to the hole"), station("medium", "to the tree"), station("medium", "")] } };
+  assert.deepEqual(spineStations(spine, carousel), { cover: station("medium", "the band runs on"), slide2: station("small", "to the plants"), s1: station("large", "to the hole"), penultimate: station("medium", "to the tree"), last: station("medium", "") }, "s2 has no middle beat: no station");
+  assert.deepEqual(spineStations({ beats: spine.beats }, carousel), {}, "no panorama, no stations");
 });
 
 test("the visual gate (2026-10-19): the funnel's acceptable score, the criteria at 85 and originality at 70, since the spine chose what each image shows", async () => {

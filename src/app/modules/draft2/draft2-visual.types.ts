@@ -1,5 +1,5 @@
 import { comparableText, Draft2InputError } from "./draft2-facts.types";
-import type { Draft2FocusSnapshot } from "./draft2-focus.types";
+import type { Draft2FocusSnapshot, Draft2PanoramaStation } from "./draft2-focus.types";
 import { PANORAMA_FIELD_BREAK } from "./draft2-spine-checks";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
@@ -30,8 +30,9 @@ export { avoidTerms, forbiddenElement };
  * its headline, a reproducible art direction, the kind of image and the
  * verified material or characters it uses. Continuity comes from the
  * brand's identity; progression from what each image shows. The image model
- * letters each slide's words itself, and the logo and the page number are
- * added afterwards (layout): the script composes around them. On the
+ * letters each slide's words itself or the program sets them on a band
+ * (layout.lettering says which), and the logo and the page number are
+ * added afterwards: the script composes around them. On the
  * shared funnel (draft2-funnel.ts), Claude writes and Sol judges:
  *   1 script → the judge scores it, proposes 1 → the best revised + the proposal as written + as edited → the judge's pick
  * Two rounds and no extra round on the funnel's own (visuals v10,
@@ -62,22 +63,21 @@ export const VISUAL_PLAN: readonly FunnelPlanRound[] = [
 export const VISUAL_LONG_CAROUSEL = 10;
 export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = VISUAL_PLAN;
 /**
- * v3 (2026-10-16): one script, one round, the judge at low effort and no
- * proposal: the spine already decides what each image shows, so the script
- * executes it and the judge reads it for the editor (48 shadow rounds: Luna
- * at low named the same winner as at medium on every visual script).
- */
-/**
- * Since 2026-10-19 v3 keeps the judge's revision round, run only when the
- * first script is not accepted: with one round the judge's findings never
- * reached the writer, and scripts at 55–83 shipped as they came (the
- * panoramas had it back a day earlier). No proposal, the judge at low.
+ * v3 (2026-10-16): one script and no proposal, since the spine already
+ * decides what each image shows. Since 2026-10-19 v3 keeps the judge's
+ * revision round, run only when the first script is not accepted: with one
+ * round the judge's findings never reached the writer, and scripts at 55–83
+ * shipped as they came. The judge at medium since the audit of 2026-10-19:
+ * at low it had named the same winner (48 shadow rounds) but, on the 25
+ * scripts judged at both efforts, scored 3 points under medium on average
+ * and 7 to 13 under on a first script, and under v3 (ten runs, 55–85) it
+ * accepted none. A judgment costs 0.001–0.005 $ at either effort, so the
+ * minute a round saves at low is not worth a gate it cannot reach.
  */
 export const VISUAL_PLAN_V3: readonly FunnelPlanRound[] = [
-  { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
-  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
+  { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "medium" },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "medium" },
 ];
-export const VISUAL_PLAN_V3_PANORAMA: readonly FunnelPlanRound[] = VISUAL_PLAN_V3;
 export const VISUAL_MAX_ROUNDS = 2;
 /**
  * The gate (2026-10-19): forty runs in twelve days had three accepted at 95,
@@ -242,9 +242,10 @@ export function sameCarouselWords(a: readonly Draft2CarouselSlide[], b: readonly
 /**
  * What is added to every image after it is made, as the script must leave
  * room for it: the slide's words, lettered by the image model inside the
- * image, and v1's post-production, the logo on the slides the Topic puts it
- * on and the page number on each slide (creative-brand-overlay.ts,
- * creative-carousel-chrome.ts).
+ * image or set by the program on a band along the top (the editor's choice,
+ * focusPresentation), and v1's post-production, the logo on the slides the
+ * Topic puts it on and the page number on each slide
+ * (creative-brand-overlay.ts, creative-carousel-chrome.ts).
  */
 export type Draft2VisualLayout = {
   lettering: string;
@@ -256,7 +257,7 @@ const PLACEMENT_WORDS: Record<string, string> = {
   "center-left": "the middle of the left edge", center: "the centre", "center-right": "the middle of the right edge",
   "bottom-left": "the bottom left corner", "bottom-center": "the bottom centre", "bottom-right": "the bottom right corner",
 };
-export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "carouselChrome">, carousel: readonly Pick<Draft2CarouselSlide, "slide">[]): Draft2VisualLayout {
+export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "carouselChrome">, carousel: readonly Pick<Draft2CarouselSlide, "slide">[], presentation: { text: "image" | "program" } = { text: "image" }): Draft2VisualLayout {
   const overlay = profile.brandOverlay;
   const place = overlay ? PLACEMENT_WORDS[overlay.placement] ?? overlay.placement : "";
   // The inner slides carry the brand's symbol alone when the brand chose it and has one: a square, where the full logo is a band.
@@ -270,14 +271,17 @@ export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "ca
     }
     : null;
   return {
-    lettering: "The image model letters each slide's words (its headline, text, practical line and call to action) inside the image, in the brand's typography; no other words.",
+    // Who letters the words: a run under the program's words had its writer place them where the image model would have (three OTHER issues in one judgment) because this line said so.
+    lettering: presentation.text === "program"
+      ? "The program sets each slide's words after the image is made, on a calm band along the top of the image (below the logo where there is one), in the brand's typography: a direction asks for no word, letter or number at all, keeps the slide's subject, faces and objects out of that band, and leaves it a plain field in the palette (sky, wall, table)."
+      : "The image model letters each slide's words (its headline, text, practical line and call to action) inside the image, in the brand's typography; no other words.",
     logo,
     numbering: profile.carouselChrome?.enabled ? { area: "a small page-number badge centred on the bottom edge of every slide (beside the logo when the logo is there)" } : null,
   };
 }
 
-/** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups); a panorama under v3 keeps the revision round. */
-export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2", { panorama = false }: { panorama?: boolean } = {}): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? (panorama ? VISUAL_PLAN_V3_PANORAMA : VISUAL_PLAN_V3) : VISUAL_PLAN; };
+/** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
+export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? VISUAL_PLAN_V3 : VISUAL_PLAN; };
 
 /**
  * The spine's image line for each carousel slide: the cover's and slide 2's
@@ -301,6 +305,39 @@ export function spineImageLines(spine: Draft2FocusSpine | undefined, carousel: r
 export function bindSpineBeats<C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[], lines: Record<string, string>): C[] {
   if (!Object.keys(lines).length) return [...candidates];
   return candidates.map((candidate) => ({ ...candidate, slides: candidate.slides.map((slide) => lines[slide.slide] ? { ...slide, beat: lines[slide.slide] } : slide) }));
+}
+
+/**
+ * The scripts with every slide's shot set to wide when the images are one
+ * wide scene (a panorama, a line): a section has the scene's one view, not a
+ * shot of its own, whatever the writer wrote (two real panoramas were judged
+ * on twelve shot mismatches the skill had told the writer to avoid). A
+ * typography slide keeps its shot: the program refuses it as a section.
+ */
+export function bindPanoramaShots<C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[]): C[] {
+  return candidates.map((candidate) => ({ ...candidate, slides: candidate.slides.map((slide) => slide.shot === "wide" || slide.need === "typography" ? slide : { ...slide, shot: "wide" as const }) }));
+}
+
+/**
+ * Each carousel slide's station in the spine's panorama (its size, whether
+ * the brand's character stands there, what crosses into the next section),
+ * found as spineImageLines finds its beat; nothing without a panorama. The
+ * writer and the judge read them beside the beats: a judge looking for them
+ * in spineBeats, where the skill once pointed, faulted a script for having
+ * no stations.
+ */
+export function spineStations(spine: Draft2FocusSpine | undefined, carousel: readonly Pick<Draft2CarouselSlide, "slide">[]): Record<string, Draft2PanoramaStation> {
+  const panorama = spine?.panorama;
+  if (!spine || !panorama) return {};
+  const middle = spine.beats.flatMap((beat, index) => beat.slide === "middle" ? [index] : []);
+  const stations: Record<string, Draft2PanoramaStation> = {};
+  for (const { slide } of carousel) {
+    const match = /^s(\d+)$/.exec(slide);
+    const index = match ? middle[Number(match[1]) - 1] : spine.beats.findIndex((beat) => beat.slide === slide);
+    const station = index !== undefined && index >= 0 ? panorama.stations[index] : undefined;
+    if (station) stations[slide] = station;
+  }
+  return stations;
 }
 
 const idList = { type: "array", maxItems: 6, items: { type: "string" } };
@@ -361,10 +398,10 @@ export function visualSchema(positions: readonly string[]): Record<string, unkno
   };
 }
 
-/** The judge's answer: scores, issues, the verdict and its own script. */
+/** The judge's answer: scores, issues under the judge's own codes, the verdict and its own script. */
 export function visualEvaluationSchema(positions: readonly string[]): Record<string, unknown> {
-  // The judge scores at most the round's scripts and the proposal as written beside them.
-  return funnelEvaluationSchema({ criteria: VISUAL_CRITERIA, codes: VISUAL_ISSUE_CODES, maxScored: VISUAL_ROUND_MAX_CANDIDATES + 1, item: visualItem(positions), maxProposals: 1 });
+  // The judge scores at most the round's scripts and the proposal as written beside them; the program's codes are the program's to find.
+  return funnelEvaluationSchema({ criteria: VISUAL_CRITERIA, codes: VISUAL_JUDGE_CODES, maxScored: VISUAL_ROUND_MAX_CANDIDATES + 1, item: visualItem(positions), maxProposals: 1 });
 }
 
 const strings = (value: unknown, max = 6): string[] => [...new Set((Array.isArray(value) ? value : []).filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0 && entry.trim().length <= 64).map((entry) => entry.trim()))].slice(0, max);
@@ -409,9 +446,15 @@ export function parseVisualCandidates(answer: string): Draft2VisualCandidate[] {
   return funnelParseCandidates(answer, visualFrom, VISUAL_ROUND_MAX_CANDIDATES);
 }
 
-/** The judge's answer as an evaluation of these scripts (see funnelParseEvaluation); issues name a carousel position. */
+/**
+ * The judge's answer as an evaluation of these scripts (see
+ * funnelParseEvaluation); issues name a carousel position. An issue under one
+ * of the program's codes is dropped: the program checked it, and a judge at
+ * low effort had named five directions of 448–530 characters DIRECTION_TOO_LONG
+ * in two rounds of one real run, so the writer cut them until craft fell.
+ */
 export function parseVisualEvaluation(answer: string, candidateIds: readonly string[], positions: readonly string[]): Draft2VisualEvaluation {
-  return funnelParseEvaluation(answer, candidateIds, { criteria: VISUAL_CRITERIA, codes: VISUAL_ISSUE_CODES, parts: positions, parseProposal: visualFrom, maxProposals: 1 });
+  return funnelParseEvaluation(answer, candidateIds, { criteria: VISUAL_CRITERIA, codes: VISUAL_JUDGE_CODES, dropCodes: VISUAL_MECHANICAL_CODES, parts: positions, parseProposal: visualFrom, maxProposals: 1 });
 }
 
 
@@ -452,7 +495,9 @@ export function editorCast(value: unknown, roster: readonly { id: string }[], ne
  * or place named without its verified material, no organization named, none
  * of the brand's avoid terms, nothing that would be drawn as words or logos;
  * no two slides in a row with the same shot, and a typography shot exactly
- * on a typography slide. Progression, which a new shot alone is not: each
+ * on a typography slide (neither in a panorama or a line, whose sections
+ * have the scene's one view: bindPanoramaShots sets them). Progression,
+ * which a new shot alone is not: each
  * slide names its dominant subject and what it shows for the first time; no
  * two slides in a row share a dominant subject; the recurring element leads
  * at most two slides, never two in a row, and returns at most once, at the
@@ -535,7 +580,7 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     for (const slide of candidate.slides) {
       const part = positions.includes(slide.slide) ? slide.slide : undefined;
       const label = carousel.find((entry) => entry.slide === slide.slide)?.label ?? slide.slide;
-      if ((slide.need === "typography") !== (slide.shot === "typography")) add("SHOT_MISMATCH", part, `${label} is a ${slide.need} slide with a ${slide.shot} shot; a typography slide has the typography shot, and only it.`);
+      if (!master && (slide.need === "typography") !== (slide.shot === "typography")) add("SHOT_MISMATCH", part, `${label} is a ${slide.need} slide with a ${slide.shot} shot; a typography slide has the typography shot, and only it.`);
       if (!slide.subject || slide.subject.length > VISUAL_SUBJECT_MAX_CHARACTERS) add("SUBJECT_MISSING", part, `${label} needs its dominant subject, in 1 to ${VISUAL_SUBJECT_MAX_CHARACTERS} characters: who or what its image is about.`);
       if (!slide.discovery || slide.discovery.length > VISUAL_DISCOVERY_MAX_CHARACTERS) add("DISCOVERY_MISSING", part, `${label} needs a discovery, in 1 to ${VISUAL_DISCOVERY_MAX_CHARACTERS} characters: what the reader sees there for the first time.`);
       if (slide.direction.length > VISUAL_DIRECTION_MAX_CHARACTERS) add("DIRECTION_TOO_LONG", part, `${label}'s direction has ${slide.direction.length} characters; the limit is ${VISUAL_DIRECTION_MAX_CHARACTERS}.`);
@@ -593,6 +638,9 @@ export const VISUAL_REVISION_INSTRUCTION = "Revise each script in scripts and re
 
 export const VISUAL_DEVELOP_INSTRUCTION = "Edit the script in develop and return it with its id. Keep its concept, protagonist, cast and motif; change only what a program rule, the brand's identity or the verified material requires, in as few words as possible. A script that is already right comes back unchanged. It also competes as written, so an edit only helps when it is better.";
 
+/** The fix pass's instruction for scripts (FUNNEL_FIX_INSTRUCTION counts words; a direction's limit is in characters): the program's findings fixed in place, a long direction cut by what it repeats, never by its subject. */
+export const VISUAL_FIX_INSTRUCTION = "Fix only what each finding names, in as few words as possible, and return each listed script under its own id, every slide complete, and nothing else. Keep the concept, the cast, the motif and every slide no finding names exactly as they are. A direction over its limit loses its repeated scene rules, light and prohibitions first, never its subject, its station or what crosses its edges; a length finding says how many characters to remove at least: remove them and count again. A name, a term or an element a finding refuses is told another way or left out; a shot, a need or a character a finding names is changed to what the finding says.";
+
 const newScriptsInstruction = (count: number) => `Then write ${count} new ${count === 1 ? "script" : "scripts"}, with ids ${Array.from({ length: count }, (_, index) => `n${index + 1}`).join(", ")}: each a different visual story from every script in anglesSoFar, built to answer the issues and suggestions.`;
 
 /** How the visual script's requests name things. */
@@ -604,6 +652,7 @@ export const VISUAL_WORDS: FunnelWords<Draft2VisualCandidate, "scripts"> = {
   revise: VISUAL_REVISION_INSTRUCTION,
   develop: VISUAL_DEVELOP_INSTRUCTION,
   newCandidates: newScriptsInstruction,
+  fix: VISUAL_FIX_INSTRUCTION,
 };
 
 /** The fix pass's request: the flagged scripts with the program's findings on each, to fix in place before the judge reads the round. */

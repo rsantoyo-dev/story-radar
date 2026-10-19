@@ -1435,7 +1435,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {visualChanged && running !== "visual" ? (visual?.deckId === chosenDeckId && visual?.inventoryVersion === inventory?.version
           ? visualWordsChanged
             ? <InlineNotice tone="info" title="The carousel’s words changed since this script">A review patch or an edit changed words this script pictures, and the images letter them. Write the visual script again to follow the words as they stand.</InlineNotice>
-            : <InlineNotice tone="info" title="The visual direction changed since this script">The focus’s visual direction is not the one this script followed. Write the visual script again to follow it; the words stay as they are.</InlineNotice>
+            : <InlineNotice tone="info" title="The focus’s images changed since this script">The visual direction, how the carousel is made, or the spine’s image lines and scene are not the ones this script followed. Write the visual script again to follow them; the words stay as they are.</InlineNotice>
           : <InlineNotice tone="info" title="The deck or the people and places changed">This script pictures {visual?.deckId} with people and places v{visual?.inventoryVersion}; the deck chosen now is {chosenDeckId} and the people and places are v{inventory?.version}. Write the visual script again to follow them.</InlineNotice>) : null}
         {running === "visual" ? <LoadingState>{following ? `${following} Following the run on the server…` : visualPausedRound ? `Continuing with round ${visualPausedRound} in a new request…` : `${today.visual.writer} writes the scripts; ${today.visual.judge} judges each round. This can take a few minutes.`}</LoadingState> : null}
         {visualStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue from round {visualResumeRound} picks it up at its last checkpoint; a round already written is judged, not written again.</InlineNotice> : null}
@@ -3143,8 +3143,9 @@ function ModelsCard({ choice, pipeline, cast, saving, locked, error, onChange, o
       {modelOptions}
     </select>;
   };
+  // v3's judges judge at low, the visual script's at medium (VISUAL_PLAN_V3: at low it scored 3 to 13 points under medium and accepted no script).
   const effortSelect = (step: Draft2FunnelStepName, part: "writerEffort" | "judgeEffort") => <select value={choice?.steps?.[step]?.[part] ?? ""} disabled={disabled} onChange={(event) => setStep(step, part, event.target.value)}>
-    <option value="">{`The plan's · ${pipeline === "v3" ? (part === "judgeEffort" ? "low" : "medium") : (part === "judgeEffort" ? "medium" : "medium, then high")}`}</option>
+    <option value="">{`The plan's · ${pipeline === "v3" ? (part === "judgeEffort" && step !== "visual" ? "low" : "medium") : (part === "judgeEffort" ? "medium" : "medium, then high")}`}</option>
     {DRAFT2_EFFORTS.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
   </select>;
   const sameModel = DRAFT2_FUNNEL_STEP_NAMES.filter((step) => { const chosen = draft2StepChoice(choice, step); const writer = chosen.writer?.model ?? cast?.funnel[step].writer.model; const judge = chosen.judge?.model ?? cast?.funnel[step].judge.model; return writer && writer === judge; });

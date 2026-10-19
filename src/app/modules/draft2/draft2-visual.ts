@@ -2,14 +2,14 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot, focusPresentation } from "./draft2-focus.types";
+import { focusForModels, focusNarrative, focusPresentation, narrativeUsesMaster, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
 import { coverVarietyIssues, recentCovers, recentCoversForModels, type Draft2RecentCover } from "./draft2-cover-variety";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
-  VISUAL_GATE, avoidTerms, bindSpineBeats, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
+  VISUAL_GATE, avoidTerms, bindPanoramaShots, bindSpineBeats, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, spineStations, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
@@ -73,8 +73,7 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
   noun: "visual script",
   article: "a visual script",
   plural: "visual scripts",
-  // A panorama under v3 keeps the judge's revision round: its script is the one scene the images draw once.
-  plan: ({ carousel, focus }, pipeline) => visualPlan(carousel, pipeline, { panorama: focusPresentation(focus.values).images === "panorama" }),
+  plan: ({ carousel }, pipeline) => visualPlan(carousel, pipeline),
   gate: VISUAL_GATE,
   // No extra round on the funnel's own: in 22 real runs the extra rounds never raised a visual script's best (the editor may still ask for one).
   autoExtraRounds: false,
@@ -97,24 +96,27 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(mode)].join("\n\n");
     const positions = carousel.map((slide) => slide.slide);
     const avoid = avoidTerms(profile.creativeIdentity);
+    const narrative = focusNarrative(focus.values);
     // Each slide's beat is the spine's image line, whatever the writer or the judge wrote there: the words and the images follow one plan.
+    // In a panorama or a line every section has the scene's one view: its shot is wide, whatever was written, and its station travels beside its beat.
     const beats = spineImageLines(focus.values.spine, carousel);
+    const stations = spineStations(focus.values.spine, carousel);
+    const bind = <C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[]): C[] => narrativeUsesMaster(narrative) ? bindPanoramaShots(bindSpineBeats(candidates, beats)) : bindSpineBeats(candidates, beats);
+    // The skills the telling needs, with the narrative form as the script follows it: the editor's panorama (imageMode) is the panorama form even where the focus stored none, and the visuals skill points to the narratives skill for its anchor rules.
+    const skills = [VISUALS_SKILL, ...creativeSkills({ ...focus.values, narrative })];
     return {
-      writer: composeInstructions("visual-writer", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
-      judge: composeInstructions("visual-judge", [VISUALS_SKILL, ...creativeSkills(focus.values)], brief),
-      // The layout: the image model letters the words, and the logo and the page number are added afterwards, where the Topic puts them.
-      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), layout: visualLayout(profile, carousel), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
+      writer: composeInstructions("visual-writer", skills, brief),
+      judge: composeInstructions("visual-judge", skills, brief),
+      // The layout: who letters the words (the image model, or the program on a band), and the logo and the page number added afterwards, where the Topic puts them.
+      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), ...(Object.keys(stations).length ? { stations } : {}), ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), layout: visualLayout(profile, carousel, focusPresentation(focus.values)), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
-      parseCandidates: (text) => bindSpineBeats(parseVisualCandidates(text), beats),
-      parseEvaluation: (text, ids) => { const evaluation = parseVisualEvaluation(text, ids, positions); return evaluation.proposals ? { ...evaluation, proposals: bindSpineBeats(evaluation.proposals, beats) } : evaluation; },
-      mechanical: (candidates) => {
-        const narrative = focusNarrative(focus.values);
-        return [
-          ...mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative }),
-          // Variety between posts: the brand's character never on two covers in a row, the last cover's background not again.
-          ...coverVarietyIssues(candidates, { recent: covers, palette: profile.brandPalette ?? [], characterAnchor: narrative.anchorKind === "character" ? narrative.characterId : null }),
-        ];
-      },
+      parseCandidates: (text) => bind(parseVisualCandidates(text)),
+      parseEvaluation: (text, ids) => { const evaluation = parseVisualEvaluation(text, ids, positions); return evaluation.proposals ? { ...evaluation, proposals: bind(evaluation.proposals) } : evaluation; },
+      mechanical: (candidates) => [
+        ...mechanicalVisualIssues(candidates, { carousel, inventory, characters, characterChoice, mode, avoid, narrative }),
+        // Variety between posts: the brand's character never on two covers in a row, the last cover's background not again.
+        ...coverVarietyIssues(candidates, { recent: covers, palette: profile.brandPalette ?? [], characterAnchor: narrative.anchorKind === "character" ? narrative.characterId : null }),
+      ],
       explore: visualExploreRequest,
       refine: visualRefineRequest,
       fix: visualFixRequest,

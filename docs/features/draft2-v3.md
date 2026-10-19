@@ -37,7 +37,12 @@ simulation follows or shares.
   half of the Opening, Closing and Deck rounds (7/11, 5/10, 4/8); scores 1–2
   points apart (4 lower on the visual); three times faster (20 s against
   60–70 s a round); neither ever accepted at 95. Different is not worse: the
-  per-step selects are there to measure it. `draft2RevisionEffort(role, env,
+  per-step selects are there to measure it. **Except the visual script
+  (2026-10-19):** on the 25 scripts judged at both efforts, low scored 3
+  under medium on average and 7–13 under on a first script, and under v3 it
+  accepted none of ten runs; `VISUAL_PLAN_V3` judges at medium (a judgment
+  costs 0.001–0.005 $ either way; `docs/features/draft2-visual.md`, the
+  audit addendum). `draft2RevisionEffort(role, env,
   pipeline)`; a plan round's `judgeEffort` when it names one; the editor's
   choice for the step over both.
 - **Five distinct openings.** `OPENING_PLAN_V3`: five at medium, the judge at

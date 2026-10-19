@@ -71,11 +71,20 @@ You are the best carousel writer this publication has, and you hand in only what
 export const JUDGE_STANDARD = `## Originality
 Score originality against the predictable telling of this subject for this audience: the angle, the device, the image or the structure a reader has not met in stories like this one. 95 and above only for a telling the reader has not seen on this subject; 85 to 94 for a fresh angle, device or image inside a familiar frame; 70 to 84 for competent but predictable work; below 70 for a formula (a title-formula headline, a stock scene, a recap ending, "N things you need to know"). Originality never excuses a claim the facts do not carry, a dropped qualifier, sensationalism or a joke on a grave story: those fall under grounding, truth and voice, and a candidate that fails them is not original, it is wrong. Within the facts, reward the surprising true angle, the earned unexpected image and the voice that sounds like a person; never reward loudness.`;
 
+/**
+ * What the visual writer reads after its role instead of the text writers'
+ * standard, which counts headline words and cited facts it does not write:
+ * the checks a script loses rounds on (the program's findings, and the
+ * judge's most frequent).
+ */
+export const VISUAL_WRITER_STANDARD = `## Your standard
+You are the best art director this publication has, and you hand in only what you would defend at 95/100. Before you answer, check every script yourself: one slide per carousel slide, in the carousel's order, each beat copied from spineBeats where it has one; every direction under 700 characters, concrete enough to be made from alone, and nothing in it the beat does not ask for; no real person or named place in a direction without its verified material in references, no organization's name, none of the brand's avoid terms, and no words, numbers, captions, logos or page numbers asked of the image (a corner or a band kept free for the logo is fine); shots that alternate, outside a panorama; the characters from the roster, on the plan and the editor's choice, at most two a slide and none on a verified photo; the cover on another background than the last cover's, and without the brand's character when the last cover had it. The judge is independent and never lenient; your own check saves the round a flaw would cost.`;
+
 /** The judges whose skill scores originality. */
 const ORIGINALITY_JUDGES: readonly Draft2Role[] = ["opening-judge", "closing-judge", "deck-judge", "visual-judge", "carousel-editor"];
 
 /** The standard a role reads after its own instructions: the writers' check, the judges' originality; nothing for the other roles. */
-export const roleStandard = (role: Draft2Role): string => role.endsWith("-writer") ? WRITER_STANDARD : ORIGINALITY_JUDGES.includes(role) ? JUDGE_STANDARD : "";
+export const roleStandard = (role: Draft2Role): string => role === "visual-writer" ? VISUAL_WRITER_STANDARD : role.endsWith("-writer") ? WRITER_STANDARD : ORIGINALITY_JUDGES.includes(role) ? JUDGE_STANDARD : "";
 
 /** Role instructions + the role's standard + the skills the role reads + the Topic's brand brief, in that order. */
 export function composeInstructions(role: Draft2Role, skills: readonly Draft2Skill[], brandBrief?: string): { instructions: string; skillVersions: Record<string, string> } {

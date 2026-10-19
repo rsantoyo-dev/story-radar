@@ -552,6 +552,24 @@ test("the visual direction is the visual script's own: changing it asks for a ne
   assert.equal(visualDirectionChanged(followed, portraits), false);
 });
 
+test("the spine's image lines, subjects and scene are the images': one rewritten by hand asks for a new visual script and never for new words, and the new script reads them as they stand", () => {
+  const focus = decided({ spine: ARC_SPINE as never });
+  const words = { version: focus.version, values: focus.values! };
+  const relit = applyFocusEdit(focus, "spine", { ...ARC_SPINE, beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, image: "A single screen in a dark room, the cursor blinking.", subject: "the screen" } : beat) }, NOW);
+  assert.equal(wordsFollowFocus(words, relit), true, "an image line is not the words'");
+  assert.equal(visualDirectionChanged(words, relit), true, "the images changed");
+  const followed = visualFocus(words, relit);
+  assert.deepEqual([followed.version, followed.values.spine?.beats[2].image, followed.values.spine?.beats[2].subject, followed.values.spine?.beats[1].image], [words.version, "A single screen in a dark room, the cursor blinking.", "the screen", ARC_SPINE.beats[1].image], "the words' version, with the images as they stand");
+  assert.equal(visualDirectionChanged(followed, relit), false);
+  const reworded = applyFocusEdit(focus, "spine", { ...ARC_SPINE, beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, words: "Say who reviews, in the reader's words." } : beat) }, NOW);
+  assert.equal(wordsFollowFocus(words, reworded), false, "a words line is the words'");
+  assert.equal(visualDirectionChanged(words, reworded), false);
+  const longer = applyFocusEdit(focus, "spine", { ...ARC_SPINE, beats: [...ARC_SPINE.beats.slice(0, 3), ARC_SPINE.beats[2], ...ARC_SPINE.beats.slice(3)] }, NOW);
+  assert.equal(wordsFollowFocus(words, longer), false, "a beat added tells another story: the words follow it first");
+  assert.equal(visualDirectionChanged(words, longer), false, "the script is not told twice");
+  assert.equal(visualFocus(words, longer), words, "the words' spine stands until the words are written again");
+});
+
 test("the plan's image lines: Claude's first answer is asked again when a beat repeats the subject before it or asks the image for words; each beat's subject is kept; the problems stay on the focus for the editor", () => {
   const json = (value: unknown) => JSON.stringify(value);
   const known = new Set(["f1", "f2", "f3"]);
