@@ -2,7 +2,7 @@ import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusForModels, focusNarrative, visualFocus, type Draft2FocusSnapshot, focusPresentation } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
 import { coverVarietyIssues, recentCovers, recentCoversForModels, type Draft2RecentCover } from "./draft2-cover-variety";
@@ -73,7 +73,8 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
   noun: "visual script",
   article: "a visual script",
   plural: "visual scripts",
-  plan: ({ carousel }, pipeline) => visualPlan(carousel, pipeline),
+  // A panorama under v3 keeps the judge's revision round: its script is the one scene the images draw once.
+  plan: ({ carousel, focus }, pipeline) => visualPlan(carousel, pipeline, { panorama: focusPresentation(focus.values).images === "panorama" }),
   gate: VISUAL_GATE,
   // No extra round on the funnel's own: in 22 real runs the extra rounds never raised a visual script's best (the editor may still ask for one).
   autoExtraRounds: false,

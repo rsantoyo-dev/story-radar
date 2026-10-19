@@ -5,6 +5,7 @@ import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
   anchorNoun, beatFactsFinding, beatFactsMissing, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineBeatFactIds, spineMiddleFactIds, spineShapeProblem,
   spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus, focusPresentation, FOCUS_DECISION_FIELDS,
+  focusNarrative, spineLimitsForModels, focusPlanSchema, PANORAMA_DEFAULT_ANCHOR, PANORAMA_WORLD_MAX_CHARACTERS,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -651,4 +652,47 @@ test("a decision that keeps the editor's spine keeps its plan, marked stale; bea
   assert.equal(JSON.stringify(again.values?.spine), JSON.stringify(placed.values?.spine), "the editor's spine");
   assert.deepEqual([again.values?.direction, again.values?.visualDirection, again.values?.levers?.primary], ["Lead with the video.", "One laptop in an empty hall.", "provocative-question"], "never an empty direction and no lever under the spine");
   assert.equal(again.staleDirections, true, "the Spine step writes the plan again before the opening follows it");
+});
+
+test("a panorama's spine designs its scene (spine v10): required with the plan and checked, the narrative the focus follows, what the models read, the limits and the schema, and a panorama chosen after the plan", () => {
+  const known = new Set(["f1", "f2", "f3"]);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  const freeLevers = { primary: "free", alternatives: [], factIds: [], paidBy: "slide2" as const };
+  const stations = ARC_SPINE.beats.map((beat, index) => ({ size: beat.role === "turning-point" ? "large" : "medium", character: index === 0, crossing: index < ARC_SPINE.beats.length - 1 ? `The hall's floor runs on past beat ${index + 1}` : "" }));
+  const panorama = { world: "One procurement hall seen straight on, the entrance at the left end, the award desk at the right.", device: "journey", axis: "From the entrance at the left to the signed award at the right.", field: "The hall's upper wall, flat cream, across the whole width.", carrier: "The hall's floor line.", ending: "returns", stations };
+  const body = { levers: freeLevers, spine: { ...ARC_SPINE, panorama }, direction: "d", visualDirection: "v", reasons: {} };
+  const parse = (spine: unknown, options: Record<string, unknown> = {}) => parseFocusPlan(JSON.stringify({ ...body, spine }), { known, structure: arc, panorama: true, ...options });
+  assert.throws(() => parse(ARC_SPINE), (error: Error) => error instanceof Draft2ResponseError && /A panorama's spine designs its scene/.test(error.message));
+  assert.equal(parseFocusPlan(JSON.stringify({ ...body, spine: ARC_SPINE }), { known, structure: arc }).spine.panorama, undefined, "one image per slide needs none");
+  const plan = parse(body.spine);
+  assert.deepEqual(plan.spine.panorama, panorama);
+  const rejects = (patch: Record<string, unknown>, expected: RegExp) => assert.throws(() => parse({ ...ARC_SPINE, panorama: { ...panorama, ...patch } }), expected);
+  rejects({ stations: stations.slice(1) }, /one station per beat, in the beats' order: 7 beats, 6 stations/);
+  rejects({ stations: stations.map((station, index) => index === 0 ? { ...station, size: "large" } : station) }, /Exactly one station is large/);
+  rejects({ stations: stations.map((station, index) => ({ ...station, size: index === 1 ? "large" : "medium" })) }, /The large station is the turn's \(beat 2 is setup\)/);
+  rejects({ stations: stations.map((station, index) => index === 2 ? { ...station, crossing: "" } : station) }, /Every station but the last says what crosses its right edge into the next section; station 3 does not/);
+  rejects({ device: "collage" }, /device is one of journey, time-lapse, mechanism, comparison/);
+  rejects({ field: "" }, /The panorama's field/);
+  const long = "A very long hall ".repeat(40).trim();
+  const clipped = parse({ ...ARC_SPINE, panorama: { ...panorama, world: long } }, { clip: true }).spine.panorama!.world;
+  assert.ok(clipped.length <= PANORAMA_WORLD_MAX_CHARACTERS && long.startsWith(clipped) && long[clipped.length] === " ", "the last answer is cut at a word, not refused");
+  // The narrative the focus follows: the editor's panorama is the panorama form, the scene its anchor, the axis its progression.
+  const values = { ...decided().values!, imageMode: "panorama" as const, spine: plan.spine };
+  assert.deepEqual(focusNarrative(values), { form: "panorama", anchorKind: "scene", characterId: null, anchor: panorama.world, anchorFactIds: [], progression: panorama.axis, ending: "returns" });
+  assert.equal(focusNarrative({ ...values, spine: ARC_SPINE as never }).anchor, PANORAMA_DEFAULT_ANCHOR, "before the spine designs it");
+  assert.equal(focusNarrative({ ...values, imageMode: "slides" }).form, "classic");
+  assert.equal(narrativeUsesMaster(focusNarrative(values)), true);
+  // The models read the scene beside the spine, each beat with its station, and the narrative as a panorama; the limits and the schema ask for the scene.
+  const told = focusForModels(values) as { panorama?: Record<string, unknown>; spine: { station?: unknown }[]; narrative?: { form: string } };
+  const { stations: _stations, ...scene } = panorama;
+  void _stations;
+  assert.deepEqual([told.panorama, told.spine[4].station, told.narrative?.form], [scene, stations[4], "panorama"]);
+  assert.deepEqual([spineLimitsForModels(values).panorama?.required, spineLimitsForModels(values).beats.max, spineLimitsForModels({}).panorama], [true, 6, undefined]);
+  const schema = focusPlanSchema(values) as { properties: { spine: { required: string[]; properties: Record<string, unknown> } } };
+  assert.ok(schema.properties.spine.required.includes("panorama") && "panorama" in schema.properties.spine.properties);
+  assert.ok(!(DRAFT2_FOCUS_PLAN_SCHEMA.properties as { spine: { required: string[] } }).spine.required.includes("panorama"), "one image per slide keeps the plan's contract as it was");
+  // A panorama chosen after the plan: the spine has no scene, and the Spine screen says the images would improvise it.
+  const without = focusWithSpineProblems({ ...decided(), values: { ...values, spine: ARC_SPINE as never } }, []);
+  assert.deepEqual(without.spineProblems?.map((problem) => problem.code), ["SPINE_PANORAMA_SCENE"]);
+  assert.equal(focusWithSpineProblems({ ...decided(), values }, []).spineProblems, undefined);
 });

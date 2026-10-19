@@ -14,7 +14,7 @@ import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, focusWithSpineProblems, focusPresentation, presentationMaxBeats, spineFactsToCover, spineLimitsForModels, spineRecurring, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, focusPlanSchema, focusNarrative, focusWithSpineProblems, focusPresentation, presentationMaxBeats, spineFactsToCover, spineLimitsForModels, spineRecurring, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
   focusWithPlan, narrativeReviewRequest, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField,
   type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial,
 } from "./draft2-focus.types";
@@ -276,7 +276,7 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), spineLimits: spineLimitsForModels(values), factsToCover: spineFactsToCover(facts), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
     // A panorama caps the slides and is one scene: its sections are not compared for their subjects.
-    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), clip: attempt === FOCUS_ATTEMPTS, ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(values.narrative), panorama: focusPresentation(values).images === "panorama" }, coverage: facts } : {}) }),
+    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), clip: attempt === FOCUS_ATTEMPTS, panorama: focusPresentation(values).images === "panorama", ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(focusNarrative(values)), panorama: focusPresentation(values).images === "panorama" }, coverage: facts } : {}) }),
   };
 }
 
@@ -316,7 +316,8 @@ export async function planDraft2Spine({ topicId, storyId, sessionId, notes }: Dr
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
       apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: notes ? {} : editorChoicesOf(focus), recentLevers, avoid, covers, notes, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
-      schema: DRAFT2_FOCUS_PLAN_SCHEMA, effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
+      // A panorama's plan carries its scene: the schema requires it there.
+      schema: focusPlanSchema(focus.values!), effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
   } catch (error) {
     const message = error instanceof Error ? error.message : "The spine step failed.";

@@ -379,3 +379,59 @@ could have followed a spine with no direction at all.
   `factsToCover` (every fact of importance `SPINE_COVERAGE_IMPORTANCE` or more
   that is not disputed), and the planner places each in the factIds of the
   beat that needs it, at most six a beat.
+
+## 16. Addendum, 2026-10-18: the spine designs the panorama (spine v10)
+
+The two panoramas made so far (the coffee ring, 0907ec1c, eight scenes; the
+altitude, 40d5d6a7) came out as six slides glued together: colour stripes
+exactly at the cuts, the subjects in a thin strip, the words' band busy, the
+character cut at an edge. The causes were upstream of the image model: the
+visual script wrote six slides (a shot, a background and a "free band" each;
+the judge sent both back, 61 and 76, but v3 had no second round), the scene
+prompt concatenated those six directions with no composition grammar, the
+spine had nothing to say about the scene as a whole, and the editor's
+panorama (imageMode) left the narrative form "classic", so the panorama
+guidance the narratives skill already had never applied. The editor wrote
+the coffee scene's prompt by hand (v6, v8) to get a usable one.
+
+- **The spine's scene** (`spine.panorama`, required by the plan's schema
+  and its parse under a panorama; `panoramaFrom`): the world (one place in
+  one view), the device (journey, time-lapse, mechanism, comparison) and its
+  axis, the field (the one plain surface of the words' band across the whole
+  width, the cover's background chosen once), the carrier (the surface by
+  default), the ending, and one station per beat (size, the character,
+  what crosses into the next section). Exactly one station is large, the
+  turn's; every station but the last crosses. Texts are clipped on the last
+  answer like a beat's. The Spine screen edits all of it in place.
+- **The program's net**: an image line or a visual direction that gives its
+  section a background of its own (`PANORAMA_FIELD_BREAK`: "fondo crema en
+  la banda", "sección sobre terracota", "another background than") is
+  `SPINE_PANORAMA_FIELD` in the spine (asked again, then a note) and
+  `BREAKS_CONTINUITY` in the script (mechanical). A panorama chosen after
+  the plan, whose spine has no scene, shows `SPINE_PANORAMA_SCENE` on the
+  Spine screen.
+- **The narrative follows the editor** (`focusNarrative`): imageMode
+  "panorama" is the panorama form, the scene's world its anchor, the axis its
+  progression, its ending its ending; the Opening, the Deck, the Closing and
+  the visual script read the form's own guidance, `narrativeUsesMaster` is
+  true (no more SAME_SHOT for equal shots), and the models see
+  `focus.narrative` and `focus.panorama`.
+- **Visuals v13**: under a panorama the concept restates the scene (the only
+  place that names the field), each direction is its station at its size
+  with its crossings, "wide" on every slide, no background per section; the
+  judge scores it as one scene. Under v3 a panorama keeps the judge's
+  revision round (`VISUAL_PLAN_V3_PANORAMA`).
+- **The scene prompt** (`panoramaScenePrompt`): the world, the axis by
+  device, the field down to a stated share of the height, one ground line
+  at a stated height, the cut lines named, the strips outside the slides
+  named, each station with its size as a share of its column and its
+  crossing, the character full body inside its column, a margin of 8% of a
+  column from every cut for faces, hands, characters and key objects.
+- **Quality**: the scene is drawn at medium (`DRAFT2_SCENE_QUALITY` low |
+  medium | high), one call for every slide: about 5 ¢ instead of 2; the
+  plate records its quality and is charged at it. Sol reads a section as a
+  section (`panoramaSection` in the review's contents): its field and
+  surface are the scene's, never a background chosen for the slide.
+- **Not built**: two plates of three sections at full size for five and six
+  slides (the second drawn with the first's right edge as reference), and
+  the words' band top or bottom per section, decided in the station.

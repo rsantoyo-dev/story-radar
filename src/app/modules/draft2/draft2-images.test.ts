@@ -73,7 +73,7 @@ const clean: Review = () => ({ transcription: "", textCovered: false, textNote: 
 /** polls: how many times fal answers "generating" before an image is done; clock: a fake clock each poll moves by pollMs. */
 function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000, rights = {}, overlay, refuse, sceneSize = { width: 3232, height: 1344 } }: { session?: Record<string, unknown>; polls?: number; reviewOf?: Review; clock?: { now: number }; pollMs?: number; rights?: Record<string, string>; overlay?: Record<string, unknown>; /** A request fal's content checker refuses, by its prompt. */ refuse?: (prompt: string) => boolean; /** The size an uploaded scene comes to. */ sceneSize?: { width: number; height: number } } = {}) {
   const calls = {
-    submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number }[],
+    submits: [] as { endpoint: string; prompt: string; files: string[]; width?: number; height?: number; quality?: string }[],
     reviews: [] as { slide: string; contents: Record<string, unknown> }[],
     charges: [] as Record<string, unknown>[],
     prompts: [] as Record<string, unknown>[],
@@ -198,8 +198,8 @@ function harness({ session, polls = 1, reviewOf = clean, clock, pollMs = 30_000,
     },
     "../stories/creative-image-models": imageModels,
     "../stories/fal-image-client": {
-      submitFalImage: async (input: { endpoint: string; prompt: string; referenceImages: File[]; width: number; height: number }) => {
-        calls.submits.push({ endpoint: input.endpoint, prompt: input.prompt, files: input.referenceImages.map((file) => file.name), width: input.width, height: input.height });
+      submitFalImage: async (input: { endpoint: string; prompt: string; referenceImages: File[]; width: number; height: number; imageQuality: string }) => {
+        calls.submits.push({ endpoint: input.endpoint, prompt: input.prompt, files: input.referenceImages.map((file) => file.name), width: input.width, height: input.height, quality: input.imageQuality });
         const id = `req-${++requestCount}`;
         pollsLeft.set(id, polls);
         if (refuse?.(input.prompt)) refused.add(id);
@@ -614,6 +614,8 @@ test("a panorama or a line is drawn once as one wide master scene; each slide is
   assert.match(byOrder(2).prompt, /MASTER SECTION\nThe LAST input image is this slide's section of the carousel's one wide scene, with the line \(The boardwalk trail\) entering at its left edge and leaving at its right edge\./);
   assert.equal(json(h.calls.reviews.map((review) => (review.contents.anchor as { what: string; role: string } | undefined)?.role)), json(["line", "line", "line"]));
   assert.equal(json(h.calls.charges.filter((charge) => charge.operation === "draft2_master_scene").map((charge) => charge.idempotencyKey)), json([`draft2-master-scene:${images.runId}`]));
+  // The scene is one call for every slide: drawn a tier above them, charged at that tier.
+  assert.equal(json([first.quality, slides[0].quality, h.calls.charges.find((charge) => charge.operation === "draft2_master_scene")!.units]), json(["medium", "low", { images: 1, width: 3232, height: 1344, quality: "medium", referenceImages: 0, promptCharacters: first.prompt.length }]));
   const panorama = { ...line, form: "panorama", anchorKind: "scene", anchor: "An autumn trail", anchorFactIds: [] };
   const scene = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, narrative: panorama } } } } });
   await scene.run();
@@ -713,4 +715,37 @@ test("the words' preview says where the headline and the text sit and gives the 
   const preview = await (h.preview as unknown as (input: Record<string, unknown>) => Promise<{ parts: { headline: { top: number }; text?: { top: number } }; palette: { name: string; color: string }[] }>)({ slide: "cover", layout: { ...WORDS_LAYOUT, textBlock: { box: { left: 72, top: 1000, width: 936 }, align: "left", background: WORDS_LAYOUT.background } } });
   assert.equal(json([preview.parts.headline.top, preview.parts.text?.top]), json([WORDS_LAYOUT.box.top, 1000]));
   assert.equal(json(preview.palette), json([{ name: "Navy", color: "#173f52" }, { name: "Cream", color: "#f6f0e4" }, { name: "Gold", color: "#e3a62f" }]));
+});
+
+test("a panorama with the scene its spine designed (spine v10): the prompt is the scene's grammar, with the world, the axis, one field down to a stated height, one ground line, the cut lines, each station's size and crossing, the character in its column, and Sol reads each section as a section", async () => {
+  const stations = [{ size: "medium", character: false, crossing: "the counter's edge runs on, a trail of drops" }, { size: "large", character: true, crossing: "the counter's edge runs on" }, { size: "small", character: false, crossing: "" }];
+  const spine = {
+    beats: [
+      { slide: "cover", role: "hook", scene: "A dry ring on the counter.", words: "Ask why.", image: "A dry coffee ring at the left end of the counter.", subject: "a dry coffee ring", withholds: "Why.", factIds: ["f1"] },
+      { slide: "s1", role: "turning-point", scene: "A wet drop with its rim pinned.", words: "Say the flow.", image: "A wet drop, the coffee gathering at its rim.", subject: "a wet drop", withholds: "The result.", factIds: ["f2"] },
+      { slide: "last", role: "payoff", scene: "An even whisky stain.", words: "Pay it.", image: "An even amber stain by a glass.", subject: "an even whisky stain", withholds: "", factIds: [] },
+    ],
+    panorama: { world: "A kitchen counter seen straight on, the stove at the left end, the window at the right", device: "time-lapse", axis: "from the dry ring at the left to the even whisky stain at the right", field: "the kitchen wall, flat cream", carrier: "the counter's edge", ending: "returns", stations },
+  };
+  const h = harness({ session: { visual: { ...VISUAL, focus: { version: 1, values: { ...VISUAL.focus!.values, imageMode: "panorama", spine } } } } });
+  const session = await h.run();
+  const images = session.images!;
+  assert.equal(json([images.presentation, images.masterPlate?.status, images.masterPlate?.quality]), json([{ images: "panorama", text: "program" }, "generated", "medium"]));
+  const prompt = h.calls.submits[0].prompt;
+  assert.match(prompt, /^PANORAMA\n\nOne wide image: the whole 3-slide carousel as one continuous scene, read from left to right: A kitchen counter seen straight on, the stove at the left end, the window at the right\. It is cut into 3 equal portrait columns side by side \(the cut lines at 33%, 67% of the width\)/);
+  assert.match(prompt, /THE AXIS\. The stages of one process sit side by side along the same surface[^\n]*From left to right: from the dry ring at the left to the even whisky stain at the right\. The right end echoes the left end's frame/);
+  assert.match(prompt, /THE FIELD\. From the top of the scene down to 45% of its height, across the whole width, is the kitchen wall, flat cream: one flat colour, with nothing drawn in it/);
+  assert.match(prompt, /THE GROUND\. One straight ground line \(the counter's edge\) runs across the whole width at about 62% of the height and through every cut without a break/);
+  assert.match(prompt, /THE STATIONS, one per column, left to right:\n1\. Cover \(medium: its subject spans about 40% of the column's width\): the cover trail\.[^\n]* Into column 2: the counter's edge runs on, a trail of drops\.\n2\. Slide 2 \(large: its subject spans about 60% of the column's width\): the s1 trail\.[^\n]* Jo, full body, stands in this column at the scale of its subject, touching no cut line\. Into column 3: the counter's edge runs on\.\n3\. Slide 3 \(small: its subject spans about 25% of the column's width\): the last trail\./);
+  assert.match(prompt, /at least 8% of the column's width from each cut line; only the ground, the field and the carrier cross the cuts/);
+  assert.doesNotMatch(prompt, /strips above and below/, "three sections fill the scene's height");
+  assert.match(prompt, /No words, letters, numbers, logos, signs, frames or interface of any kind\./);
+  const review = h.calls.reviews.find((entry) => entry.slide === "cover")!.contents.panoramaSection as { note: string };
+  assert.match(review.note, /^This slide is one section of one wide scene cut into 3 slides: the plain band along its top \(the kitchen wall, flat cream\), its surface and its light are the scene's/);
+  // Six sections take the middle band of the scene: the strips above and below are named as outside every slide, and the field reaches lower in the scene's own height.
+  const sixSlides = [...carousel.slice(0, 2), { slide: "s2", label: "Slide 3", headline: "h", text: "t", factIds: [] }, { slide: "s3", label: "Slide 4", headline: "h", text: "t", factIds: [] }, { slide: "s4", label: "Slide 5", headline: "h", text: "t", factIds: [] }, { ...carousel[2], label: "Slide 6" }];
+  const sixScript = { ...SCRIPT, slides: sixSlides.map((entry) => scriptSlide(entry.slide)) };
+  const six = harness({ session: { visual: { ...VISUAL, carousel: sixSlides, candidates: [sixScript], rounds: [{ ...VISUAL.rounds[0], candidates: [sixScript] }], focus: { version: 1, values: { ...VISUAL.focus!.values, imageMode: "panorama" } } } } });
+  await six.run();
+  assert.match(six.calls.submits[0].prompt, /cut into 6 equal portrait columns side by side \(the cut lines at 17%, 33%, 50%, 67%, 83% of the width\)[\s\S]*THE AXIS\. The story advances from the left end to the right end[\s\S]*down to 47% of its height[\s\S]*at about 57% of the height[\s\S]*The strips above and below the columns' band \(the top 20% and the bottom 20% of the height\) are outside every slide/);
 });

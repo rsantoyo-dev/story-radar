@@ -16,7 +16,16 @@ import type { Draft2SpineBeat } from "./draft2-focus.types";
  * all seven slides, each in another state; the editor: "the images are a
  * series, not a sequence").
  */
-export type Draft2SpineProblemCode = "SPINE_AVOID_TERM" | "SPINE_IMAGE_WORDS" | "SPINE_SAME_SUBJECT" | "SPINE_SERIES" | "SPINE_PANORAMA_VIEW";
+export type Draft2SpineProblemCode = "SPINE_AVOID_TERM" | "SPINE_IMAGE_WORDS" | "SPINE_SAME_SUBJECT" | "SPINE_SERIES" | "SPINE_PANORAMA_VIEW" | "SPINE_PANORAMA_FIELD" | "SPINE_PANORAMA_SCENE";
+
+/**
+ * What turns a panorama back into slides glued together (the coffee ring's
+ * and the altitude's first scenes, 2026-10-18: stripes of colour exactly at
+ * the cuts): a background, a field or a band given to one section, or a
+ * section told to differ from the one before, in the publications'
+ * languages. The scene has one field across its whole width.
+ */
+export const PANORAMA_FIELD_BREAK = /(?<![\p{L}\p{N}_])(secci[oó]n (?:final |inicial |izquierda |derecha )?sobre (?:fondo )?(?:crema|terracota|teal|verde azulado|azul|menta|ocre|blanco|negro|gris|papel|un|una|el|la)|fondo (?:\p{L}+ ){0,3}(?:plano |liso )?(?:en|de|para) (?:la |esta |cada )?(?:banda|franja|secci[oó]n|slide|diapositiva)|otro fondo (?:que|distinto|diferente)|cierre sobre (?:otro|un) fondo|fondo distinto (?:en|por) (?:cada|esta) (?:secci[oó]n|slide)|section (?:on|over) (?:a |the )?(?:cream|terracotta|teal|navy|mint|ochre|white|black|grey|gray|paper|flat)|(?:a |another |different )?background (?:for|of|in|on) (?:this|each|every|the) (?:section|slide|band|strip)|another background than|section sur (?:un |le |la )?fond|fond (?:\p{L}+ ){0,3}(?:pour|de|dans) (?:cette |chaque )?(?:section|bande|diapositive))(?![\p{L}\p{N}_])/iu;
 
 /**
  * What breaks a panorama's one scene: a section drawn as a cut-away, a
@@ -69,6 +78,8 @@ export function spineImageProblems(beats: readonly Pick<Draft2SpineBeat, "slide"
     if (avoided) problems.push({ code: "SPINE_AVOID_TERM", beat: number, detail: `Beat ${number} (${beat.slide}) asks the image for "${avoided}", which the brand's identity avoids; show it another way` });
     const broken = panorama ? PANORAMA_BREAK.exec(beat.image)?.[0] : undefined;
     if (broken) problems.push({ code: "SPINE_PANORAMA_VIEW", beat: number, detail: `Beat ${number} (${beat.slide}) asks for "${broken}": a panorama is one scene in one view and one scale, so no section is a cut-away, a close-up or a panel; show the step in the scene itself, at the scene's scale` });
+    const striped = panorama ? PANORAMA_FIELD_BREAK.exec(beat.image)?.[0] : undefined;
+    if (striped) problems.push({ code: "SPINE_PANORAMA_FIELD", beat: number, detail: `Beat ${number} (${beat.slide}) asks for "${striped}": a panorama has one field and one surface across its whole width, so no section has a background of its own; the scene's field is named once, in the spine's panorama` });
     const asked = forbiddenElement(beat.image) ?? wordsAskedOfImage(beat.image);
     if (asked) problems.push({ code: "SPINE_IMAGE_WORDS", beat: number, detail: `Beat ${number} (${beat.slide}) asks the image for "${asked}": the image model letters only the slide's words, so an image line never asks for numbers, labels, captions, logos or other words` });
     const previous = beats[index - 1];

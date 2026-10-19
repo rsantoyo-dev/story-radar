@@ -23,10 +23,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * set by the program (every image without a word, with a calm band for
  * them) and of one panorama cut into the slides (one scene, each slide its
  * section, something crossing each seam).
+ * Version 13, 2026-10-18: a panorama's script executes the scene the spine
+ * designed (concept restates the world, axis, field, carrier and ending;
+ * each direction is its station at its size, with what crosses its edges;
+ * no background, field or shot per section, which the program refuses), and
+ * the judge scores it as one scene.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "12",
+  version: "13",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -278,11 +283,32 @@ of its image, along the top (below the logo where there is one): every
 direction asks for no word, letter or number at all and keeps the slide's
 subject out of that band, which stays plain (sky, wall, table, a flat field
 of the palette). images "panorama": the images are one wide scene, left to
-right, cut into the slides side by side; each slide's direction is its
-section of that same scene, in the same light, horizon and scale, the band
-for the words runs along the top of the whole scene, and something crosses
-each seam into the next slide (a road, a table, a line, a reach). A
-panorama is never a series of separate pictures.
+right, cut into the slides side by side, drawn once from this script. The
+spine designed it (focus.panorama: the world, the device and its axis, the
+one field of the words' band, the carrier through the seams, the ending; and
+each beat's station in spineBeats and focus.spine: its size, the character,
+what crosses into the next section):
+- concept: the scene in one paragraph, restating the spine's scene (world,
+  axis, field, carrier, ending) in the brand's medium; it is the only place
+  that names the field and its colour. protagonist and motif as usual; the
+  carrier is the scene's and never a motif to count.
+- Each slide's direction is its station: what stands at the centre of its
+  column and what it does there, at its station's size (large spans about
+  60% of the column's width, medium about 40%, small about 25%), the
+  character's pose when the station has it (full body, touching no cut), and
+  what touches its left and right edges (the crossing from the slide before,
+  the crossing into the slide after). The same light, horizon and scale as
+  every other section; never a background, a field or a band of its own
+  (the program refuses "fondo crema en la banda", "sección sobre
+  terracota", "another background than"), never a shot word: write "wide"
+  as every slide's shot, which the program ignores there. No "free band":
+  the field is the scene's and the program sets the words on it.
+- The judge scores continuity as one scene (no SHOT_MISMATCH or SAME_SHOT
+  for equal shots; a section with its own background is
+  BREAKS_CONTINUITY), reads the cover's background rule on the field once,
+  never names the carrier MOTIF_DEPENDENCY, and names OFF_BEAT a station
+  drawn as a close-up, a cut-away or a panel. A panorama is never a series
+  of separate pictures.
 
 ## Rounds
 One script, then the judge's own; the best revised beside the judge's as

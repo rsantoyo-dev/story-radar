@@ -1,5 +1,6 @@
 import { comparableText, Draft2InputError } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
+import { PANORAMA_FIELD_BREAK } from "./draft2-spine-checks";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest,
   funnelText, funnelVersions, headlineKey, longWords, wordOverlap,
@@ -68,6 +69,16 @@ export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = VISUAL_PLAN;
  */
 export const VISUAL_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
+];
+/**
+ * A panorama under v3 (2026-10-18): the script is one scene the images draw
+ * once, so the judge's revision round is kept; both panoramas before it
+ * shipped scripts the judge had sent back (61 and 76) because v3 had no
+ * second round, and the scenes came out as slides glued together.
+ */
+export const VISUAL_PLAN_V3_PANORAMA: readonly FunnelPlanRound[] = [
+  { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
+  { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
 export const VISUAL_MAX_ROUNDS = 2;
 export const VISUAL_ACCEPT_SCORE = 95;
@@ -258,8 +269,8 @@ export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "ca
   };
 }
 
-/** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
-export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? VISUAL_PLAN_V3 : VISUAL_PLAN; };
+/** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups); a panorama under v3 keeps the revision round. */
+export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2", { panorama = false }: { panorama?: boolean } = {}): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? (panorama ? VISUAL_PLAN_V3_PANORAMA : VISUAL_PLAN_V3) : VISUAL_PLAN; };
 
 /**
  * The spine's image line for each carousel slide: the cover's and slide 2's
@@ -478,6 +489,13 @@ export function mechanicalVisualIssues(candidates: readonly Draft2VisualCandidat
     const master = Boolean(narrative && narrativeUsesMaster(narrative));
     // A narrative form's anchor is on every slide by design: the limits on a recurring element do not apply to it (narratives skill).
     const anchored = Boolean(narrative && narrative.form !== "classic");
+    // One wide scene has one field and one surface: a direction that gives its section a background of its own, or tells it to differ from the one before, glues slides together (the first two panoramas' scenes).
+    if (master) {
+      for (const slide of candidate.slides) {
+        const striped = PANORAMA_FIELD_BREAK.exec(slide.direction)?.[0];
+        if (striped) add("BREAKS_CONTINUITY", partOf(slide.slide), `${labelOf(slide.slide)} asks for "${striped}": the scene has one field and one surface across its whole width, named once in the concept; no section has a background of its own.`);
+      }
+    }
     candidate.slides.forEach((slide, index) => {
       const previous = candidate.slides[index - 1];
       if (!previous) return;

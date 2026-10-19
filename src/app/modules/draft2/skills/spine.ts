@@ -40,10 +40,18 @@ import type { Draft2Skill } from "./draft2-skills";
  * checked against (spineLimits) in its request. Version 9, the same day:
  * the facts every spine must place (factsToCover) are in the request too, so
  * a first answer places them instead of being asked again for them.
+ * Version 10, 2026-10-18, after the coffee ring's and the altitude's
+ * panoramas came out as six slides glued together (colour stripes at the
+ * cuts, the subjects in a thin strip, the editor writing the scene's prompt
+ * by hand): a panorama's spine designs its scene (spine.panorama: the world,
+ * what left to right means, the one field of the words' band, what crosses
+ * the seams, the right end, and each beat's station with its size), the
+ * turn's station the largest, no section with a background of its own (the
+ * program checks it), and four or five beats read larger than six.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "9",
+  version: "10",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -159,18 +167,63 @@ story takes the ones it needs, in this order, and may repeat rising:
   own interpretation.
 - focus.presentation, when given, says how the carousel is made, as the
   editor chose it. images "panorama": the images are one continuous scene,
-  left to right, cut into the slides side by side; each beat's image line is
-  its section of that one scene, something carries across each seam (a road,
-  a table, a line, a reach) so the reader swipes to follow it, and the spine
-  has at most six beats; its sections share one world by design, so the
-  sequence rule above does not apply to them. One view and one scale across
-  every section: a step of the story is the next thing along the scene (the
-  next drop on the counter, the next stage), never a cut-away, a close-up, a
-  magnified view or panels, which one wide image cannot hold; the program
-  checks it. text "program": the program
-  sets each slide's words on a calm band of its image, along the top (below
-  the logo where there is one); an image line keeps its subject out of that
-  band and asks for no word at all.
+  cut into the slides side by side, and the spine designs that scene (the
+  section below). text "program": the program sets each slide's words on a
+  calm band of its image, along the top (below the logo where there is
+  one); an image line keeps its subject out of that band and asks for no
+  word at all.
+
+## A panorama's scene
+With images "panorama", the spine carries "panorama" beside its beats: one
+scene the image model draws once, read left to right, that the program cuts
+into the slides. Its sections share one world by design, so the sequence rule
+above does not apply to them; everything else below does.
+- world: the one place in one view, as the model will draw it, at most 240
+  characters ("a kitchen counter seen straight on, the stove at the left
+  end, the window at the right"; "one hillside rising from a shore at the
+  left to a snowy summit at the right"). One point of view, one light, one
+  scale from end to end: a step of the story is the next thing along the
+  scene (the next drop on the counter, the next stretch of the slope), never
+  a cut-away, a close-up, a magnified view or panels, which one wide image
+  cannot hold; the program checks it.
+- device: what left to right means. "journey": the eye travels through a
+  place (a walk, a route, a climb). "time-lapse": the stages of one process
+  laid side by side along the same surface, in order (the wet drop, the
+  drying drop, the dry ring). "mechanism": one cause unfolding (what starts
+  it, what it does, what it leaves). "comparison": the two ends differ and
+  the middle is the change between them. Choose the device the facts hold
+  and say why in the spine's reason.
+- axis: the device in one line, at most 160 characters: from what, at the
+  left, to what, at the right.
+- field: the one plain surface of the words' band along the top of the whole
+  scene (a wall, the sky, a flat field), in one colour of the brand across
+  the whole width, at most 120 characters. The cover's background is this
+  field: choose it by the identity's cover rule once, for the whole scene,
+  never a background per section; the program refuses an image line that
+  gives its section a background of its own ("sección sobre terracota",
+  "fondo crema en la banda").
+- carrier: what runs through every seam so the reader swipes to follow it,
+  at most 160 characters: the surface itself by default (the counter, the
+  ground, the hillside); a line (a path, a thread) only when the facts give
+  one, never a decorative trail added to the scene.
+- ending: "resolves" (the right end pays the story) or "returns" (the right
+  end echoes the left end's frame, read with what the reader now knows).
+- stations: one per beat, in the beats' order. Each has its size ("large",
+  "medium" or "small": how much of its column the subject spans), whether
+  the brand's character stands in it (character), and what crosses its right
+  edge into the next section (crossing, at most 120 characters; empty on the
+  last). Exactly one station is large, the turning point's or the climax's:
+  the strongest true thing stands largest in the scene. The character, when
+  the identity has one, stands in two or three stations at most, full body,
+  never touching a cut.
+- The beats: four or five read larger than six (each column is a slide;
+  with six, the subjects shrink), and the cap is six. Each beat's image line
+  is its station seen in the scene: the subject at the centre of its column,
+  what it does there, what touches its edges; never a shot, a background or
+  a "free band": the field and the words' band are the scene's.
+- The directions restate the scene: the direction says what the words do
+  along the axis, the visual direction the world, the field and the carrier
+  in one breath; neither invents a second scene.
 - recentCovers, when given, are the publication's last covers, newest first
   (background, the brand's character on it, subject). Within the identity,
   the cover's image line and the visual direction vary from them: another of
@@ -184,6 +237,10 @@ spineLimits gives them: the fewest and the most beats (a panorama's six),
 and each beat field's characters (scene, words, image, withholds, subject).
 Keep every field at least ten characters under its limit: the program
 counts every character, and an answer over a limit is asked for again.
+With spineLimits.panorama, the answer's spine carries "panorama" (world,
+device, axis, field, carrier, ending, stations: one per beat, exactly one
+large on the turn, a crossing on every station but the last) within the
+characters it names; a panorama answered without it is asked for again.
 factsToCover lists the facts the program requires a beat or a guard to rest
 on: place each one in the factIds of the beat that needs it, even when the
 beat states it in a clause, at most six facts a beat; a spine that leaves

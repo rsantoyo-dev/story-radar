@@ -12,7 +12,7 @@ import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types
 import {
   MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS,
   type BrandReferenceSelection, type CreativeBrandOverlay, type CreativeBrandOverlaySnapshot, type CreativeBrief, type CreativeCharacterSnapshot,
-  type CreativeDraft, type CreativeProfile, type CreativeTone, type CreativeUnit,
+  type CreativeDraft, type CreativeImageQuality, type CreativeProfile, type CreativeTone, type CreativeUnit,
 } from "../stories/creative-content.types";
 import { buildCreativeCarouselChrome, compositeCreativeCarouselChrome } from "../stories/creative-carousel-chrome";
 import { computeCreativeBrandPromptExclusionRect, creativeCanvasDimensions, shouldApplyCreativeBrandOverlay } from "../stories/creative-brand-overlay";
@@ -62,7 +62,7 @@ import {
   type Draft2ImageAttempt, type Draft2ImageReview, type Draft2WordsLayout, withStyleOf, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
-import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues } from "./draft2-focus.types";
+import { anchorNoun, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2PanoramaDevice, type Draft2PanoramaStationSize, type Draft2SpinePanorama } from "./draft2-focus.types";
 import { resolveCreativeVisualGuidance } from "../stories/creative-visual-guidance";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2CarouselSlide, Draft2VisualCandidate } from "./draft2-visual.types";
@@ -130,7 +130,15 @@ type Context = {
   narrative: Draft2FocusNarrative;
   /** The master scene as stored, read once and checked against its record, for every slide's section. */
   master?: Promise<Uint8Array | undefined>;
+  /** A panorama's scene as the spine designed it (spine v10): the world, the axis, the field, the carrier and each beat's station. Absent on a spine written before it. */
+  panorama?: Draft2SpinePanorama;
 };
+
+/** The quality a panorama's or a line's scene is drawn at: one call for every slide, so a tier above them unless DRAFT2_SCENE_QUALITY says otherwise. */
+function sceneQuality(): CreativeImageQuality {
+  const value = process.env.DRAFT2_SCENE_QUALITY?.trim().toLowerCase();
+  return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
 
 const objectKey = (ctx: Pick<Context, "topicId" | "sessionId" | "run">, file: string) =>
   buildDraft2ImageObjectKey({ topicId: ctx.topicId, sessionId: ctx.sessionId, runId: ctx.run.runId, file });
@@ -467,31 +475,70 @@ function masterScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
   ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
 }
 
+/** What the device makes of left to right, for the scene's prompt. */
+const PANORAMA_DEVICE_LINE: Record<Draft2PanoramaDevice, string> = {
+  journey: "The scene is one continuous place the eye travels through from left to right; each column is the next stretch of it.",
+  "time-lapse": "The stages of one process sit side by side along the same surface, in order, the earliest at the left: one place and one moment, the stages laid out as the surface would hold them.",
+  mechanism: "One cause unfolds from left to right: what starts it at the left, what it does through the middle, what it leaves at the right.",
+  comparison: "The two ends differ, and the middle is the change between them, step by step.",
+};
+/** How much of its column a station's subject spans, by its size. */
+const PANORAMA_SIZE_SHARE: Record<Draft2PanoramaStationSize, number> = { large: 60, medium: 40, small: 25 };
+/** How close to a cut line a face, a hand, a character or a key object may come, as a share of a column's width. */
+const PANORAMA_CUT_MARGIN = 8;
+
 /**
  * What the image model reads to draw a panorama (the editor's choice in the
  * focus): the whole carousel as one continuous scene without a word, cut
- * into the slides side by side and used as it is, so the scene runs on
- * across every swipe; the band along the top of every section stays calm
- * for the words the program sets.
+ * into equal columns and used as it is, so the scene runs on across every
+ * swipe. Since 2026-10-18 it is written with a grammar the first two scenes
+ * lacked (they came out as slides glued together, with colour stripes at the
+ * cuts and the subjects in a thin strip): the scene the spine designed (its
+ * world, axis, field, carrier and ending), the field as one surface across
+ * the whole width down to a stated height, one ground line, the cut lines
+ * named, each station's size as a share of its column, and a margin from the
+ * cuts for every face, hand, character and key object. A spine written
+ * before the scene falls back to the script's concept and directions.
  */
 function panoramaScenePrompt(ctx: Context, plate: Draft2MasterPlate): string {
+  const count = plate.sections.length;
   const first = plate.sections[0];
-  const band = first && first.height < plate.height ? ` Keep the strip above and below the sections quiet: the slides take the middle band, about ${Math.round((first.height / plate.height) * 100)}% of the height.` : "";
+  const scene = ctx.panorama;
+  const sectionTop = first?.top ?? 0;
+  const sectionHeight = first?.height ?? plate.height;
+  const share = (y: number) => Math.round((y / plate.height) * 100);
+  // The words' band is the top of every section (textBandFor): in the scene, the field reaches from the top down to this height, and the ground line sits a little below it.
   const wordsBand = textBandFor({});
-  const calm = Math.round(((wordsBand.top + wordsBand.height) / OUTPUT.height) * 100);
-  const sections = ctx.carousel.map((words, index) => {
+  const fieldBottom = share(sectionTop + ((wordsBand.top + wordsBand.height) / OUTPUT.height) * sectionHeight);
+  const groundLine = share(sectionTop + 0.62 * sectionHeight);
+  const cuts = Array.from({ length: Math.max(0, count - 1) }, (_, index) => `${Math.round(((index + 1) / count) * 100)}%`).join(", ");
+  const names = (ids: readonly string[]) => ids.map((id) => ctx.characters.get(id)?.name ?? "the brand's character").join(" and ");
+  const stations = ctx.carousel.map((words, index) => {
     const scriptSlide = ctx.script.slides.find((entry) => entry.slide === words.slide);
-    return `${index + 1}. ${words.label}: ${scriptSlide?.subject || scriptSlide?.beat || ""}${scriptSlide?.subject && scriptSlide.beat ? ` (${scriptSlide.beat})` : ""}${scriptSlide?.direction ? `. ${scriptSlide.direction}` : ""}`;
+    const station = scene?.stations[index];
+    const size = station ? ` (${station.size}: its subject spans about ${PANORAMA_SIZE_SHARE[station.size]}% of the column's width)` : "";
+    const subject = scriptSlide?.subject || scriptSlide?.beat || "";
+    const cast = scriptSlide?.characterIds.length
+      ? ` ${names(scriptSlide.characterIds)}, full body, stands in this column at the scale of its subject, touching no cut line.`
+      : station?.character ? " The brand's character stands in this column, full body, at the scale of its subject, touching no cut line." : "";
+    const crossing = station?.crossing && index < count - 1 ? ` Into column ${index + 2}: ${station.crossing}.` : "";
+    return `${index + 1}. ${words.label}${size}: ${subject}.${scriptSlide?.direction ? ` ${scriptSlide.direction}` : ""}${cast}${crossing}`;
   });
+  const strips = first && first.height < plate.height ? ` The strips above and below the columns' band (the top ${share(sectionTop)}% and the bottom ${100 - share(sectionTop + sectionHeight)}% of the height) are outside every slide: continue the field above them and the surface below them, and place nothing there.` : "";
+  const carrier = scene?.carrier ?? "the surface the subjects stand on";
   return [
     "PANORAMA",
-    `One wide image: the whole ${plate.sections.length}-slide carousel as one continuous scene, read from left to right. It is cut into ${plate.sections.length} portrait sections of equal width side by side, and each section becomes its slide exactly as it is: the reader swipes from one section into the next. The scene runs on across every cut: something crosses each cut into the next section (a road, a table, a line, a reach), and no face, hand or key object is split by one.`,
-    `From left to right, one section per slide:\n${sections.join("\n")}`,
-    `The concept: ${ctx.script.concept}`,
+    `One wide image: the whole ${count}-slide carousel as one continuous scene, read from left to right: ${scene?.world ?? ctx.script.concept}. It is cut into ${count} equal portrait columns side by side (the cut lines at ${cuts} of the width), and each column becomes its slide exactly as it is: the reader swipes from one column into the next. One place, one point of view, one light and one scale from end to end: never ${count} pictures, never a frame, a border or a divider, never a change of colour or background at a cut.`,
+    scene
+      ? `THE AXIS. ${PANORAMA_DEVICE_LINE[scene.device]} From left to right: ${scene.axis}. ${scene.ending === "returns" ? "The right end echoes the left end's frame, so the carousel closes where it opened." : "The right end resolves the story."}`
+      : "THE AXIS. The story advances from the left end to the right end, one step per column.",
+    `THE FIELD. From the top of the scene down to ${fieldBottom}% of its height, across the whole width, is ${scene?.field ?? "one plain surface of the palette (a wall, the sky, a flat field)"}: one flat colour, with nothing drawn in it, since the slides' words are set there afterwards. Every subject stands below it.`,
+    `THE GROUND. One straight ground line (${carrier}) runs across the whole width at about ${groundLine}% of the height and through every cut without a break; the subjects stand on it or just below it, in the lower part of their columns.${strips}`,
+    `THE STATIONS, one per column, left to right:\n${stations.join("\n")}`,
+    `Sizes: a large station's subject spans about ${PANORAMA_SIZE_SHARE.large}% of its column's width, a medium one about ${PANORAMA_SIZE_SHARE.medium}%, a small one about ${PANORAMA_SIZE_SHARE.small}%; the large one is the scene's strongest point. Every face, hand, character and key object stays inside its column, at least ${PANORAMA_CUT_MARGIN}% of the column's width from each cut line; only the ground, the field and ${scene?.carrier ? "the carrier" : "the surface"} cross the cuts.`,
+    `The visual script's concept: ${ctx.script.concept}`,
     `How the visual script casts it: ${ctx.script.cast}`,
-    `One light, one horizon and one scale across the whole width.${band}`,
     ...(plate.instruction ? [`What the editor asks to change from the scene made before: ${JSON.stringify(plate.instruction)}`] : []),
-    `In every section keep the top ${calm}% calm and plain, sky, wall or a flat field of the palette: the slides' words are set there afterwards. The subjects stand in the lower part of each section.`,
     "No words, letters, numbers, logos, signs, frames or interface of any kind.",
     `# The brand's visual identity\n${resolveCreativeVisualGuidance(ctx.profile)}`,
   ].join("\n\n").slice(0, MAX_CREATIVE_IMAGE_PROMPT_CHARACTERS);
@@ -530,12 +577,14 @@ async function submitPlate(ctx: Context, job: PlateJob, checkpoint: () => Promis
     const prompt = job.prompt();
     const endpoint = creativeImageEndpoint(ctx.descriptor, "text-to-image");
     await putPrivateR2Object({ objectKey: objectKey(ctx, job.promptFile), body: Buffer.from(prompt, "utf8"), contentType: "text/plain; charset=utf-8" });
-    Object.assign(plate, { status: "submitting", endpoint, promptCharacters: prompt.length, submittedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
+    // The scene is drawn once for every slide: a tier above the slides' quality (the anchor plate is a reference, drawn at theirs).
+    const quality = job.operation === "draft2_master_scene" ? sceneQuality() : IMAGES_QUALITY;
+    Object.assign(plate, { status: "submitting", endpoint, quality, promptCharacters: prompt.length, submittedAt: new Date().toISOString() } satisfies Partial<Draft2AnchorPlate>);
     await checkpoint();
-    draft2DevTrace({ step: "images", round: 0, provider: "fal", model: endpoint, operation: job.operation, phase: "request", detail: { anchor: plate.anchor, size: job.size, promptCharacters: prompt.length } });
+    draft2DevTrace({ step: "images", round: 0, provider: "fal", model: endpoint, operation: job.operation, phase: "request", detail: { anchor: plate.anchor, size: job.size, quality, promptCharacters: prompt.length } });
     const send = () => submitFalImage({
       apiKey: ctx.fal.apiKey, prompt, width: job.size.width, height: job.size.height, aspectRatio: job.size.aspectRatio,
-      imageQuality: IMAGES_QUALITY, model: ctx.descriptor, endpoint, referenceImages: [], retention: "30d",
+      imageQuality: quality, model: ctx.descriptor, endpoint, referenceImages: [], retention: "30d",
     });
     let requestId: string;
     try {
@@ -565,10 +614,11 @@ async function pollPlate(ctx: Context, job: PlateJob, errors: Map<Draft2AnchorPl
     if (!raw) throw new Draft2InputError("The plate came back empty.");
     const sha256 = hash(raw);
     await putPrivateR2Object({ objectKey: objectKey(ctx, job.file), body: raw, contentType: "image/png", metadata: { sha256 } });
-    const estimate = estimateFalImageCost({ endpoint: plate.endpoint!, quality: IMAGES_QUALITY, width: job.target.width, height: job.target.height, promptCharacters: plate.promptCharacters ?? 0, referenceImages: 0 });
+    const quality = (plate.quality as CreativeImageQuality | undefined) ?? IMAGES_QUALITY;
+    const estimate = estimateFalImageCost({ endpoint: plate.endpoint!, quality, width: job.target.width, height: job.target.height, promptCharacters: plate.promptCharacters ?? 0, referenceImages: 0 });
     await recordUsageCharge({
       topicId: ctx.topicId, storyId: ctx.storyId, kind: "image", provider: "fal", model: plate.endpoint!, operation: job.operation,
-      units: { images: 1, width: job.target.width, height: job.target.height, quality: IMAGES_QUALITY, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
+      units: { images: 1, width: job.target.width, height: job.target.height, quality, referenceImages: 0, promptCharacters: plate.promptCharacters ?? 0 },
       costMicros: estimate?.costMicros ?? null, estimated: true, rate: estimate?.rate ?? { unpriced: true },
       idempotencyKey: `${job.operation === "draft2_master_scene" ? "draft2-master-scene" : "draft2-anchor-plate"}:${ctx.run.runId}${job.operation === "draft2_master_scene" && ((plate as Draft2MasterPlate).version ?? 1) > 1 ? `:v${(plate as Draft2MasterPlate).version}` : ""}`,
     });
@@ -771,6 +821,8 @@ async function reviewAttempt(ctx: Context, slide: Draft2SlideImage, attempt: Dra
     slide: { label: slide.label, need: slide.need, beat: scriptSlide?.beat ?? "", headlineLink: scriptSlide?.headlineLink ?? "" },
     addedAfterwards: { logo: logoApplies(ctx, slide.order), pageNumber: chromeFor(ctx, slide.order).overlay ? `${slide.order}/${ctx.carousel.length}` : null },
     ...(anchor ? { anchor: { what: anchor, role: anchorNoun(ctx.narrative), note: "It is on every slide of this carousel: say in anchorShown whether this image shows it as described." } } : {}),
+    // A panorama's section: its field, its surface and its light are the scene's, shared with the slides beside it, never a background chosen for this slide.
+    ...(attempt.kind === "section" ? { panoramaSection: { note: `This slide is one section of one wide scene cut into ${ctx.run.slides.length} slides: the plain band along its top (${ctx.panorama?.field ?? "the scene's field"}), its surface and its light are the scene's and continue into the slides beside it, so they are never a background chosen for this slide. Judge this section's own subject and words.` } } : {}),
   };
   const preview = await sharp(image).resize({ width: 864, withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
   draft2DevTrace({ step: "images", round: attempt.version, provider: "openai", model, operation: "draft2_image_review", phase: "request", detail: { slide: slide.slide, contents } });
@@ -896,6 +948,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
     ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), logos: new Map(), characters, brandSelections, units, draft, brief, fal, descriptor,
     ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
     presentation: run.presentation ?? focusPresentation(undefined), wordsPalette: wordsPalette(profile.brandPalette), wordsStyle: profile.wordsStyle ?? DEFAULT_WORDS_STYLE,
+    ...(target.visual.focus?.values?.spine?.panorama ? { panorama: target.visual.focus.values.spine.panorama } : {}),
   };
 }
 

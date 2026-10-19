@@ -361,6 +361,8 @@ export type Draft2AnchorPlate = {
   /** What the plate shows, as the focus names it. */
   anchor: string;
   status: Draft2ImageAttemptStatus;
+  /** The quality it was drawn at (a scene is drawn a tier above the slides since 2026-10-18); absent: the run's. */
+  quality?: string;
   queuedAt: string;
   submittedAt?: string;
   requestId?: string;

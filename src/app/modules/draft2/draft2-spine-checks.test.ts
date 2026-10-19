@@ -99,3 +99,18 @@ test("a panorama keeps one view and one scale: a cut-away, a close-up, a magnifi
   ];
   assert.deepEqual(spineImageProblems(edited, { panorama: true }), []);
 });
+
+test("a panorama's image line that gives its section a background of its own turns the scene into slides glued together: the program says so; a surface across the whole scene is the scene's", () => {
+  const beats = [
+    beat("cover", "Sección izquierda sobre crema: la olla hierve en el fogón y la línea sale por el borde derecho.", "la olla"),
+    beat("slide2", "Mismo mesón, fondo crema plano en la banda superior; dos tazas humean en la orilla.", "dos tazas"),
+    beat("middle", "La ladera sube; la sección sobre verde azulado lleva las capas de aire.", "capas de aire"),
+    beat("penultimate", "Un fondo de papel crema recorre toda la escena; la olla de frijoles apenas burbujea.", "frijoles"),
+    beat("last", "Sección final sobre terracota, el fondo de la portada: la olla a presión cerrada.", "olla a presión"),
+  ];
+  const problems = spineImageProblems(beats, { panorama: true });
+  assert.deepEqual(problems.map((problem) => [problem.code, problem.beat]), [["SPINE_PANORAMA_FIELD", 1], ["SPINE_PANORAMA_FIELD", 2], ["SPINE_PANORAMA_FIELD", 3], ["SPINE_PANORAMA_FIELD", 5]]);
+  assert.match(problems[0].detail, /asks for "Sección izquierda sobre crema"/);
+  assert.match(problems[1].detail, /asks for "fondo crema plano en la banda": a panorama has one field and one surface across its whole width/);
+  assert.deepEqual(spineImageProblems(beats), [], "one image per slide may have a background each");
+});

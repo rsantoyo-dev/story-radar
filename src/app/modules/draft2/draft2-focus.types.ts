@@ -258,7 +258,43 @@ export type Draft2SpineBeat = {
   /** The verified facts the beat rests on; a hook may rest on none. */
   factIds: string[];
 };
-export type Draft2FocusSpine = { beats: Draft2SpineBeat[] };
+/**
+ * How a panorama's one scene is designed (spine v10, 2026-10-18, after the
+ * coffee ring's and the altitude's panoramas came out as six slides glued
+ * together): the plan writes it with the beats when the editor chose a
+ * panorama. The world is one place in one view; the device says what left to
+ * right means; the field is the one plain surface of the words' band across
+ * the whole width; the carrier is what runs through every seam; each beat
+ * has its station, the turn's the largest.
+ */
+export const PANORAMA_DEVICES = ["journey", "time-lapse", "mechanism", "comparison"] as const;
+export type Draft2PanoramaDevice = (typeof PANORAMA_DEVICES)[number];
+export const PANORAMA_STATION_SIZES = ["large", "medium", "small"] as const;
+export type Draft2PanoramaStationSize = (typeof PANORAMA_STATION_SIZES)[number];
+export const PANORAMA_WORLD_MAX_CHARACTERS = 240;
+export const PANORAMA_AXIS_MAX_CHARACTERS = 160;
+export const PANORAMA_FIELD_MAX_CHARACTERS = 120;
+export const PANORAMA_CARRIER_MAX_CHARACTERS = 160;
+export const PANORAMA_CROSSING_MAX_CHARACTERS = 120;
+/** One beat's place in the scene: how large its subject stands in its section, whether the brand's character is there, and what crosses its right edge into the next section. */
+export type Draft2PanoramaStation = { size: Draft2PanoramaStationSize; character: boolean; crossing: string };
+export type Draft2SpinePanorama = {
+  /** The one place in one view, as the image model will draw it ("a kitchen counter seen from the front, the stove at the left end, the window at the right"). */
+  world: string;
+  /** What left to right means: journey (the eye travels through a place), time-lapse (the stages of one process laid side by side in order), mechanism (one cause unfolding), comparison (the two ends differ, the middle is the change). */
+  device: Draft2PanoramaDevice;
+  /** The axis in one line: from what, at the left, to what, at the right. */
+  axis: string;
+  /** The one plain surface of the words' band along the top of the whole scene (a wall, the sky, a flat field), in one colour of the brand across the whole width. */
+  field: string;
+  /** What runs through every seam, so the reader swipes to follow it: the surface itself by default; a line only when the facts give one. */
+  carrier: string;
+  /** The right end: resolves the story, or returns to the left end's frame. */
+  ending: Draft2NarrativeEnding;
+  /** One station per beat, in the beats' order. */
+  stations: Draft2PanoramaStation[];
+};
+export type Draft2FocusSpine = { beats: Draft2SpineBeat[]; panorama?: Draft2SpinePanorama };
 /** Another concept Claude wrote, for the editor to choose instead: a premise (discovery, when no arc is named) or an arc with its beats. */
 export type Draft2PremiseOption = { arc?: Exclude<Draft2ConceptArc, "classic">; premise: string; premiseFactIds: string[]; reveals: string[] };
 
@@ -448,7 +484,10 @@ export const spineRecurring = (narrative: Pick<Draft2FocusNarrative, "form" | "a
 
 /** The focus with its spine's image problems as they stand now, the brand's avoid terms given: recomputed when the spine is written, edited or kept by a decision. */
 export function focusWithSpineProblems(focus: Draft2Focus, avoid: readonly string[]): Draft2Focus {
-  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid, recurring: spineRecurring(focus.values.narrative), panorama: focusPresentation(focus.values).images === "panorama" }) : [];
+  const panorama = focus.values ? focusPresentation(focus.values).images === "panorama" : false;
+  const problems = focus.values?.spine ? spineImageProblems(focus.values.spine.beats, { avoid, recurring: spineRecurring(focusNarrative(focus.values)), panorama }) : [];
+  // A panorama whose spine has no scene yet (chosen after the plan): the images would improvise it.
+  if (panorama && focus.values?.spine && !focus.values.spine.panorama) problems.push({ code: "SPINE_PANORAMA_SCENE", beat: 0, detail: "The spine has no scene for the panorama (its world, what left to right means, the field of the words' band, what crosses the seams, each beat's station): rewrite the spine with notes or decide again, or the images will improvise the scene" });
   const { spineProblems, ...rest } = focus;
   void spineProblems;
   return problems.length ? { ...rest, spineProblems: problems } : rest;
@@ -686,9 +725,45 @@ const clipped = (value: unknown, max: number): string | undefined => {
 
 /** The numbers the program checks a spine against, for the planner's request: the beats it may have and each field's characters. */
 export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode">) {
+  const panorama = focusPresentation(values).images === "panorama";
   return {
-    beats: { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS },
+    beats: { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS, ...(panorama ? { note: "a panorama: four or five read larger than six" } : {}) },
     characters: { scene: FOCUS_BEAT_SCENE_MAX_CHARACTERS, words: FOCUS_BEAT_WORDS_MAX_CHARACTERS, image: FOCUS_BEAT_IMAGE_MAX_CHARACTERS, withholds: FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, subject: FOCUS_BEAT_SUBJECT_MAX_CHARACTERS },
+    // A panorama's spine designs its scene (spine.panorama): the program requires it, one station per beat, exactly one station "large" (the turn's).
+    ...(panorama ? { panorama: { required: true, stations: "one per beat, in the beats' order; exactly one large, on the turning point or the climax", characters: { world: PANORAMA_WORLD_MAX_CHARACTERS, axis: PANORAMA_AXIS_MAX_CHARACTERS, field: PANORAMA_FIELD_MAX_CHARACTERS, carrier: PANORAMA_CARRIER_MAX_CHARACTERS, crossing: PANORAMA_CROSSING_MAX_CHARACTERS } } } : {}),
+  };
+}
+
+/**
+ * The plan's schema for a focus as it is made: a panorama's spine carries its
+ * scene (spine.panorama), required there and absent otherwise, since the
+ * contract names every property it allows.
+ */
+export function focusPlanSchema(values: Pick<Draft2FocusValues, "textMode" | "imageMode">): Record<string, unknown> {
+  if (focusPresentation(values).images !== "panorama") return DRAFT2_FOCUS_PLAN_SCHEMA;
+  const properties = DRAFT2_FOCUS_PLAN_SCHEMA.properties as Record<string, Record<string, unknown>>;
+  const spine = properties.spine as { properties: Record<string, unknown>; required: string[] };
+  return {
+    ...DRAFT2_FOCUS_PLAN_SCHEMA,
+    properties: {
+      ...properties,
+      spine: {
+        ...spine,
+        properties: {
+          ...spine.properties,
+          panorama: {
+            type: "object",
+            properties: {
+              world: { type: "string" }, device: { type: "string", enum: [...PANORAMA_DEVICES] }, axis: { type: "string" }, field: { type: "string" }, carrier: { type: "string" }, ending: { type: "string", enum: [...FOCUS_NARRATIVE_ENDINGS] },
+              stations: { type: "array", items: { type: "object", properties: { size: { type: "string", enum: [...PANORAMA_STATION_SIZES] }, character: { type: "boolean" }, crossing: { type: "string" } }, required: ["size", "character", "crossing"], additionalProperties: false } },
+            },
+            required: ["world", "device", "axis", "field", "carrier", "ending", "stations"],
+            additionalProperties: false,
+          },
+        },
+        required: [...spine.required, "panorama"],
+      },
+    },
   };
 }
 
@@ -728,8 +803,22 @@ function realPersonIn(text: string, people: readonly string[]): string | undefin
   return people.find((name) => name.trim().length > 2 && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name.trim())}($|[^\\p{L}\\p{N}])`, "iu").test(text));
 }
 
-/** The narrative a focus follows: its own, else classic (a focus decided before narrative forms). */
-export const focusNarrative = (values: Pick<Draft2FocusValues, "narrative">): Draft2FocusNarrative => values.narrative ?? CLASSIC_NARRATIVE;
+/** What a panorama's scene is called before the spine designs it. */
+export const PANORAMA_DEFAULT_ANCHOR = "the carousel's one continuous scene";
+
+/**
+ * The narrative a focus follows: its own, else classic (a focus decided before
+ * narrative forms). Since 2026-10-18 the editor's panorama (imageMode) is the
+ * panorama form whatever Claude chose: the scene the spine designed is the
+ * anchor, its axis the progression, its ending the ending, so the Opening,
+ * the Deck, the Closing and the visual script read the form's own guidance.
+ */
+export const focusNarrative = (values: Pick<Draft2FocusValues, "narrative"> & Partial<Pick<Draft2FocusValues, "imageMode" | "spine">>): Draft2FocusNarrative => {
+  const own = values.narrative ?? CLASSIC_NARRATIVE;
+  if (values.imageMode !== "panorama" || own.form !== "classic") return own;
+  const scene = values.spine?.panorama;
+  return { form: "panorama", anchorKind: "scene", characterId: null, anchor: scene?.world ?? PANORAMA_DEFAULT_ANCHOR, anchorFactIds: [], progression: scene?.axis ?? "", ending: scene?.ending ?? "resolves" };
+};
 
 /**
  * The narrative form of Claude's answer, checked against the contract and the
@@ -875,7 +964,49 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
   });
   const problem = spineShapeProblem(beats, structure, limits);
   if (problem) fail(problem);
-  return { beats };
+  const panorama = panoramaFrom(record(value).panorama, beats, fail, limits);
+  return { beats, ...(panorama ? { panorama } : {}) };
+}
+
+/**
+ * A panorama's scene from the plan or the editor, checked: its texts within
+ * their limits (cut at a word on the last answer), a known device and ending,
+ * one station per beat with a known size, exactly one station large and on
+ * the turn, a crossing on every station but the last. Absent when the answer
+ * has none: the plan is asked for it when the presentation is a panorama
+ * (parseFocusPlan); an editor's spine may lack it.
+ */
+function panoramaFrom(value: unknown, beats: readonly Draft2SpineBeat[], fail: (message: string) => never, limits: { clip?: boolean }): Draft2SpinePanorama | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const body = record(value);
+  const field = limits.clip ? clipped : text;
+  const world = field(body.world, PANORAMA_WORLD_MAX_CHARACTERS);
+  const axis = field(body.axis, PANORAMA_AXIS_MAX_CHARACTERS);
+  const surface = field(body.field, PANORAMA_FIELD_MAX_CHARACTERS);
+  const carrier = field(body.carrier, PANORAMA_CARRIER_MAX_CHARACTERS);
+  const device = oneOf(PANORAMA_DEVICES, body.device);
+  const ending = oneOf(FOCUS_NARRATIVE_ENDINGS, body.ending) ?? "resolves";
+  if (!world) fail(`The panorama's world: the one place in one view, in 1 to ${PANORAMA_WORLD_MAX_CHARACTERS} characters`);
+  if (!device) fail(`The panorama's device is one of ${PANORAMA_DEVICES.join(", ")}`);
+  if (!axis) fail(`The panorama's axis: what left to right means, in 1 to ${PANORAMA_AXIS_MAX_CHARACTERS} characters`);
+  if (!surface) fail(`The panorama's field: the one plain surface of the words' band across the whole width, in 1 to ${PANORAMA_FIELD_MAX_CHARACTERS} characters`);
+  if (!carrier) fail(`The panorama's carrier: what runs through every seam, in 1 to ${PANORAMA_CARRIER_MAX_CHARACTERS} characters`);
+  const raw = Array.isArray(body.stations) ? body.stations as unknown[] : [];
+  if (raw.length !== beats.length) fail(`The panorama has one station per beat, in the beats' order: ${beats.length} beats, ${raw.length} stations`);
+  const stations: Draft2PanoramaStation[] = raw.map((entry, index) => {
+    const station = record(entry);
+    const size = oneOf(PANORAMA_STATION_SIZES, station.size);
+    if (!size) fail(`Station ${index + 1}: size is one of ${PANORAMA_STATION_SIZES.join(", ")}`);
+    const crossing = typeof station.crossing === "string" ? (limits.clip ? clipped(station.crossing, PANORAMA_CROSSING_MAX_CHARACTERS) ?? "" : station.crossing.trim()) : "";
+    if (crossing.length > PANORAMA_CROSSING_MAX_CHARACTERS) fail(`Station ${index + 1} crosses in at most ${PANORAMA_CROSSING_MAX_CHARACTERS} characters`);
+    return { size: size!, character: station.character === true, crossing };
+  });
+  const large = stations.flatMap((station, index) => station.size === "large" ? [index] : []);
+  if (large.length !== 1) fail(`Exactly one station is large: the turning point's or the climax's; this scene has ${large.length}`);
+  if (!SPINE_TURN_ROLES.includes(beats[large[0]].role)) fail(`The large station is the turn's (beat ${large[0] + 1} is ${beats[large[0]].role}): the strongest true thing stands largest in the scene`);
+  const uncrossed = stations.slice(0, -1).flatMap((station, index) => station.crossing ? [] : [index + 1]);
+  if (uncrossed.length) fail(`Every station but the last says what crosses its right edge into the next section; ${uncrossed.length === 1 ? "station" : "stations"} ${uncrossed.join(", ")} ${uncrossed.length === 1 ? "does" : "do"} not`);
+  return { world: world!, device: device!, axis: axis!, field: surface!, carrier: carrier!, ending, stations };
 }
 
 /** The spine a focus follows, if it has one (a focus decided before spines has none). */
@@ -890,8 +1021,10 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats, clip = false }: {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats, clip = false, panorama = false }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
+  /** The carousel is a panorama: the plan's spine must design its scene. */
+  panorama?: boolean;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
   imageCheck?: { avoid: readonly string[]; recurring?: string; panorama?: boolean };
   /** The most beats the presentation allows (a panorama's six). */
@@ -905,6 +1038,7 @@ export function parseFocusPlan(answer: string, { known, structure, eligibleLever
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
   const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats, clip });
+  if (panorama && !editorChoices.spine && !spine.panorama) throw new Draft2ResponseError("A panorama's spine designs its scene: spine.panorama with its world, device, axis, field, carrier, ending and one station per beat");
   if (imageCheck && !editorChoices.spine) {
     const problems = spineImageProblems(spine.beats, imageCheck);
     if (problems.length) throw new Draft2ResponseError(`The spine's image lines: ${problems.map((problem) => problem.detail).join("; ")}`);
@@ -1419,19 +1553,28 @@ export function focusForModels(values: Draft2FocusValues) {
     ...(values.levers ? { levers: leversForModels(values.levers) } : {}),
     ...(values.guards?.length ? { guards: values.guards.map(({ misreading, factIds }) => ({ misreading, factIds })) } : {}),
     ...(values.spine ? { spine: spineForModels(values.spine) } : {}),
+    ...(values.spine?.panorama ? { panorama: panoramaForModels(values.spine.panorama) } : {}),
     direction: values.direction,
     ...(values.visualDirection ? { visualDirection: values.visualDirection } : {}),
   };
 }
 
-/** The spine as the models read it: each beat with its slide, role, scene, the words' job, what the image adds, what it withholds and its facts. */
+/** The spine as the models read it: each beat with its slide, role, scene, the words' job, what the image adds, what it withholds and its facts, and its station in a panorama's scene. */
 export function spineForModels(spine: Draft2FocusSpine) {
-  return spine.beats.map(({ slide, role, scene, words, image, subject, withholds, factIds }) => ({
+  return spine.beats.map(({ slide, role, scene, words, image, subject, withholds, factIds }, index) => ({
     slide, role, scene, words, image,
     ...(subject ? { subject } : {}),
     ...(withholds ? { withholds } : {}),
     ...(factIds.length ? { factIds } : {}),
+    ...(spine.panorama?.stations[index] ? { station: spine.panorama.stations[index] } : {}),
   }));
+}
+
+/** A panorama's scene as the models read it (focus.panorama): the world, the device and its axis, the field, the carrier and the ending; the stations are on the beats. */
+export function panoramaForModels(panorama: Draft2SpinePanorama) {
+  const { stations, ...scene } = panorama;
+  void stations;
+  return scene;
 }
 
 /** A concept as the models read it: a discovery's premise, the facts it dramatizes and its chain of reveals; another arc's facts and beats. */

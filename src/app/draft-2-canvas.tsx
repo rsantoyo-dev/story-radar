@@ -12,6 +12,8 @@ import {
   FOCUS_BEAT_IMAGE_MAX_CHARACTERS, FOCUS_BEAT_SCENE_MAX_CHARACTERS, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, FOCUS_BEAT_WORDS_MAX_CHARACTERS, FOCUS_SPINE_ROLES,
   FOCUS_IMAGE_MODES, FOCUS_NARRATIVE_ENDINGS, FOCUS_NARRATIVE_FORMS, FOCUS_PANORAMA_MAX_SLIDES, FOCUS_PLAN_NOTES_MAX_CHARACTERS, FOCUS_TEXT_MODES, focusPresentation, FOCUS_PROGRESSION_MAX_CHARACTERS, FOCUS_STRUCTURES, FOCUS_VISUAL_DIRECTION_MAX_CHARACTERS, focusFindings, focusMaterial, focusNarrative, visualDirectionChanged, wordsFollowFocus,
   type Draft2Focus, type Draft2FocusField, type Draft2FocusFinding, type Draft2ConceptArc, type Draft2FocusConcept, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2FocusValues, type Draft2FocusVoice, type Draft2ImageMode, type Draft2NarrativeForm, type Draft2PlanNotes, type Draft2TextMode, type Draft2SpineBeat, type Draft2SpineRole,
+  PANORAMA_DEVICES, PANORAMA_STATION_SIZES, PANORAMA_WORLD_MAX_CHARACTERS, PANORAMA_AXIS_MAX_CHARACTERS, PANORAMA_FIELD_MAX_CHARACTERS, PANORAMA_CARRIER_MAX_CHARACTERS, PANORAMA_CROSSING_MAX_CHARACTERS,
+  type Draft2SpinePanorama, type Draft2PanoramaStation,
 } from "@/app/modules/draft2/draft2-focus.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import { MAP_PANEL_POSITIONS, type MapPanelPosition } from "@/app/modules/stories/map-panel-position";
@@ -3027,10 +3029,42 @@ function SpineView({ focus, findings, eligibleLevers: levers, saving, locked, on
   </div>;
 }
 
-/** The beats, each editable in place: its role, its scene, the words' job, what the image adds, what it withholds and its facts; a change saves the whole spine, which the program checks against the structure. */
+const PANORAMA_DEVICE_LABEL: Record<Draft2SpinePanorama["device"], string> = { journey: "Journey: the eye travels through a place", "time-lapse": "Time-lapse: the stages of one process side by side", mechanism: "Mechanism: one cause unfolding", comparison: "Comparison: the two ends differ" };
+const PANORAMA_SIZE_LABEL: Record<Draft2PanoramaStation["size"], string> = { large: "Large (about 60% of its column)", medium: "Medium (about 40%)", small: "Small (about 25%)" };
+
+/**
+ * The beats, each editable in place: its role, its scene, the words' job,
+ * what the image adds, what it withholds and its facts; a change saves the
+ * whole spine, which the program checks against the structure. A panorama's
+ * spine carries its scene above the beats (the world, the axis, the field,
+ * the carrier, the ending) and each beat's station beside it (since
+ * 2026-10-18), editable the same way.
+ */
 function SpineBeats({ spine, disabled, onCommit }: { spine: Draft2FocusSpine; disabled: boolean; onCommit: (spine: Draft2FocusSpine) => void }) {
-  const commit = (index: number, patch: Partial<Draft2SpineBeat>) => onCommit({ beats: spine.beats.map((beat, position) => position === index ? { ...beat, ...patch } : beat) });
-  return <ol>
+  const commit = (index: number, patch: Partial<Draft2SpineBeat>) => onCommit({ ...spine, beats: spine.beats.map((beat, position) => position === index ? { ...beat, ...patch } : beat) });
+  const scene = spine.panorama;
+  const commitScene = (patch: Partial<Draft2SpinePanorama>) => { if (scene) onCommit({ ...spine, panorama: { ...scene, ...patch } }); };
+  const commitStation = (index: number, patch: Partial<Draft2PanoramaStation>) => { if (scene) onCommit({ ...spine, panorama: { ...scene, stations: scene.stations.map((station, position) => position === index ? { ...station, ...patch } : station) } }); };
+  return <>
+    {scene ? <fieldset className={styles.focusVoice}>
+      <legend className={styles.focusLegend}>The panorama’s scene</legend>
+      <p className={styles.factMeta}>One wide image the slides are cut from: the image model draws it once from this. The turn’s station is the largest; no section has a background of its own.</p>
+      <FocusText label="World" description="The one place in one view, as the model will draw it." value={scene.world} max={PANORAMA_WORLD_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commitScene({ world: value })} />
+      <FormField label="Device" description="What left to right means.">
+        <select value={scene.device} disabled={disabled} onChange={(event) => commitScene({ device: event.target.value as Draft2SpinePanorama["device"] })}>
+          {PANORAMA_DEVICES.map((device) => <option key={device} value={device}>{PANORAMA_DEVICE_LABEL[device]}</option>)}
+        </select>
+      </FormField>
+      <FocusText label="Axis" description="From what, at the left, to what, at the right." value={scene.axis} max={PANORAMA_AXIS_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commitScene({ axis: value })} />
+      <FocusText label="Field" description="The one plain surface of the words’ band along the top of the whole scene, in one colour of the brand: the cover’s background, chosen once." value={scene.field} max={PANORAMA_FIELD_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commitScene({ field: value })} />
+      <FocusText label="Carrier" description="What runs through every seam: the surface itself by default." value={scene.carrier} max={PANORAMA_CARRIER_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commitScene({ carrier: value })} />
+      <FormField label="The right end">
+        <select value={scene.ending} disabled={disabled} onChange={(event) => commitScene({ ending: event.target.value as Draft2SpinePanorama["ending"] })}>
+          {FOCUS_NARRATIVE_ENDINGS.map((ending) => <option key={ending} value={ending}>{ending === "returns" ? "Returns to the left end’s frame" : "Resolves the story"}</option>)}
+        </select>
+      </FormField>
+    </fieldset> : null}
+  <ol>
     {spine.beats.map((beat, index) => <li key={`${beat.slide}-${index}`} className={`${styles.focusField} ${styles.focusWide}`}>
       <FormField label={`${index + 1} · ${beat.slide}`} description={beat.factIds.length ? `Facts · ${beat.factIds.join(", ")}` : "No fact: a hook may rest on none."}>
         <select value={beat.role} disabled={disabled} onChange={(event) => commit(index, { role: event.target.value as Draft2SpineRole })}>
@@ -3043,8 +3077,18 @@ function SpineBeats({ spine, disabled, onCommit }: { spine: Draft2FocusSpine; di
       <FocusText label="Image’s subject" value={beat.subject ?? ""} max={FOCUS_BEAT_SUBJECT_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { subject: value })} />
       <FocusText label="Withholds" value={beat.withholds} max={FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { withholds: value })} />
       <FocusText label="Facts" value={beat.factIds.join(", ")} max={120} allowEmpty disabled={disabled} onCommit={(value) => commit(index, { factIds: value.split(/[\s,]+/).filter(Boolean) })} />
+      {scene?.stations[index] ? <>
+        <FormField label="Station: size" description="How much of its column the subject spans; exactly one station is large, the turn’s.">
+          <select value={scene.stations[index].size} disabled={disabled} onChange={(event) => commitStation(index, { size: event.target.value as Draft2PanoramaStation["size"] })}>
+            {PANORAMA_STATION_SIZES.map((size) => <option key={size} value={size}>{PANORAMA_SIZE_LABEL[size]}</option>)}
+          </select>
+        </FormField>
+        <label className={styles.factMeta}><input type="checkbox" checked={scene.stations[index].character} disabled={disabled} onChange={(event) => commitStation(index, { character: event.target.checked })} /> The brand’s character stands in this station</label>
+        {index < spine.beats.length - 1 ? <FocusText label="Crosses into the next section" value={scene.stations[index].crossing} max={PANORAMA_CROSSING_MAX_CHARACTERS} disabled={disabled} onCommit={(value) => commitStation(index, { crossing: value })} /> : null}
+      </> : null}
     </li>)}
-  </ol>;
+  </ol>
+  </>;
 }
 
 /**

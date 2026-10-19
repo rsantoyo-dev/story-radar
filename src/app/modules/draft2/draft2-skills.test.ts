@@ -39,7 +39,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.deepEqual(writer.skillVersions, { hooks: "7" });
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@9", "levers@1", "fairness@2", "reader@2", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@12", "images@6", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@10", "levers@1", "fairness@2", "reader@2", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@13", "images@6", "captions@3"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -190,7 +190,7 @@ test("the visual scripts rubric states the limits and thresholds the program enf
   assert.match(VISUALS_SKILL.text, /The image model letters each slide's words inside the image/);
   assert.match(VISUALS_SKILL.text, /is not a\s+reconstruction/);
   assert.match(VISUAL_ROLES["visual-judge"], /"REPETITIVE"/);
-  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "12" });
+  assert.deepEqual(composeInstructions("visual-writer", [VISUALS_SKILL], brandBrief(profile)).skillVersions, { visuals: "13" });
   assert.match(VISUALS_SKILL.text, /The script follows the focus's visualDirection when it has one/);
   assert.match(VISUAL_ROLES["visual-writer"], /ids c1, c2…/);
   assert.deepEqual(composeInstructions("people-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");

@@ -266,3 +266,14 @@ the space better, and for the brand's colours to be quick to pick.
 - **To every slide**: a slide whose text is apart keeps its text's place and
   takes the text's alignment and background; a slide whose text follows its
   headline keeps it so (`withStyleOf`).
+
+## 2026-10-18: the spine designs the scene
+
+See `draft2-spine.md` §16. In short: `spine.panorama` (world, device, axis,
+field, carrier, ending, one station per beat) is required under a panorama
+and edited on the Spine screen; `focusNarrative` makes the editor's panorama
+the panorama form; visuals v13 writes stations, not slides; the scene prompt
+has a composition grammar (field height, ground line, cut lines, station
+sizes, a margin from the cuts); the scene is drawn at medium quality; Sol
+reads a section as a section; a v3 panorama keeps the judge's revision
+round.

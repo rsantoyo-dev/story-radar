@@ -311,3 +311,18 @@ test("each slide's beat is the spine's image line: the cover's and slide 2's bea
   assert.equal(bound.id, "c1");
   assert.deepEqual(bindSpineBeats([script("c1")], {})[0], script("c1"), "nothing to bind, nothing changed");
 });
+
+test("a panorama's script is one scene: a direction that gives its section a background of its own breaks the continuity, and under v3 the judge's revision round is kept", async () => {
+  const { visualPlan, VISUAL_PLAN_V3, VISUAL_PLAN_V3_PANORAMA } = await import("./draft2-visual.types");
+  const panorama = { form: "panorama" as const, anchorKind: "scene" as const, characterId: null, anchor: "A kitchen counter seen straight on", anchorFactIds: [], progression: "From the wet drop to the dry ring", ending: "resolves" as const };
+  const sections = script("c1", { characterPlan: { use: false, characterIds: [], role: "" }, slides: script("c1").slides.map((entry) => ({ ...entry, shot: "wide" as const, characterIds: [], need: "generic-illustration" as const, recurring: "accent" as const })) });
+  const striped = { ...sections, slides: sections.slides.map((entry) => entry.slide === "slide2" ? { ...entry, direction: direction("the next drop, fondo crema plano en la banda superior") } : entry.slide === "last" ? { ...entry, direction: direction("the glass; the section on terracotta closes it") } : entry) };
+  const continuity = (codes: string[]) => codes.filter((code) => code.startsWith("BREAKS_CONTINUITY"));
+  assert.deepEqual(continuity(findings(striped, { narrative: panorama })), ["BREAKS_CONTINUITY c1 slide2", "BREAKS_CONTINUITY c1 last"]);
+  assert.deepEqual(continuity(findings(sections, { narrative: panorama })), []);
+  assert.deepEqual(continuity(findings(striped)), [], "one image per slide may have a background each");
+  assert.equal(visualPlan(carousel, "v3", { panorama: true }), VISUAL_PLAN_V3_PANORAMA);
+  assert.equal(VISUAL_PLAN_V3_PANORAMA.length, 2);
+  assert.equal(visualPlan(carousel, "v3"), VISUAL_PLAN_V3);
+  assert.equal(visualPlan(carousel, "v3", { panorama: false }).length, 1);
+});
