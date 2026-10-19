@@ -237,6 +237,28 @@
 .wordsTag { @ds-typo (label); position: absolute; top: 0; left: 0; padding: 0 density(1); border-radius: radius(1); background: palette(light-light); color: palette(primary-dark); pointer-events: none; }
 .wordsHandle { position: absolute; top: 50%; right: -8px; width: 14px; height: 36px; transform: translateY(-50%); border-radius: radius(1); background: palette(primary-main); cursor: ew-resize; touch-action: none; }
 .wordsControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: density(2); }
+/* The slide studio: one slide over the Images screen, the preview as tall as the window allows, the controls beside it, Apply always in view. */
+.studioBackdrop { position: fixed; z-index: 50; display: grid; place-items: center; inset: 0; padding: density(3); background: palette(dark-main, 0.48); backdrop-filter: blur(6px); }
+.studio { @ds-surface (boxed); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1200px, 100%); max-height: calc(100svh - 1.5rem); overflow: hidden; border-radius: radius(2); }
+.studioHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(3); padding: density(3) density(4); border-bottom: border(control); }
+.studioNav { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); min-width: 0; }
+.studioTitle { @ds-typo (title); margin: 0 density(2); }
+.studioBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); min-height: 0; padding: density(4); overflow: auto; }
+.studioStageColumn { display: grid; align-content: start; justify-items: center; gap: density(2); min-width: 0; }
+.studioStage { position: relative; display: grid; place-items: center; width: min(100%, calc((100svh - 17rem) * 0.8)); aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); touch-action: none; }
+.studioPanel { display: grid; align-content: start; gap: density(2); min-width: 0; }
+.studioGroup { border: border(control); border-radius: radius(2); }
+.studioGroup > summary { @ds-typo (small-strong); padding: density(2) density(3); color: palette(primary-dark); }
+.studioGroupBody { display: grid; gap: density(2); padding: 0 density(3) density(3); }
+.studioFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(2); padding: density(3) density(4); border-top: border(control); }
+.studioActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
+@media (min-width: 900px) {
+  .studioBody { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); overflow: hidden; }
+  .studioPanel { min-height: 0; overflow: auto; padding-right: density(1); }
+}
+/* A size: its slider and its number side by side. */
+.sizeRow { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; gap: density(2); align-items: center; }
+
 /* A colour: the brand's swatches first, then any other, and an opacity for a background. */
 .colorField { display: grid; gap: density(1); align-content: start; }
 .colorLabel { @ds-typo (small-strong); color: palette(dark-main); }

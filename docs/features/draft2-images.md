@@ -426,3 +426,35 @@ skill v5 asks for the transcription letter by letter, an extra, missing or
 swapped letter, a dotless ı or a wrong accent kept as drawn, never corrected.
 A word the image model keeps misspelling is better replaced in the copy and
 the slide made again from scratch: an edit keeps the base's lettering.
+
+## 2026-10-18: the slide studio
+
+The editor: "the image editor with words and the carousel work, but the UI
+needs better ergonomics". The words' editor lived inside a 15 rem card in
+the slides' grid: a preview of 200–300 px and some twenty-five controls in
+one column under it, the image scrolled out of view while adjusting, three
+folded sections per card, Apply at the very bottom, no way to the next slide.
+
+Now (`src/app/draft-2-slide-studio.tsx`): each card shows the image, its
+status, its versions, what Sol found, and **Open**. The studio opens over
+the screen, one slide at a time:
+
+- the preview as tall as the window allows (`.studioStage`: the smaller of
+  the column's width and the height left), with the headline's and the
+  text's boxes on it;
+- the controls beside it in groups by use: Place and Headline open, Text,
+  How it reads, Image (versions, Sol, another image, your own image) and
+  Map card folded; sizes as a slider with the number beside it;
+- Apply and Undo always in view in the footer, with "Changes not applied"
+  while the layout differs from the slide's; "Give every slide this style"
+  beside them;
+- ◀ ▶ in the header, or ← → when the focus is not in a field or on a box,
+  move to the previous or next slide without closing; Esc closes. With
+  changes not applied, moving or closing asks first (discard, or keep
+  editing);
+- a slide the image model lettered opens with its image and the image
+  groups alone.
+
+The words' editor, the preview call, the cast chooser, the review lines and
+the private image moved there from the canvas unchanged; the panorama's
+scene editor stays above the grid.
