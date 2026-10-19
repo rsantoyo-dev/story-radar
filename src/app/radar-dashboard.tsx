@@ -681,7 +681,8 @@ export function RadarDashboard({
         url.hash = "topics";
         window.history.replaceState(null, "", url.toString());
       }
-      setActiveNavHash(navigationHash(window.location.hash));
+      // Deferred: Next's router can dispatch popstate while it renders, and a state update inside that render is refused.
+      queueMicrotask(() => setActiveNavHash(navigationHash(window.location.hash)));
       requestAnimationFrame(() => {
         const hash = window.location.hash.slice(1);
         if (hash.startsWith("creative-profile-")) {
@@ -2685,7 +2686,7 @@ function EditorialEvaluationPanel({
                 </label>
                 <label className={styles.candidateSortField}>
                   <span>Sort by</span>
-                  <select value={collectedTableState.primaryRank} onChange={(event) => { setCollectedTableState((current) => ({ ...current, primaryRank: event.currentTarget.value as StoryRankKey })); setCandidateVisibleCount(25); }}>
+                  <select value={collectedTableState.primaryRank} onChange={(event) => { const value = event.currentTarget.value; setCollectedTableState((current) => ({ ...current, primaryRank: value as StoryRankKey })); setCandidateVisibleCount(25); }}>
                     <option value="publishedAt">Newest</option>
                     <option value="editorialPriority">AI priority</option>
                     <option value="growthScore">Growth potential</option>
@@ -2702,15 +2703,15 @@ function EditorialEvaluationPanel({
                     <option value="none">Without a line</option>
                     {lineData?.lines.map((line) => <option key={line.id} value={line.id}>{line.name}{line.archived ? " (archived)" : ""}</option>)}
                   </select></label>
-                  <label><span>Story date</span><select value={collectedTableState.publishedWithinDays ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, publishedWithinDays: parsePublishedWithinDays(event.currentTarget.value) })); setCandidateVisibleCount(25); }}>
+                  <label><span>Story date</span><select value={collectedTableState.publishedWithinDays ?? ""} onChange={(event) => { const value = event.currentTarget.value; setCollectedTableState((current) => ({ ...current, publishedWithinDays: parsePublishedWithinDays(value) })); setCandidateVisibleCount(25); }}>
                     <option value="">Any time</option><option value="1">24 hours</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="90">90 days</option>
                   </select></label>
-                  <label><span>AI priority at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumEditorialPriority ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumEditorialPriority: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
-                  <label><span>Growth potential at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumGrowthScore ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumGrowthScore: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
-                  <label><span>Then sort by</span><select value={collectedTableState.secondaryRank} onChange={(event) => { setCollectedTableState((current) => ({ ...current, secondaryRank: event.currentTarget.value as StoryRankKey })); setCandidateVisibleCount(25); }}>
+                  <label><span>AI priority at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumEditorialPriority ?? ""} onChange={(event) => { const value = event.currentTarget.value; setCollectedTableState((current) => ({ ...current, minimumEditorialPriority: parseStoryScoreThreshold(value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>Growth potential at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumGrowthScore ?? ""} onChange={(event) => { const value = event.currentTarget.value; setCollectedTableState((current) => ({ ...current, minimumGrowthScore: parseStoryScoreThreshold(value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>Then sort by</span><select value={collectedTableState.secondaryRank} onChange={(event) => { const value = event.currentTarget.value; setCollectedTableState((current) => ({ ...current, secondaryRank: value as StoryRankKey })); setCandidateVisibleCount(25); }}>
                     <option value="publishedAt">Newest</option><option value="editorialPriority">AI priority</option><option value="growthScore">Growth potential</option><option value="localScore">Local score</option>
                   </select></label>
-                  <label className={styles.candidateFloorControl}><input type="checkbox" checked={collectedTableState.hideBelowTopicFloor} onChange={(event) => { setCollectedTableState((current) => ({ ...current, hideBelowTopicFloor: event.currentTarget.checked })); setCandidateVisibleCount(25); }} /><span>Hide below local floor ({localCandidateFloor})</span></label>
+                  <label className={styles.candidateFloorControl}><input type="checkbox" checked={collectedTableState.hideBelowTopicFloor} onChange={(event) => { const checked = event.currentTarget.checked; setCollectedTableState((current) => ({ ...current, hideBelowTopicFloor: checked })); setCandidateVisibleCount(25); }} /><span>Hide below local floor ({localCandidateFloor})</span></label>
                 </div>
                 <p>Score minimums hide Stories without an evaluation. The story date uses the source publication date when available.</p>
               </details>

@@ -159,21 +159,22 @@ export type Draft2SessionSummary = {
  * trace.
  */
 export async function listDraft2SessionSummaries(topicId: string): Promise<Draft2SessionSummary[]> {
+  // No table alias: aliveSince() names draft2_sessions' own columns, and Postgres refuses a table's name once it is aliased (the board read nothing until 2026-10-19).
   const rows = await db.execute(sql`
-    SELECT DISTINCT ON (s.story_id)
-      s.id, s.story_id AS "storyId", s.step, s.status, s.pipeline, s.error,
-      s.created_at AS "createdAt", s.updated_at AS "updatedAt",
-      s.publication->>'approvedAt' AS "approvedAt",
-      (s.status = 'running' AND s.updated_at > ${aliveSince()}) AS alive,
-      (COALESCE((SELECT SUM(COALESCE((e->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(s.trace) e), 0)
-        + COALESCE((SELECT SUM(COALESCE((a->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(COALESCE(s.images->'slides', '[]'::jsonb)) sl, jsonb_array_elements(COALESCE(sl->'attempts', '[]'::jsonb)) a), 0)
-        + COALESCE((s.images->'anchorPlate'->>'costMicros')::numeric, 0)
-        + COALESCE((s.images->'masterPlate'->>'costMicros')::numeric, 0))::bigint AS "costMicros",
-      COALESCE((SELECT SUM(COALESCE((e->>'durationMs')::numeric, 0)) FROM jsonb_array_elements(s.trace) e WHERE e->>'step' IS NOT NULL), 0)::bigint AS ms,
-      (SELECT COUNT(*) FROM jsonb_array_elements(s.trace) e WHERE e->>'step' IS NOT NULL)::int AS calls
-    FROM draft2_sessions s
-    WHERE s.topic_id = ${topicId}::uuid
-    ORDER BY s.story_id, s.created_at DESC
+    SELECT DISTINCT ON (draft2_sessions.story_id)
+      draft2_sessions.id, draft2_sessions.story_id AS "storyId", draft2_sessions.step, draft2_sessions.status, draft2_sessions.pipeline, draft2_sessions.error,
+      draft2_sessions.created_at AS "createdAt", draft2_sessions.updated_at AS "updatedAt",
+      draft2_sessions.publication->>'approvedAt' AS "approvedAt",
+      (draft2_sessions.status = 'running' AND draft2_sessions.updated_at > ${aliveSince()}) AS alive,
+      (COALESCE((SELECT SUM(COALESCE((e->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(draft2_sessions.trace) e), 0)
+        + COALESCE((SELECT SUM(COALESCE((a->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(COALESCE(draft2_sessions.images->'slides', '[]'::jsonb)) sl, jsonb_array_elements(COALESCE(sl->'attempts', '[]'::jsonb)) a), 0)
+        + COALESCE((draft2_sessions.images->'anchorPlate'->>'costMicros')::numeric, 0)
+        + COALESCE((draft2_sessions.images->'masterPlate'->>'costMicros')::numeric, 0))::bigint AS "costMicros",
+      COALESCE((SELECT SUM(COALESCE((e->>'durationMs')::numeric, 0)) FROM jsonb_array_elements(draft2_sessions.trace) e WHERE e->>'step' IS NOT NULL), 0)::bigint AS ms,
+      (SELECT COUNT(*) FROM jsonb_array_elements(draft2_sessions.trace) e WHERE e->>'step' IS NOT NULL)::int AS calls
+    FROM draft2_sessions
+    WHERE draft2_sessions.topic_id = ${topicId}::uuid
+    ORDER BY draft2_sessions.story_id, draft2_sessions.created_at DESC
   `);
   return (rows.rows as Record<string, unknown>[]).map((row) => ({
     id: String(row.id), storyId: String(row.storyId), step: row.step as Draft2Step, status: row.status as Draft2SessionStatus, pipeline: row.pipeline as Draft2Pipeline,

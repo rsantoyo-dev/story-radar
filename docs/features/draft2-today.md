@@ -81,6 +81,15 @@ sessions again every 30 s while one runs. The Topic overview's Production
 card counts Draft 2 (Selected · In Draft 2 · Needs you · Approved · Ready /
 published) instead of v1 briefs, drafts and images.
 
+## Fix, the same day: the board read nothing
+
+`listDraft2SessionSummaries` aliased `draft2_sessions` as `s` while
+`aliveSince()` names the table's own columns (`"draft2_sessions"."step"`), so
+Postgres refused every read and the board stayed on "Reading the sessions…"
+with no card to open. The query names the table without an alias (run
+read-only on the seven brands with sessions: 2 to 12 stories each); a source
+test keeps the alias out.
+
 ## Not done
 
 - Removing the v1 server modules (the refactor above).

@@ -48,6 +48,16 @@ saved view is parsed by `parseCandidateView` (older states' two flags still
 work). The candidates list always ignores a saved publication filter; a score
 minimum below 1 is no minimum.
 
+## Addendum, the same day: the controls threw
+
+The dev server's log showed the real reason the filters "did not work": every
+one of the six controls (Sort by, Then sort by, Story date, both score
+minimums, Hide below the local floor) read `event.currentTarget` inside the
+state updater, which React runs after the handler, when `currentTarget` is
+null: each change threw `Cannot read properties of null (reading 'value')`.
+Each handler now reads the value first; `src/app/react-event-updaters.test.ts`
+fails on any updater that reads the event again.
+
 ## Checked and left as it was
 
 - **Search** (`#discover/search`): the line's period, time zone, feeds and AI
