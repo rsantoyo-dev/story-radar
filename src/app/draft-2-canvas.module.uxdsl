@@ -239,11 +239,13 @@
 .wordsControls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: density(2); }
 /* The slide studio: one slide over the Images screen, the preview as tall as the window allows, the controls beside it, Apply always in view. */
 .studioBackdrop { position: fixed; z-index: 50; display: grid; place-items: center; inset: 0; padding: density(3); background: palette(dark-main, 0.48); backdrop-filter: blur(6px); }
-.studio { @ds-surface (boxed); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; width: min(1200px, 100%); max-height: calc(100svh - 1.5rem); overflow: hidden; border-radius: radius(2); }
+/* A flex column, as the Dialog is: a grid's 1fr row cannot resolve against a max-height, so the body overflowed the studio and its controls and Apply were clipped out of reach. */
+.studio { @ds-surface (boxed); display: flex; flex-direction: column; width: min(1200px, 100%); max-height: calc(100svh - 1.5rem); overflow: hidden; border-radius: radius(2); }
+.studioHeader, .studioFooter, .studio > [role="status"], .studio > [role="alert"] { flex: none; }
 .studioHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(3); padding: density(3) density(4); border-bottom: border(control); }
 .studioNav { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); min-width: 0; }
 .studioTitle { @ds-typo (title); margin: 0 density(2); }
-.studioBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); min-height: 0; padding: density(4); overflow: auto; }
+.studioBody { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: density(4); min-height: 0; padding: density(4); overflow: auto; }
 .studioStageColumn { display: grid; align-content: start; justify-items: center; gap: density(2); min-width: 0; }
 .studioStage { position: relative; display: grid; place-items: center; width: min(100%, calc((100svh - 17rem) * 0.8)); aspect-ratio: 4 / 5; overflow: hidden; border-radius: radius(1); background: palette(light-light); touch-action: none; }
 .studioPanel { display: grid; align-content: start; gap: density(2); min-width: 0; }
@@ -253,11 +255,13 @@
 .studioFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: density(2); padding: density(3) density(4); border-top: border(control); }
 .studioActions { display: flex; flex-wrap: wrap; align-items: center; gap: density(2); }
 @media (min-width: 900px) {
-  .studioBody { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); overflow: hidden; }
+  .studio { height: calc(100svh - 1.5rem); }
+  .studioBody { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .studioStageColumn { min-height: 0; overflow: auto; }
   .studioPanel { min-height: 0; overflow: auto; padding-right: density(1); }
 }
 /* A size: its slider and its number side by side. */
-.sizeRow { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; gap: density(2); align-items: center; }
+.sizeRow { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; gap: density(2); align-items: end; }
 
 /* A colour: the brand's swatches first, then any other, and an opacity for a background. */
 .colorField { display: grid; gap: density(1); align-content: start; }

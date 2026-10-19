@@ -76,12 +76,12 @@ export function WordsRoleControls({ label, role, range, palette, disabled, onCha
         {(font?.weights ?? [role.weight]).map((weight) => <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>)}
       </select>
     </FormField>
-    <FormField label={`${label}: size`} description={`${range[0]} to ${range[1]} px on a 1080 px slide`}>
-      <div className={styles.sizeRow}>
-        <input type="range" min={range[0]} max={range[1]} step={2} value={role.size} aria-label={`${label}: size`} disabled={disabled} onChange={(event) => onChange({ ...role, size: Number(event.target.value) })} />
-        <input type="number" min={range[0]} max={range[1]} step={2} value={role.size} aria-label={`${label}: size in pixels`} disabled={disabled} onChange={(event) => { const size = Number(event.target.value); if (Number.isFinite(size)) onChange({ ...role, size: Math.min(range[1], Math.max(range[0], Math.round(size))) }); }} />
-      </div>
-    </FormField>
+    <div className={styles.sizeRow}>
+      <FormField label={`${label}: size`} description={`${range[0]} to ${range[1]} px on a 1080 px slide`}>
+        <input type="range" min={range[0]} max={range[1]} step={2} value={role.size} disabled={disabled} onChange={(event) => onChange({ ...role, size: Number(event.target.value) })} />
+      </FormField>
+      <input type="number" min={range[0]} max={range[1]} step={2} value={role.size} aria-label={`${label}: size in pixels`} disabled={disabled} onChange={(event) => { const size = Number(event.target.value); if (Number.isFinite(size)) onChange({ ...role, size: Math.min(range[1], Math.max(range[0], Math.round(size))) }); }} />
+    </div>
     <ColorField label={`${label}: colour`} value={role.color} palette={palette} disabled={disabled} onChange={(color) => onChange({ ...role, color })} />
     <FormField label={`${label}: marked words' weight`} description={mark.weight === role.weight && mark.color === role.color ? "The same as the rest: give them a weight or a colour to stand out." : undefined}>
       <select value={mark.weight} disabled={disabled} onChange={(event) => onChange({ ...role, mark: { ...mark, weight: Number(event.target.value) } })}>
