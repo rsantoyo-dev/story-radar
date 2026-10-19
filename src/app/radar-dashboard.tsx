@@ -13,6 +13,7 @@ import type { StoryContentEdition } from "./modules/stories/story-materials.type
 
 import { ActivityPanel } from "./activity-panel";
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
+import { CANDIDATE_VIEWS, CANDIDATE_VIEW_LABELS, candidateViewCounts, isReadyToSelectCandidate, matchesCandidateView, parseCandidateView, type CandidateView } from "./discover-candidates.core";
 import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
@@ -2409,12 +2410,7 @@ function EditorialEvaluationPanel({
           setCollectedTableState(collected);
           setSelectedTableState(selected);
           setLineFilter(typeof state.lineFilter === "string" ? state.lineFilter : "");
-          const savedView = state.candidateView;
-          setCandidateView(
-            savedView === "all" || savedView === "unevaluated" || savedView === "shortlist" || savedView === "evaluated"
-              ? savedView
-              : state.shortlistOnly === true ? "shortlist" : state.evaluatedOnly === true ? "evaluated" : "all",
-          );
+          setCandidateView(parseCandidateView(state));
           setCandidateSearch(typeof state.candidateSearch === "string" ? state.candidateSearch : "");
           setCandidateVisibleCount(25);
         }
@@ -2491,9 +2487,6 @@ function EditorialEvaluationPanel({
   const collectedStories = editorial?.collectedStories ?? [];
   const selectedStories = editorial?.selectedStories ?? [];
   const publishedStoryCount = selectedStories.filter((story) => storyPublicationStage(story).publishedDestinations.length > 0).length;
-  const evaluatedCount = collectedStories.filter((story) => story.evaluationDecision !== undefined).length;
-  const unevaluatedCount = collectedStories.length - evaluatedCount;
-  const readyToSelectCount = collectedStories.filter(isReadyToSelectCandidate).length;
   const activeSelectedCount = countActiveSelected(selectedStories);
   // Only stories still in production: Publications lists the published ones
   // from their selection, so clearing them would hide them there.
@@ -2522,13 +2515,14 @@ function EditorialEvaluationPanel({
     editorial?.configuration.effectiveCandidatePolicy?.localCandidateMinScore ??
     editorial?.configuration.minLocalScore ??
     25;
+  // Where each collected story stands for the editor (discover-candidates.core.ts): the candidate views and their counts read the open ones,
+  // the stories the collection set aside and the ones the editor decided have views of their own.
+  const candidateCounts = candidateViewCounts(collectedStories, localCandidateFloor);
   const lineStories=(rows:EditorialTableStory[])=>rows.map(story=>({...story,lineContexts:lineData?.associations.filter(a=>a.storyId===story.storyId && (!lineFilter || lineFilter==="none" || a.context.lineId===lineFilter))??[]})).filter(story=>!lineFilter || (lineFilter==="none"?story.lineContexts.length===0:story.lineContexts.length>0));
   const normalizedCandidateSearch = candidateSearch.trim().toLocaleLowerCase();
   const filteredCollectedStories = filterTableStories(
     lineStories(collectedStories).filter((story) => {
-      if (candidateView === "unevaluated" && story.evaluationDecision !== undefined) return false;
-      if (candidateView === "shortlist" && !isReadyToSelectCandidate(story)) return false;
-      if (candidateView === "evaluated" && story.evaluationDecision === undefined) return false;
+      if (!matchesCandidateView(story, candidateView, localCandidateFloor)) return false;
       return !normalizedCandidateSearch || `${story.title} ${story.sourceName}`.toLocaleLowerCase().includes(normalizedCandidateSearch);
     }),
     collectedTableState,
@@ -2557,12 +2551,7 @@ function EditorialEvaluationPanel({
   ).length;
   const canSubmitReview =
     canReview && selectedStoryIds.length > 0 && !isReviewing;
-  const candidateViews: readonly { value: CandidateView; label: string; count: number }[] = [
-    { value: "all", label: "All", count: collectedStories.length },
-    { value: "unevaluated", label: "Needs evaluation", count: unevaluatedCount },
-    { value: "shortlist", label: "Ready to select", count: readyToSelectCount },
-    { value: "evaluated", label: "Evaluated", count: evaluatedCount },
-  ];
+  const candidateViews: readonly { value: CandidateView; label: string; count: number }[] = CANDIDATE_VIEWS.map((value) => ({ value, label: CANDIDATE_VIEW_LABELS[value].label, count: candidateCounts[value] }));
   const candidateAdvancedCount = [
     lineFilter !== "",
     collectedTableState.publishedWithinDays !== undefined,
@@ -2603,7 +2592,7 @@ function EditorialEvaluationPanel({
           </div>
         </div>
         {editorial ? <div className={styles.candidateStageLinks}>
-          <span>{collectedStories.length} collected</span>
+          <span>{candidateCounts.all} open · {candidateCounts["set-aside"]} set aside · {collectedStories.length} collected</span>
           <a href="#production">{activeSelectedCount} selected →</a>
           <a href="#publications/published">{publishedStoryCount} published →</a>
         </div> : null}
@@ -2690,8 +2679,8 @@ function EditorialEvaluationPanel({
                   <label><span>Story date</span><select value={collectedTableState.publishedWithinDays ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, publishedWithinDays: parsePublishedWithinDays(event.currentTarget.value) })); setCandidateVisibleCount(25); }}>
                     <option value="">Any time</option><option value="1">24 hours</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="90">90 days</option>
                   </select></label>
-                  <label><span>AI priority at least</span><input type="number" min="0" max="100" inputMode="numeric" value={collectedTableState.minimumEditorialPriority ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumEditorialPriority: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
-                  <label><span>Growth potential at least</span><input type="number" min="0" max="100" inputMode="numeric" value={collectedTableState.minimumGrowthScore ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumGrowthScore: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>AI priority at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumEditorialPriority ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumEditorialPriority: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
+                  <label><span>Growth potential at least</span><input type="number" min="1" max="100" inputMode="numeric" value={collectedTableState.minimumGrowthScore ?? ""} onChange={(event) => { setCollectedTableState((current) => ({ ...current, minimumGrowthScore: parseStoryScoreThreshold(event.currentTarget.value) })); setCandidateVisibleCount(25); }} placeholder="Any" /></label>
                   <label><span>Then sort by</span><select value={collectedTableState.secondaryRank} onChange={(event) => { setCollectedTableState((current) => ({ ...current, secondaryRank: event.currentTarget.value as StoryRankKey })); setCandidateVisibleCount(25); }}>
                     <option value="publishedAt">Newest</option><option value="editorialPriority">AI priority</option><option value="growthScore">Growth potential</option><option value="localScore">Local score</option>
                   </select></label>
@@ -2732,7 +2721,7 @@ function EditorialEvaluationPanel({
           {activeTab === "collected" ? (
             <div>
               <div className={styles.candidateResultsHeading}>
-                <div><h3>{candidateView === "all" ? "All candidates" : candidateView === "unevaluated" ? "Awaiting evaluation" : candidateView === "shortlist" ? "Ready to select" : "Evaluated candidates"}</h3><p>Approve AI shortlist Stories in a batch, or select original content individually after review. Other evaluated Stories can be promoted after review.</p></div>
+                <div><h3>{CANDIDATE_VIEW_LABELS[candidateView].heading}</h3><p>{CANDIDATE_VIEW_LABELS[candidateView].note}</p></div>
                 <span aria-live="polite">{filteredCollectedStories.length} match · {visibleCollectedStories.length} displayed</span>
               </div>
 
@@ -2940,7 +2929,6 @@ function EditorialEvaluationPanel({
 }
 
 type StoryTableMode = "collected" | "selected";
-type CandidateView = "all" | "unevaluated" | "shortlist" | "evaluated";
 type StoryRankKey =
   | "publishedAt"
   | "editorialPriority"
@@ -2985,7 +2973,8 @@ function sanitizeStoryTableViewState(value: unknown, mode: StoryTableMode): Stor
     hideBelowTopicFloor: saved.hideBelowTopicFloor === true,
     minimumEditorialPriority: boundedNumber(saved.minimumEditorialPriority, 100),
     minimumGrowthScore: boundedNumber(saved.minimumGrowthScore, 100),
-    publicationFilter: publicationFilters.includes(saved.publicationFilter as PublicationFilter) ? saved.publicationFilter as PublicationFilter : defaults.publicationFilter,
+    // The candidates list has no publication control: a filter saved for it would hide stories with nothing on screen to say so.
+    publicationFilter: mode === "collected" ? "all" : publicationFilters.includes(saved.publicationFilter as PublicationFilter) ? saved.publicationFilter as PublicationFilter : defaults.publicationFilter,
     publicationPlatform: PUBLICATION_PLATFORMS.includes(saved.publicationPlatform as PublicationPlatform) ? saved.publicationPlatform as PublicationPlatform : defaults.publicationPlatform,
   };
 }
@@ -3048,11 +3037,6 @@ function filterTableStories(
 
     return storyMatchesPublicationFilter(story, filters);
   });
-}
-
-function isReadyToSelectCandidate(story: EditorialTableStory): boolean {
-  return (story.reviewable === true && story.evaluationDecision === "shortlist") ||
-    (story.isOwnedContent === true && story.processingStatus === "ready" && !story.reviewDecision);
 }
 
 function storyMatchesPublicationFilter(
@@ -4535,7 +4519,9 @@ function parseStoryScoreThreshold(value: string): number | undefined {
     return undefined;
   }
 
-  return Math.min(100, Math.max(0, Math.round(parsed)));
+  // Scores run 1–100: a minimum of 0 is no minimum (it only hid the stories without an evaluation).
+  const threshold = Math.min(100, Math.round(parsed));
+  return threshold >= 1 ? threshold : undefined;
 }
 
 function parsePublishedWithinDays(value: string): number | undefined {
