@@ -10,6 +10,12 @@ export type DailyPreparationStep =
 // "Unknown preparation stage" after a deploy.
 export const DAILY_PREPARATION_STEPS: DailyPreparationStep[] =
   ["collect", "evaluate", "recommend", "approve", "content", "focus", "brief", "cover", "approve-draft", "images"];
+/**
+ * The steps Prepare my day offers since the v1 studio retired (2026-10-19):
+ * through Content, after which the carousel is Draft 2's. The steps after it
+ * stay valid ids for runs saved with them as targets.
+ */
+export const DRAFT2_PREPARATION_STEPS: DailyPreparationStep[] = ["collect", "evaluate", "recommend", "approve", "content"];
 // "recommend"/"brief" keep their original ids — only their display titles
 // changed (Select/Draft) — so an in-flight or historical run row saved under
 // an older step sequence still resolves to the same step.

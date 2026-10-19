@@ -24,6 +24,8 @@ import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import { UrgentStoriesBanner } from "./urgent-stories-banner";
 import { Draft2TodayPanel } from "./draft-2-today-panel";
+import { DailyPreparationPanel } from "./daily-preparation-panel";
+import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
@@ -1010,6 +1012,28 @@ export function RadarDashboard({
     });
   }
 
+  /** The planner's or Prepare my day's approval of one story: the editor's human approval, recorded through the ordinary promotion endpoints. */
+  async function handlePlannerSelect(storyId: string, title: string, decision: "review" | "shortlist") {
+    if (!canAuthenticate || isBusy) throw new Error("Another operation is running. Please try again.");
+    setActiveOperation("review");
+    setActiveStoryId(storyId);
+    try {
+      if (decision === "review") {
+        await promoteReviewCandidate(secret, selectedTopicId, storyId);
+      } else {
+        await reviewStories(secret, selectedTopicId, [storyId], "approved");
+      }
+      setSelectedStoryIds((ids) => ids.filter((id) => id !== storyId));
+      setNotice({ tone: "success", title: "Story approved", message: `Your human approval for “${title}” is recorded. Open it in Draft 2 to write the carousel.` });
+      // Approval is already saved; a dashboard refresh failure must not report the approval itself as failed or encourage a duplicate submission.
+      const refreshed = await fetchDatabaseStats(secret, selectedTopicId).catch(() => undefined);
+      if (refreshed) setStats(refreshed);
+    } finally {
+      setActiveOperation(undefined);
+      setActiveStoryId(undefined);
+    }
+  }
+
   /** Resolves true once the stories left production; false when cancelled or refused. */
   async function handleUnselectStories(storyIds: string[]): Promise<boolean> {
     if (storyIds.length === 0) return false;
@@ -1709,6 +1733,8 @@ export function RadarDashboard({
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
           <UrgentStoriesBanner key={`urgent-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} onCountChange={setUrgentCount} onOpenStory={(storyId) => openCreativeStory(storyId)} />
+          <DailyPreparationPanel key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} onOpenDraft2={(storyId) => openCreativeStory(storyId)} onUnselect={(storyId) => handleUnselectStories([storyId])} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={() => { void fetchDatabaseStats(secret, selectedTopicId).then(setStats).catch(() => {}); }} />
+          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} onOpenDraft2={(storyId) => openCreativeStory(storyId)} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
           <Draft2TodayPanel key={`today-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats}
             stories={[...productionStories, ...publishedStories.filter((story) => !productionStories.includes(story))].map((story) => ({ storyId: story.storyId, title: story.title, sourceName: story.sourceName, contentStatus: story.contentStatus, published: storyPublicationStage(story).publishedDestinations }))}
             onOpen={(storyId, step) => openCreativeStory(storyId, step ? { step } : undefined)} />

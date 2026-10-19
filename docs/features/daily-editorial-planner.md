@@ -96,3 +96,11 @@ remain estimates until calibrated against actual channel performance.
 Apply migration `0070_woozy_norman_osborn.sql` with `npm run db:migrate`, then
 restart the app. Use the existing collector authentication and AI configuration.
 No publication is scheduled or sent by this feature.
+
+## Addendum, 2026-10-19
+
+Back on Today after a day away with the v1 studio. Unchanged on the server;
+the panel's buttons are the shared `Button`, and an approved card offers
+**Open in Draft 2** (the carousel is written there now). The "provisional
+angle" note names the Focus, which reclassifies it, instead of the v1 brief.
+

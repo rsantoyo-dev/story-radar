@@ -9,8 +9,11 @@ alive but are not shown, except on stories already published".
 - The v1 studio page (`creative-draft-workspace.tsx`, 4,485 lines) and its
   panels: the hook tournament, the editor's facts, the documentary panel,
   the brand image editor, `workspace-error-action`.
-- From Today: "Prepare my day" (`daily-preparation-panel.tsx`) and "What
-  should we publish today?" (`daily-editorial-planner-panel.tsx`).
+- From Today, for a day: "Prepare my day" (`daily-preparation-panel.tsx`)
+  and "What should we publish today?" (`daily-editorial-planner-panel.tsx`).
+  **Back the same day** (the editor: "the software must choose what is best
+  for today, that already existed"), through Content and into Draft 2; see
+  "Today" below and `docs/features/prepare-my-day.md`.
 - The API routes only they called: `daily-planner`, `daily-preparation`,
   `stories/[id]/editor-facts`, `stories/[id]/creative`, `creative/briefs`,
   `creative/drafts/[id]` (save, approve, hooks, fidelity), `companion`,
@@ -51,7 +54,13 @@ screen and a v1-published one on its page. `storyHref` now builds that link.
 
 ## Today
 
-`#today` shows the urgent stories' banner, then **Draft 2 · Today**
+`#today` shows the urgent stories' banner, then **Prepare my day** and
+**What should we publish today?** (restored on 2026-10-19: the run collects,
+evaluates, selects today's story, approves it and prepares its content; the
+planner's cards view or prepare the content, approve the story and open it
+in Draft 2; the routes `/api/radar/daily-planner` and
+`/api/radar/daily-preparation` are back, the preparation offering the steps
+through Content only, `DRAFT2_PREPARATION_STEPS`), then **Draft 2 · Today**
 (`draft-2-today-panel.tsx`, logic in `draft-2-today.core.ts`): every story in
 production once, from `GET /api/radar/draft2/sessions?topicId` (the latest
 session per story with its step, status, whether it is alive, approval, cost

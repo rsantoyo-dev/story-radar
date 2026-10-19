@@ -135,3 +135,25 @@ still requires draft approval, and content freshness and evidence checks apply.
 Retries preserve previous stages. If article/profile inputs change after the
 brief checkpoint, the job stops for review in the creative workspace. A failed
 extraction/provider call is retryable; it never fabricates article evidence.
+
+## Addendum, 2026-10-19: back on Today, through Content, then Draft 2
+
+The panel and its routes left Today with the v1 studio for a day; the editor:
+"the software must choose what is best for today, that already existed". They
+are back, and the run stops where Draft 2 starts:
+
+- **Steps offered**: Collect, Evaluate, Select, Approve Story, Content
+  (`DRAFT2_PREPARATION_STEPS`). The v1 steps after Content (Focus, Script,
+  Cover, Approve script, Visuals) are no longer offered; a run saved with one
+  of them as its target still resolves and shows as complete through Content.
+- **Then Draft 2**: once the story is approved, "Open in Draft 2" opens its
+  canvas (the story also appears on the Draft 2 · Today board under "Not
+  started"). The scheduled reader's scoops already prepare to Content.
+- **Gone with v1**: the auto-approve checkbox (it approved the v1 script and
+  images), the script and image previews, the AI-calls list and "Accept
+  brief and continue".
+- **Kept**: the story selector (the planner's recommendation or a chosen
+  candidate), Continue / Stop / Retry / Start a new run, the timeline, the
+  story card with the planner's reason and alternatives, Review content and
+  Unselect story.
+
