@@ -7,7 +7,7 @@ import { editorCast,
   visualExploreRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
-import { funnelExtendable, funnelVersions } from "./draft2-funnel";
+import { funnelExtendable, funnelScorePasses, funnelVersions } from "./draft2-funnel";
 import type { Draft2Inventory, Draft2InventoryEntity } from "./draft2-inventory.types";
 
 const opening = {
@@ -73,7 +73,7 @@ test("the carousel in order, from the opening, the deck and the closing; one scr
   assert.equal(visualPlan(Array.from({ length: 11 })), VISUAL_LONG_PLAN);
   assert.deepEqual(VISUAL_PLAN.map((round) => [round.fresh, round.revise, round.proposals, round.effort ?? "high"]), [[1, 0, 1, "medium"], [0, 1, 0, "medium"]], "one script and the judge's, then the best revised at medium");
   assert.equal(VISUAL_LONG_PLAN, VISUAL_PLAN, "a long carousel runs the same plan");
-  assert.deepEqual(visualPlan(carousel, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[1, 0, 0, "medium", "low"]], "v3: one script, one round, the judge at low, no proposal");
+  assert.deepEqual(visualPlan(carousel, "v3").map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[1, 0, 0, "medium", "low"], [0, 1, 0, "medium", "low"]], "v3: one script, then the judge's revision when the first is not accepted, the judge at low, no proposal");
   const judged = { round: 1, candidates: [], mechanical: [], at: "t", evaluation: {} };
   const unjudged = { ...judged, round: 2, evaluation: undefined };
   assert.equal(funnelExtendable({ status: "needs-review", rounds: [judged] }, VISUAL_PLAN.length), true, "a run that ended after one round takes the second");
@@ -324,5 +324,26 @@ test("a panorama's script is one scene: a direction that gives its section a bac
   assert.equal(visualPlan(carousel, "v3", { panorama: true }), VISUAL_PLAN_V3_PANORAMA);
   assert.equal(VISUAL_PLAN_V3_PANORAMA.length, 2);
   assert.equal(visualPlan(carousel, "v3"), VISUAL_PLAN_V3);
-  assert.equal(visualPlan(carousel, "v3", { panorama: false }).length, 1);
+  assert.equal(visualPlan(carousel, "v3", { panorama: false }).length, 2, "since 2026-10-19 every v3 script keeps the judge's revision round, run only when the first is not accepted");
+  assert.deepEqual(VISUAL_PLAN_V3.map((round) => [round.revise, round.fresh, round.proposals, round.judgeEffort]), [[0, 1, 0, "low"], [1, 0, 0, "low"]]);
+});
+
+test("the visual gate (2026-10-19): the funnel's acceptable score, the criteria at 85 and originality at 70, since the spine chose what each image shows", async () => {
+  const { VISUAL_GATE, VISUAL_ACCEPT_SCORE, VISUAL_CRITERION_FLOOR, VISUAL_ORIGINALITY_FLOOR } = await import("./draft2-visual.types");
+  assert.deepEqual([VISUAL_ACCEPT_SCORE, VISUAL_CRITERION_FLOOR, VISUAL_ORIGINALITY_FLOOR, VISUAL_GATE.floors], [90, 85, 70, { originality: 70 }]);
+  const strong: Draft2VisualScore = { ...score("c1", 91), fidelity: 93, continuity: 93, brand: 92, truth: 96, craft: 93, originality: 80 };
+  assert.equal(funnelScorePasses(strong, VISUAL_GATE), true, "a script the judge found predictable but right everywhere else passes (d31e7249 and b7e9c5b9 scored 91 with originality 80 and were sent back)");
+  const dull: Draft2VisualScore = { ...strong, originality: 65 };
+  const rough: Draft2VisualScore = { ...strong, craft: 84 };
+  const under: Draft2VisualScore = { ...strong, overall: 89 };
+  assert.equal(funnelScorePasses(dull, VISUAL_GATE), false, "originality has its own floor");
+  assert.equal(funnelScorePasses(rough, VISUAL_GATE), false, "the other criteria keep theirs");
+  assert.equal(funnelScorePasses(under, VISUAL_GATE), false);
+});
+
+test("room kept for the logo asks for no logo, in the publications' phrasings: the writer is told where the logo goes and says so", () => {
+  for (const direction of ["La dirección pide dejar sitio para el logo en la esquina superior izquierda.", "Deja libre el centro superior para el logo.", "Franja superior libre para el titular; lugar para el logo arriba a la izquierda.", "Le tiers supérieur reste dégagé pour le logo.", "The top band kept clear for the logo added afterwards."]) {
+    assert.equal(forbiddenElement(direction), undefined, direction);
+  }
+  assert.equal(forbiddenElement("A card with the logo drawn in the corner"), "logo");
 });

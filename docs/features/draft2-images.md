@@ -458,3 +458,38 @@ the screen, one slide at a time:
 The words' editor, the preview call, the cast chooser, the review lines and
 the private image moved there from the canvas unchanged; the panorama's
 scene editor stays above the grid.
+
+## 2026-10-19: why the visual script scored low, and the gate
+
+The editor: "the visual script always gets low evaluations; fix it". Forty
+runs in twelve days: three accepted; under v2 the best reached 88–94 after
+five rounds and stayed "revise"; under v3 (one round) scripts at 55–83
+shipped as they came. The causes, read in the judges' own findings:
+
+- **Originality blocked everything.** The judge scored it 69–83 on every
+  script (its rubric capped a direct illustration at 80), the floor per
+  criterion was 85, and the spine had already decided what each image
+  shows, so the script could not be "original" in subject. Scripts at 91
+  with 93–96 on every other criterion were sent back for originality 80.
+  Now (visuals v15) originality is judged on the execution of the beat and
+  has its own floor of 70 (`VISUAL_GATE.floors`); PREDICTABLE lowers it and
+  nothing else. The gate is the funnel's acceptable score, 90, the other
+  criteria at 85.
+- **INVENTED_DETAIL over-reached**: autumn foliage, a black plastic pot,
+  canvas gloves were "not in the facts". The rubric now says what makes a
+  detail invented: the claim a reader would take about the real event,
+  place, people, product or result; an image's ordinary concreteness in a
+  generic scene is the direction's to choose.
+- **FORBIDDEN_ELEMENT false positives** (106): "dejar sitio para el logo",
+  "libre para el logo": the writer is told where the logo goes and keeps
+  room for it. `ALLOWED` now knows sitio, lugar, banda, franja, tercio,
+  place, spot, slot, band, strip, third, bande, tiers, and "libre … logo"
+  with the room named first.
+- **v3 had no second round**, so the judge's findings never reached the
+  writer. v3 keeps the revision round (run only when the first script is
+  not accepted), as the panoramas already did; no proposal, the judge at
+  low. OTHER is for when no code fits, naming the rule.
+
+What stays: the beat is the spine's, truth is material, the brand's avoid
+list is absolute. The judge's findings remain visible to the editor whatever
+the score.

@@ -147,7 +147,7 @@ test("Claude scripts the chosen carousel and Sol judges it; both read the focus,
   assert.match(String(claude.input.instructions), /# The publication[^]*# Visual identity\nSALUT LONGUEUIL — CREATIVE IDENTITY[^]*- Visual mode: illustration-editorial\./);
   assert.ok(String(claude.input.instructions).includes(visuals.VISUALS_SKILL.text));
   assert.equal(json([(claude.input.contents as Contents).candidatesWanted, claude.input.effort, (sol.input.contents as Contents).proposalsWanted, sol.input.reasoningEffort]), json([1, "medium", 1, "medium"]), "one script, and the judge's proposal");
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "14" }], ["visual", "draft2_visual_review", { visuals: "14" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["visual", "draft2_visual", { visuals: "15" }], ["visual", "draft2_visual_review", { visuals: "15" }]]));
   const visual = session.visual!;
   assert.equal(json([session.status, visual.status, visual.winnerId, visual.deckId, visual.inventoryVersion, visual.characterChoice, visual.mode, visual.carousel?.length]), json(["ready", "ready", "c1", "c3", 4, "auto", "illustration-editorial", 6]));
 });
@@ -168,13 +168,14 @@ test("one script, then it revised beside Sol's script as written and as edited, 
   assert.match(String(under.error), /under 90\/100\. This step takes no extra round on its own; ask for one if a revision would help\./);
 });
 
-test("v3: one script, one round, the judge at low effort and no proposal; the run records its plan", async () => {
-  const h = harness({ writes: [writer()], judgments: [judge("revise", "c1", { c1: 91 })], session: { pipeline: "v3" } });
+test("v3: one script, then the judge's revision when the first is not accepted (2026-10-19), the judge at low effort and no proposal; the run records its plan", async () => {
+  const h = harness({ writes: [writer(), writer()], judgments: [judge("revise", "c1", { c1: 88 }), judge("accept", "c1.2", { "c1.2": 92 })], session: { pipeline: "v3" } });
   const session = await h.run();
-  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "medium"], ["judge", "low"]]));
-  assert.equal("proposalsWanted" in h.judgeCalls()[0], false, "no proposal: there is no round to compete in");
-  assert.equal(json([session.visual?.status, session.visual?.pipeline, session.visual?.plannedRounds, session.visual?.rounds.length, session.visual?.winnerId]), json(["needs-review", "v3", 1, 1, "c1"]));
-  assert.match(String(session.error), /did not accept a visual script after one round\./);
+  assert.equal(json(h.calls.map((call) => [call.role, call.input.effort ?? call.input.reasoningEffort])), json([["writer", "medium"], ["judge", "low"], ["writer", "medium"], ["judge", "low"]]));
+  assert.equal(h.judgeCalls().every((contents) => !("proposalsWanted" in contents)), true, "no proposal in either round");
+  assert.equal(json([session.visual?.status, session.visual?.pipeline, session.visual?.plannedRounds, session.visual?.rounds.length, session.visual?.winnerId]), json(["ready", "v3", 2, 2, "c1.2"]));
+  const first = await harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { pipeline: "v3" } }).run();
+  assert.equal(json([first.visual?.status, first.visual?.rounds.length]), json(["ready", 1]), "a first script the judge accepts ends the step");
 });
 
 test("a run that ended unaccepted after one round, before the step had a second, continues with round 2 only", async () => {

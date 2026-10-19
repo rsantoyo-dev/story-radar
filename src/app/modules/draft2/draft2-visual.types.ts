@@ -67,22 +67,29 @@ export const VISUAL_LONG_PLAN: readonly FunnelPlanRound[] = VISUAL_PLAN;
  * executes it and the judge reads it for the editor (48 shadow rounds: Luna
  * at low named the same winner as at medium on every visual script).
  */
-export const VISUAL_PLAN_V3: readonly FunnelPlanRound[] = [
-  { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
-];
 /**
- * A panorama under v3 (2026-10-18): the script is one scene the images draw
- * once, so the judge's revision round is kept; both panoramas before it
- * shipped scripts the judge had sent back (61 and 76) because v3 had no
- * second round, and the scenes came out as slides glued together.
+ * Since 2026-10-19 v3 keeps the judge's revision round, run only when the
+ * first script is not accepted: with one round the judge's findings never
+ * reached the writer, and scripts at 55–83 shipped as they came (the
+ * panoramas had it back a day earlier). No proposal, the judge at low.
  */
-export const VISUAL_PLAN_V3_PANORAMA: readonly FunnelPlanRound[] = [
+export const VISUAL_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 0, fresh: VISUAL_CANDIDATES, proposals: 0, effort: "medium", judgeEffort: "low" },
   { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
+export const VISUAL_PLAN_V3_PANORAMA: readonly FunnelPlanRound[] = VISUAL_PLAN_V3;
 export const VISUAL_MAX_ROUNDS = 2;
-export const VISUAL_ACCEPT_SCORE = 95;
+/**
+ * The gate (2026-10-19): forty runs in twelve days had three accepted at 95,
+ * the best of the rest at 88–94 after five rounds, and originality 69–83 on
+ * every script, the judge's own cap on a direct illustration being 80 while
+ * the floor was 85. The spine chose what each image shows, so originality is
+ * the execution's: it scores, it never blocks on its own. Accept at the
+ * funnel's acceptable score, the other criteria at 85.
+ */
+export const VISUAL_ACCEPT_SCORE = 90;
 export const VISUAL_CRITERION_FLOOR = 85;
+export const VISUAL_ORIGINALITY_FLOOR = 70;
 export const VISUAL_DIRECTION_MAX_CHARACTERS = 700;
 export const VISUAL_DIRECTION_MIN_CHARACTERS = 60;
 /** A beat is the spine's image line (FOCUS_BEAT_IMAGE_MAX_CHARACTERS) when the focus has a spine. */
@@ -121,7 +128,7 @@ export const VISUAL_JUDGE_CODES = [
   "CHARACTER_MISUSED", "OFF_FOCUS", "UNVERIFIED_SCENE", "INVENTED_DETAIL", "OTHER",
 ] as const;
 export const VISUAL_ISSUE_CODES = [...VISUAL_MECHANICAL_CODES, ...VISUAL_JUDGE_CODES] as const;
-export const VISUAL_GATE: FunnelGate = { criteria: VISUAL_CRITERIA, accept: VISUAL_ACCEPT_SCORE, floor: VISUAL_CRITERION_FLOOR };
+export const VISUAL_GATE: FunnelGate = { criteria: VISUAL_CRITERIA, accept: VISUAL_ACCEPT_SCORE, floor: VISUAL_CRITERION_FLOOR, floors: { originality: VISUAL_ORIGINALITY_FLOOR } };
 
 export type Draft2VisualCriterion = (typeof VISUAL_CRITERIA)[number];
 export type Draft2VisualIssueCode = (typeof VISUAL_ISSUE_CODES)[number];

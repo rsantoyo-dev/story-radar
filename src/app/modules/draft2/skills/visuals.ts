@@ -33,10 +33,17 @@ import type { Draft2Skill } from "./draft2-skills";
  * judge forbid every young tree in a planting story); a panorama's stations
  * show the facts' things, and under an identity of objects on flat planes
  * the world is a flat plane, not a photographic place.
+ * Version 15, 2026-10-19, after forty runs in twelve days with three
+ * accepted: the gate is the funnel's acceptable score (90), the other
+ * criteria at 85 and originality at 70, since the spine chose what each
+ * image shows and the judge capped originality itself; INVENTED_DETAIL is a
+ * claim a reader would take about the real thing, never an image's ordinary
+ * concreteness; PREDICTABLE lowers originality alone; OTHER only when no
+ * code fits.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "14",
+  version: "15",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -264,16 +271,27 @@ turn and the end, because the spine put them there.
   material, no scene that could pass for a photograph of a named event or
   venue without it, nothing that contradicts the facts (indoors or outdoors,
   who is there, what they do), and no specific the facts and the words do
-  not give? Name the first two UNVERIFIED_SCENE, the last INVENTED_DETAIL.
+  not give that a reader would take as a claim about the real event, place,
+  people, product or result: a number, a name, a time, a count of things, a
+  state shown as happened, a named thing's look? Name the first two
+  UNVERIFIED_SCENE, the last INVENTED_DETAIL. The ordinary concreteness an
+  image needs in a generic scene (a colour, a material, a pose, a season's
+  light, a plausible container or tool at hand) is the direction's to choose
+  and is never INVENTED_DETAIL; what makes a detail invented is the claim it
+  carries, not its absence from the facts.
 - craft: could an image model make each direction as written (concrete, one
   focus, nothing impossible or vague), with room for the words, the logo and
   the page number?
-- originality: does the sequence show the reader what the stock illustration
-  of these slides would not: an unexpected but true point of view, an image
-  that makes the words read differently, a composition the brand has not
-  used? The predictable illustration of each slide caps at 80, a stock idea
-  at 70 (name it PREDICTABLE); never at the cost of truth or brand.
-A visual script is accepted only when overall ≥ 95 and no criterion is below 85.
+- originality: within the beat the spine fixed (what each image shows is
+  the spine's, never the script's to change), does the execution show the
+  reader what the stock illustration would not: an unexpected but true point
+  of view, a composition, a light, what the beat's thing does, an image that
+  makes the words read differently? The predictable execution of a beat
+  caps at 80, a stock idea at 70 (name it PREDICTABLE, which lowers
+  originality and nothing else); never at the cost of truth or brand.
+A visual script is accepted only when overall ≥ 90 and no criterion is below 85,
+originality below 70: the spine chose what each image shows, so originality is
+the execution's and never blocks a script on its own.
 
 ## Words and images
 The slide's words and the spine are fixed inputs: the script serves them and
@@ -343,7 +361,7 @@ On a revision round, each script names the version it revises ("revises"), shown
 
 Mark an issue "material" when a direction would show what the facts contradict (who is there, what they do, indoors or outdoors), would generate a real person, or would show a real place without its verified material. A material issue keeps the script from winning. Style, pacing, taste and continuity are never material. A generic scene of what the story is about, with anonymous people in a setting nobody could take for the named place, is allowed and never a reconstruction.
 
-The spine decided the story: never ask a script for another progression, another turn or another narrative than the spine's. Name "OFF_BEAT" when a direction does not realize its slide's beat, "PREDICTABLE" when an image is the stock illustration of its words, "REPETITIVE" when a slide shows nothing the earlier ones did not, "MOTIF_DEPENDENCY" when the script depends on repeating one object or metaphor, and "TOO_ABSTRACT" when a slide shows a symbol or a diagram where the beat gives something concrete to show.
+The spine decided the story: never ask a script for another progression, another turn or another narrative than the spine's. Name "OFF_BEAT" when a direction does not realize its slide's beat, "PREDICTABLE" when the execution of a beat is its stock illustration (it lowers originality, never fidelity or truth), "REPETITIVE" when a slide shows nothing the earlier ones did not, "MOTIF_DEPENDENCY" when the script depends on repeating one object or metaphor, and "TOO_ABSTRACT" when a slide shows a symbol or a diagram where the beat gives something concrete to show. "INVENTED_DETAIL" is a specific a reader would take as a claim about the real event, place, people, product or result, never the colour, material, pose or light an image needs in a generic scene. Use "OTHER" only when no code fits, and say which rule.
 
 When \`proposalsWanted\` asks for one, also write a script of your own in "proposals": a complete script, one slide per carousel slide, realizing the same spine another way, written to meet the skill's thresholds; in the next round it competes as you wrote it and as the writer edited it. Otherwise "proposals" is an empty list.`,
 } as const;

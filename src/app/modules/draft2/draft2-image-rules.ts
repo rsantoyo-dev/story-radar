@@ -17,7 +17,9 @@ const WORD_END = "(?![\\p{L}\\p{N}_])";
 const FORBIDDEN = new RegExp(`${WORD_START}(logos?|watermarks?|captions?|subtitles?|hashtags?|swipe|page numbers?|signage|(?:text|words|letters|lettering) (?:that )?(?:reads?|says?|saying))${WORD_END}`, "iu");
 /** A direction that keeps a corner for the logo added afterwards ("esquina libre para logo", "logo abajo a la derecha, libre", "logo en haut à gauche dégagé"), or rules an element out ("no logos", "sin texto", "aucun logo ni interface", "pas de visage, de logo ni de lieu"), does not ask for it (in the publications' languages). */
 const ALLOWED = new RegExp([
-  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|room|space|zone|area|corner|margin|espace|coin|marge|emplacement|réserve)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
+  `${WORD_START}(?:espacio|zona|área|hueco|esquina|margen|rincón|sitio|lugar|banda|franja|tercio|room|space|zone|area|corner|margin|place|spot|slot|band|strip|third|espace|coin|marge|emplacement|réserve|bande|tiers)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
+  // "libre para el logo", "kept clear for the logo", "dégagé pour le logo": the room comes first, the logo after.
+  `${WORD_START}(?:libre|libres|free|clear|empty|vacío|vacía|despejad[oa]s?|reservad[oa]s?|dégagée?s?|libérée?s?|réservée?s?)${WORD_END}[^.;]{0,60}?${WORD_START}logos?${WORD_END}`,
   `${WORD_START}logos?${WORD_END}[^.;]{0,60}?${WORD_START}(?:se añade|añadid[oa]|added|afterwards|después|luego|libre|libres|free|clear|empty|vacío|vacía|reservad[oa]s?|dégagée?s?|libérée?s?|réservée?s?|ajoutée?s?|ensuite|plus tard|hors cadre|hors image)${WORD_END}`,
   `${WORD_START}(?:sin|no|without|never|nunca|ningún|ninguna|sans|aucune?|pas d[e']|jamais|ni)${WORD_END}[^.;]{0,60}?${WORD_START}(?:logos?|watermarks?|captions?|subtitles?|hashtags?|signage|page numbers?|text|texto|words|letters|lettering|texte|légendes?|filigranes?|números?|cifras?|chiffres?|dígitos?|digits|porcentajes?|percentages?|pourcentages?|estadísticas?|statistics?|statistiques?|etiquetas?|étiquettes?|labels?)${WORD_END}`,
 ].join("|"), "giu");
