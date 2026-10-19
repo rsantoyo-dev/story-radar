@@ -2040,6 +2040,7 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
   const people = inventory.entities.filter((entity) => entity.kind === "person");
   const places = inventory.entities.filter((entity) => entity.kind === "place");
   const organizations = inventory.entities.filter((entity) => entity.kind === "organization");
+  const things = inventory.entities.filter((entity) => entity.kind === "thing");
   // Photos added to the story elsewhere (its page, another tab) are read again once each time the screen opens; nothing changes when there are none new.
   // A search that failed before naming anyone has nobody to give a photo to, and the server refuses it.
   const photosReadable = inventory.entities.length > 0;
@@ -2066,6 +2067,7 @@ function InventoryView({ inventory, story, saving, locked, onDecide }: {
       <ol className={styles.factList}>{places.map((entity) => <PlaceItem key={entity.id} entity={entity} photos={inventory.storyPhotos} story={story} locked={locked} onDecide={onDecide} />)}</ol>
     </div> : null}
     {organizations.length ? <p className={styles.factMeta}>Organizations, never drawn and never named in an image (no logos): {organizations.map((entity) => entity.name).join(", ")}.</p> : null}
+    {things.length ? <p className={styles.factMeta}>Things the facts name: {things.map((entity) => `${entity.name}${entity.note ? ` (${entity.note})` : ""}`).join("; ")}. The images may show them, generic, as the facts describe them.{things.some((entity) => entity.decidedThing) ? " " : ""}{things.filter((entity) => entity.decidedThing).map((entity) => <Button key={entity.id} variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>{entity.name} is a person after all</Button>)}</p> : null}
     <p className={styles.factMeta}>{inventory.storyPhotos.length
       ? `The story’s photos: ${inventory.storyPhotos.map((photo) => `${photo.name}${!publishablePhoto(photo.rights) ? " (reference only: never published)" : photo.transmissionAllowed ? "" : " (documentary portrait only)"}`).join(", ")}. Give each one to its person or place above; only a photo that is your own or licensed appears in an image (declare it under the story’s photos).`
       : "No photo of the story yet. Photos added on the story’s page appear here when this screen opens."}</p>
@@ -2164,6 +2166,7 @@ function PersonItem({ entity, photos, story, saving, locked, onDecide }: { entit
     <ActionRow>
       {status === "candidates" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reject", entityId: entity.id })}>None of these</Button> : null}
       {status === "confirmed" || status === "rejected" ? <Button variant="quiet" size="compact" disabled={locked} onClick={() => onDecide({ action: "reopen", entityId: entity.id })}>Change</Button> : null}
+      {status !== "confirmed" && !entity.storyPhoto ? <Button variant="quiet" size="compact" disabled={locked} title="A plant, an animal, a dish or a product the facts name: the images may show it, generic" onClick={() => onDecide({ action: "thing", entityId: entity.id })}>Not a person: a thing</Button> : null}
     </ActionRow>
   </li>;
 }

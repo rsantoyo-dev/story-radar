@@ -435,3 +435,31 @@ the coffee scene's prompt by hand (v6, v8) to get a usable one.
 - **Not built**: two plates of three sections at full size for five and six
   slides (the second drawn with the first's right edge as reference), and
   the words' band top or bottom per section, decided in the station.
+
+## 17. Addendum, 2026-10-18: the first panorama under spine v10 (Brossard's planting)
+
+The visual script failed twice (61, 68). Two causes, neither in the scene's
+grammar:
+
+- **A tree listed as a person.** The people-finder listed "Asiminier
+  trilobée" as a person (its own line said "arbre fruitier"), no human
+  matched in Wikidata, and the models were told "never depict them": Luna
+  refused every young fruit tree as the species. Now a name the finder lists
+  as a person that no human carries and Wikidata knows as a taxon or a
+  thing (`wikidataThing`: P31 taxon/species/plant, a taxon rank or parent
+  taxon; food, dish, product) becomes a **thing** (`kind: "thing"`, with a
+  note): drawn generic, never looked up; the finder may list things itself
+  (visuals v14), and the editor has "Not a person: a thing" on any person
+  (action `thing`, kept by a new search; "is a person after all" reopens).
+- **The world ignored the identity.** Salut Brossard is photographic objects
+  on flat planes, and nothing may stand in for a named event or place
+  without its verified photo; the spine's world was a photographic park
+  path with pots, a shovel, a mound and worn gloves, which the judge read as
+  documenting the event (INVENTED_DETAIL, material). Spine v11: the world
+  obeys the identity (a flat plane with the facts' objects along it under
+  such an identity; nothing stands in for the named place), and a station's
+  subject is one of the facts' things, never a prop.
+
+The session was fixed by hand the same day (the entity made a thing, the
+spine's world a cream plane with a flat band of soil and the facts' objects:
+trees in root balls, plants of several strata, turned soil, gloves).

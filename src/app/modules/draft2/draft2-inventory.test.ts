@@ -37,7 +37,11 @@ const STORY_PHOTOS: StoryPhoto[] = [{ id: "p1", name: "Reading room", descriptio
 /** A Google Places match (google-maps-provider.ts, GooglePlaceCandidate). */
 const googleMatch = (name: string, address: string) => ({ id: "gp-1", name, address, sourceUrl: "https://www.google.com/maps/search/?api=1&query=x", latitude: 45.53, longitude: -73.51, matchesScope: true, exactName: true, pointSuitable: true, namedPoint: true, photos: [], attributions: [], exclusions: [] });
 
-function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor@example.com", google = false, wikidataMisses = [], googlePlaces = {}, storyFacts = facts, bank = { subjects: [], photos: [] }, bankWikidata = {}, bankFails = false }: {
+function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor@example.com", google = false, wikidataMisses = [], googlePlaces = {}, storyFacts = facts, bank = { subjects: [], photos: [] }, bankWikidata = {}, bankFails = false, found = ENTITIES, taxa = {} }: {
+  /** What the finder lists. */
+  found?: Record<string, unknown>[];
+  /** Names Wikidata knows as a taxon or a thing, not a person. */
+  taxa?: Record<string, { kind: "taxon" | "thing"; label: string; wikidataId: string }>;
   session?: Record<string, unknown>;
   scope?: typeof SCOPE | { municipality: string; region: string; country: string; validatedLocationId: null };
   peopleFail?: boolean;
@@ -55,7 +59,7 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
   bankWikidata?: Record<string, string>;
   bankFails?: boolean;
 } = {}) {
-  const calls: { search: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[]; bank: unknown[][] } = { search: [], resolve: [], openverse: [], imported: [], google: [], claude: [], bank: [] };
+  const calls: { search: string[]; things: string[]; resolve: string[]; openverse: string[]; imported: string[]; google: string[]; claude: Record<string, unknown>[]; bank: unknown[][] } = { search: [], things: [], resolve: [], openverse: [], imported: [], google: [], claude: [], bank: [] };
   let row: Row = { id: sessionId, topicId, storyId, step: "deck", status: "ready", facts: storyFacts, inventory: null, error: null, trace: [], updatedAt: new Date(), ...session };
   let photos = STORY_PHOTOS;
   let characters = [{ id: "char-mia", name: "Mia", description: "An illustrated local presenter", referenceFingerprint: "x" }];
@@ -72,11 +76,12 @@ function harness({ session, scope = SCOPE, peopleFail = false, contact = "editor
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => {
       calls.claude.push(input);
-      return { text: JSON.stringify({ entities: ENTITIES }), provider: "anthropic", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, cachedInputTokens: 0, cacheWriteTokens: 0, answerCharacters: 400 };
+      return { text: JSON.stringify({ entities: found }), provider: "anthropic", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, cachedInputTokens: 0, cacheWriteTokens: 0, answerCharacters: 400 };
     } },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
     "../stories/commons-person-photos": {
-      searchCommonsPeople: async (_topic: string, _story: string, name: string) => { calls.search.push(name); if (peopleFail) throw new Error("Configure a contact for Wikimedia requests."); return [CANDIDATE]; },
+      searchCommonsPeople: async (_topic: string, _story: string, name: string) => { calls.search.push(name); if (peopleFail) throw new Error("Configure a contact for Wikimedia requests."); return name === "Catherine Fournier" ? [CANDIDATE] : []; },
+      wikidataThing: async (_topic: string, _story: string, name: string) => { calls.things.push(name); return taxa[name]; },
       importCommonsPersonPhoto: async (_topic: string, _story: string, entityId: string, kind: string) => { calls.imported.push(`${entityId}:${kind}`); return { id: "photo-1", name: "Catherine Fournier", description: "Commons portrait", provenance: "Photo: A. Photographer", providerTransmissionAllowed: false, active: true, publicationRights: "licensed" }; },
     },
     "../stories/creative-documentary-providers": { providerLanguage: () => "fr", documentaryProviders: () => ({
@@ -360,4 +365,22 @@ test("a portrait an earlier story imported from Commons comes from the bank; a b
   assert.equal(json([confirmed.inventory!.entities[0].person?.status, confirmed.inventory!.entities[0].person?.confirmed?.storyPhotoId]), json(["confirmed", "copy-b-mayor"]));
   const down = await harness({ bank: BANK, bankFails: true }).find();
   assert.equal(json([down.status, down.inventory!.entities.map((entity) => entity.bank ?? null), down.inventory!.entities[1].place?.photo?.source]), json(["ready", [null, null, null, null], "commons"]));
+});
+
+test("a name the finder lists as a person that no human carries and Wikidata knows as a species is a thing: drawn generic, never \"never depicted\"; the editor can say so too, and take it back", async () => {
+  const tree = { name: "Asiminier trilobé", kind: "person", role: "mentioned", description: "Arbre fruitier indigène", factIds: ["f4"] };
+  const storyFacts = [...facts, { id: "f4", claim: "La plantation comprendra l'Asiminier trilobé.", evidence: "Asiminier trilobé", kind: "event" as const, status: "established" as const, importance: 70 }];
+  const h = harness({ storyFacts, found: [...ENTITIES, tree], taxa: { "Asiminier trilobé": { kind: "taxon", label: "Asimina triloba", wikidataId: "Q1234" } } });
+  const session = await h.find();
+  const [fournier, , , , asiminier] = session.inventory!.entities;
+  assert.equal(json([asiminier.name, asiminier.kind, asiminier.person, asiminier.note]), json(["Asiminier trilobé", "thing", undefined, "Wikidata knows it as a species (Asimina triloba, Q1234), not a person: it may be drawn, generic."]));
+  assert.equal(json([h.calls.search, h.calls.things]), json([["Catherine Fournier", "Asiminier trilobé"], ["Asiminier trilobé"]]), "asked only when no human carries the name");
+  assert.equal(json([fournier.kind, fournier.person?.status]), json(["person", "candidates"]));
+  // The editor's word on a person the lookups kept: a thing, kept by a new search; taken back, a person to look up again.
+  const decided = await h.decide({ action: "thing", entityId: "e1" });
+  const [thing] = decided.inventory!.entities;
+  assert.equal(json([decided.inventory!.version, thing.kind, thing.decidedThing, thing.note]), json([2, "thing", true, "The editor: not a person, a thing the facts name."]));
+  const back = await h.decide({ action: "reopen", entityId: "e1" });
+  assert.equal(json([back.inventory!.version, back.inventory!.entities[0].kind, back.inventory!.entities[0].person?.status]), json([3, "person", "none"]));
+  await assert.rejects(h.decide({ action: "thing", entityId: "e2" }), /is not listed as a person/);
 });

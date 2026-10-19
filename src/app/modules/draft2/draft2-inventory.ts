@@ -3,7 +3,7 @@ import { withCreativeTextBudget } from "../stories/creative-text-meter";
 import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
-import { importCommonsPersonPhoto, searchCommonsPeople } from "../stories/commons-person-photos";
+import { importCommonsPersonPhoto, searchCommonsPeople, wikidataThing } from "../stories/commons-person-photos";
 import { documentaryProviders, providerLanguage } from "../stories/creative-documentary-providers";
 import { openverseEnabled, openversePlacePhoto } from "../stories/openverse-place-photo";
 import { placeScopeComplete } from "../stories/creative-place-visual";
@@ -22,7 +22,7 @@ import { comparableText, Draft2BusyError, Draft2InputError, type Draft2Fact, typ
 import { factsSnapshot, failedCall } from "./draft2-funnel";
 import {
   DRAFT2_INVENTORY_SCHEMA, INVENTORY_MAX_PEOPLE_LOOKUPS, INVENTORY_MAX_PLACE_LOOKUPS, bankMatches, bankOffer, carriedDecisions, decidedInventory, inventoryEntity, keptPlaceRejections, parseInventoryAction,
-  parseInventoryEntities, personEntity, rejectedEntity, reopenedEntity, storyPhotoRightsDiffer, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
+  parseInventoryEntities, personEntity, rejectedEntity, reopenedEntity, thingEntity, storyPhotoRightsDiffer, storyPhotosDiffer, withStoryPhoto, withStoryPhotos,
   type Draft2GooglePlace, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto, type Draft2PlacePhoto,
 } from "./draft2-inventory.types";
 import { OPENING_STALL_MS } from "./draft2-opening.types";
@@ -231,6 +231,9 @@ async function lookUp(entities: Draft2InventoryEntity[], { topicId, storyId, pro
         if (outOfTime()) { result.push({ ...entity, person: { status: "unavailable", candidates: [], note: "The lookups ran out of time; search again." } }); continue; }
         try {
           const candidates = await searchCommonsPeople(topicId, storyId, entity.name, "person");
+          // A name no human carries that Wikidata knows as a taxon or a thing (a tree listed as a person, 2026-10-18) is a thing: drawn generically, never "never depicted".
+          const thing = candidates.length || outOfTime() ? undefined : await wikidataThing(topicId, storyId, entity.name).catch(() => undefined);
+          if (thing) { const { person, ...rest } = entity; void person; result.push({ ...rest, kind: "thing", note: `Wikidata knows it as ${thing.kind === "taxon" ? "a species" : "a thing"} (${thing.label}, ${thing.wikidataId}), not a person: it may be drawn, generic.` }); continue; }
           result.push({ ...entity, person: { status: candidates.length ? "candidates" : "none", candidates } });
         } catch (error) {
           result.push({ ...entity, person: { status: "unavailable", candidates: [], note: note(error) } });
@@ -396,7 +399,7 @@ export async function editDraft2Inventory({ topicId, sessionId, input }: { topic
     next = { ...next, storyPhotos: [...next.storyPhotos.filter((entry) => entry.id !== photo.id), { id: photo.id, name: photo.name, description: photo.description, provenance: photo.provenance, transmissionAllowed: photo.providerTransmissionAllowed, rights: photo.publicationRights, ...(photo.bankPhotoId ? { bankPhotoId: photo.bankPhotoId } : {}) }] };
   } else {
     const entity = inventoryEntity(inventory, action.entityId);
-    next = decidedInventory(inventory, entity.id, action.action === "reject" ? rejectedEntity : reopenedEntity, now);
+    next = decidedInventory(inventory, entity.id, action.action === "reject" ? rejectedEntity : action.action === "thing" ? (entry) => thingEntity(entry) : reopenedEntity, now);
   }
   const updated = await updateDraft2Session(session.id, { inventory: next });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");

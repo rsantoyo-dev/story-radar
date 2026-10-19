@@ -7,7 +7,7 @@ import {
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
-import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
+import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryKind } from "./draft2-inventory.types";
 import { anchorNoun, narrativeUsesMaster, spineBeats, type Draft2FocusNarrative, type Draft2FocusSpine, type Draft2SpinePosition } from "./draft2-focus.types";
 import type { Draft2ClosingOpening } from "./draft2-closing.types";
 import type { Draft2Deck, Draft2DeckCandidate, Draft2DeckClosing } from "./draft2-deck.types";
@@ -409,7 +409,7 @@ export function parseVisualEvaluation(answer: string, candidateIds: readonly str
 
 
 /** A name as a direction might write it: the full name and, for a person, the surname when it is distinctive. */
-function nameForms(name: string, kind: "person" | "place" | "organization"): string[] {
+function nameForms(name: string, kind: Draft2InventoryKind): string[] {
   const full = comparableText(name);
   const parts = full.split(" ").filter(Boolean);
   const surname = parts.length > 1 ? parts[parts.length - 1] : "";

@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
   awaitsConfirmation, carriedDecisions, decidedInventory, entityMaterial, inventoryEntity, inventoryForModels, keptPlaceRejections, parseInventoryAction, parseInventoryEntities, personEntity,
-  referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, withStoryPhoto, withStoryPhotos, bankMatches, bankOffer,
+  referencePhotos, rejectedEntity, reopenedEntity, storyPhotosDiffer, thingEntity, withStoryPhoto, withStoryPhotos, bankMatches, bankOffer,
   type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto,
 } from "./draft2-inventory.types";
 import type { PhotoBankPhoto, PhotoBankSubject } from "../photo-bank/photo-bank.types";
@@ -163,4 +163,27 @@ test("the photo bank's offer: matched by the place's ids or the person's name, i
   assert.equal(JSON.stringify([byName.by, bankOffer(place, byName, bank, { storySubjectIds: new Set(["s-park"]), storyPhotos: [] }).take]), JSON.stringify(["name", undefined]), "a name alone is only offered");
   assert.deepEqual(parseInventoryAction({ action: "bank", entityId: "e3", bankPhotoId: "00000000-0000-4000-8000-000000000001", consent: true }), { action: "bank", entityId: "e3", bankPhotoId: "00000000-0000-4000-8000-000000000001", consent: true });
   assert.throws(() => parseInventoryAction({ action: "bank", entityId: "e3", bankPhotoId: "a photo" }), /bankPhotoId/);
+});
+
+test("a thing is not a person (2026-10-18, a tree listed as one): the finder may list it, the editor may say so, the models may draw it generic, a new search keeps the editor's word, and the editor can take it back", () => {
+  const facts: Draft2Fact[] = [{ id: "f1", claim: "La plantation comprendra l'Asiminier trilobé, un arbre fruitier indigène.", evidence: "Asiminier trilobé", kind: "event", status: "established", importance: 70 }];
+  const listed = parseInventoryEntities(JSON.stringify({ entities: [
+    { name: "Asiminier trilobé", kind: "thing", role: "mentioned", description: "Un arbre fruitier indigène", factIds: ["f1"] },
+    { name: "Asiminier trilobé", kind: "person", role: "mentioned", description: "Arbre fruitier", factIds: ["f1"] },
+  ] }), facts);
+  assert.deepEqual(listed.map((entity) => [entity.id, entity.kind]), [["e1", "thing"], ["e2", "person"]], "the finder may name a thing; the same name listed again as a person is another entry");
+  const person: Draft2InventoryEntity = { id: "e2", name: "Asiminier trilobé", kind: "person", role: "mentioned", description: "Arbre fruitier", factIds: ["f1"], person: { status: "none", candidates: [] } };
+  assert.deepEqual(parseInventoryAction({ action: "thing", entityId: "e2" }), { action: "thing", entityId: "e2" });
+  const thing = thingEntity(person);
+  assert.deepEqual([thing.kind, thing.decidedThing, thing.person, thing.note], ["thing", true, undefined, "The editor: not a person, a thing the facts name."]);
+  assert.throws(() => thingEntity({ ...person, kind: "place" }), /is not listed as a person/);
+  assert.deepEqual([entityMaterial(thing).portrait, entityMaterial(thing).photo, entityMaterial(thing).map], [false, false, false]);
+  const told = inventoryForModels({ entities: [thing], storyPhotos: [] } as unknown as Draft2Inventory).entities[0];
+  assert.deepEqual([told.kind, told.verifiedMaterial], ["thing", ["a thing the facts name: it may be drawn, generic, as the facts describe it, never as a brand or a product shot"]]);
+  // A new search lists the name as a person again: the editor's word stands; a thing Wikidata found is looked up again on its own.
+  const earlier = { status: "ready", version: 3, entities: [thing], storyPhotos: [], characters: "auto", roster: [] } as unknown as Draft2Inventory;
+  const carried = carriedDecisions([{ ...person, person: undefined }], earlier);
+  assert.deepEqual([carried[0].kind, carried[0].decidedThing, carried[0].note], ["thing", true, thing.note]);
+  const back = reopenedEntity(thing);
+  assert.deepEqual([back.kind, back.decidedThing, back.note, back.person?.status], ["person", undefined, undefined, "none"], "a person to look up again");
 });

@@ -200,6 +200,38 @@ export async function searchCommonsPeople(topicId: string, storyId: string, quer
   return candidates;
 }
 
+/** What Wikidata says a name is, when it is not a person: a taxon (a species, a plant, an animal) or a thing (a dish, a food, a product). */
+export type WikidataThing = { kind: "taxon" | "thing"; label: string; wikidataId: string };
+/** P31 classes that make a thing: food, dish, drink, product, cultivar, breed. */
+const THING_CLASSES = new Set(["Q2095", "Q746549", "Q40050", "Q2424752", "Q4886", "Q39201", "Q38829"]);
+/** P31 classes that make a taxon, beside a taxon rank (P105) or a parent taxon (P171). */
+const TAXON_CLASSES = new Set(["Q16521", "Q7432", "Q310890", "Q713623", "Q55983715"]);
+
+/**
+ * Whether Wikidata knows a name listed as a person as something else
+ * (2026-10-18: "Asiminier trilobée", a tree, listed as a person, so the
+ * visual script was told never to depict it): among the entries that carry
+ * the name exactly, none a human, one a taxon or a thing. A name any human
+ * carries stays a person; a name Wikidata does not know stays as listed.
+ */
+export async function wikidataThing(topicId: string, storyId: string, query: unknown): Promise<WikidataThing | undefined> {
+  await requireStoryMembership(topicId, storyId);
+  const name = typeof query === "string" ? query.trim().replace(/\s+/g, " ") : "";
+  if (name.length < 3 || name.length > 120) return undefined;
+  const { contact, language } = await lookupContext(topicId);
+  const api = wikimediaApi(contact);
+  const search = await api("www.wikidata.org", { action: "wbsearchentities", search: name, language, uselang: language, type: "item", limit: "10" });
+  const ids = (Array.isArray(search.search) ? search.search : []).flatMap((item) => (record(item) && typeof item.id === "string" && /^Q\d+$/.test(item.id) ? [item.id] : []));
+  const wanted = normalizePlaceName(name);
+  const named = (await getEntities(api, ids)).filter((entity) => names(entity).includes(wanted));
+  if (!named.length || named.some(isHuman)) return undefined;
+  const classes = (entity: Entity) => claimValues(entity, "P31").flatMap((value) => record(value) && typeof value.id === "string" ? [value.id] : []);
+  const taxon = named.find((entity) => classes(entity).some((id) => TAXON_CLASSES.has(id)) || claimValues(entity, "P105").length > 0 || claimValues(entity, "P171").length > 0);
+  if (taxon) return { kind: "taxon", label: label(taxon, language), wikidataId: taxon.id };
+  const thing = named.find((entity) => classes(entity).some((id) => THING_CLASSES.has(id)));
+  return thing ? { kind: "thing", label: label(thing, language), wikidataId: thing.id } : undefined;
+}
+
 /**
  * Imports the chosen person's Commons photo as a documentary-portrait-only
  * story photo. Everything is re-resolved server-side from the entity id; the

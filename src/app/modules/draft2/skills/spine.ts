@@ -48,10 +48,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * the seams, the right end, and each beat's station with its size), the
  * turn's station the largest, no section with a background of its own (the
  * program checks it), and four or five beats read larger than six.
+ * Version 11, the same day, after the first panorama under it (Brossard's
+ * planting): the world obeys the identity (a flat plane with the facts'
+ * objects under an identity of objects on flat planes, never a photographic
+ * place standing in for a named event), and a station's subject is one of
+ * the facts' things, never a prop.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "10",
+  version: "11",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -181,7 +186,12 @@ above does not apply to them; everything else below does.
 - world: the one place in one view, as the model will draw it, at most 240
   characters ("a kitchen counter seen straight on, the stove at the left
   end, the window at the right"; "one hillside rising from a shore at the
-  left to a snowy summit at the right"). One point of view, one light, one
+  left to a snowy summit at the right"). The world obeys the identity given
+  below: under an identity of photographic objects on flat planes, it is one
+  long flat plane (a table, a counter, a band of ground as a flat plane) with
+  the facts' objects along it, never a photographic place; and for a story at
+  a named place or event without its verified photo, nothing in the scene
+  stands in for that place or event. One point of view, one light, one
   scale from end to end: a step of the story is the next thing along the
   scene (the next drop on the counter, the next stretch of the slope), never
   a cut-away, a close-up, a magnified view or panels, which one wide image
@@ -220,7 +230,11 @@ above does not apply to them; everything else below does.
   with six, the subjects shrink), and the cap is six. Each beat's image line
   is its station seen in the scene: the subject at the centre of its column,
   what it does there, what touches its edges; never a shot, a background or
-  a "free band": the field and the words' band are the scene's.
+  a "free band": the field and the words' band are the scene's. A station's
+  subject is one of the facts' things (the trees, the gloves, the drop), in
+  the state the facts give; a prop that dresses the scene (a tool, a
+  container, a mound the facts do not name) is an invented detail the images
+  pay for.
 - The directions restate the scene: the direction says what the words do
   along the axis, the visual direction the world, the field and the carrier
   in one breath; neither invents a second scene.

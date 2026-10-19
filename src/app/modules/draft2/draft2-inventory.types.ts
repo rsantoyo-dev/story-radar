@@ -24,7 +24,8 @@ import {
  * narrate. Everything here is pure: contracts, the schema, parsing, the
  * editor's decisions and what the visual script may use.
  */
-export const INVENTORY_KINDS = ["person", "place", "organization"] as const;
+/** thing (2026-10-18): a plant, an animal, a dish, a product or an object the facts name; never looked up, drawn generically. A name listed as a person that Wikidata knows as a taxon or a thing becomes one; the editor can say so too. */
+export const INVENTORY_KINDS = ["person", "place", "organization", "thing"] as const;
 export const INVENTORY_ROLES = ["subject", "secondary", "mentioned"] as const;
 export const INVENTORY_CHARACTER_CHOICES = ["auto", "on", "off"] as const;
 export const INVENTORY_MAX_ENTITIES = 16;
@@ -138,6 +139,10 @@ export type Draft2InventoryEntity = {
   /** Who or what it is in this story, in one line. */
   description: string;
   factIds: string[];
+  /** Why it is a thing: what Wikidata knows it as, or the editor's word. */
+  note?: string;
+  /** The editor said it is a thing, not a person: a new search keeps it so. */
+  decidedThing?: true;
   /**
    * A person: Commons candidates for the editor to confirm. The confirmed
    * one is stored as a story photo and can only appear as a documentary
@@ -258,6 +263,9 @@ const linkedPhoto = ({ id, name, provenance, transmissionAllowed, rights }: Draf
 export function carriedDecisions(entities: readonly Draft2InventoryEntity[], earlier: Draft2Inventory | undefined, photos?: readonly Draft2InventoryStoryPhoto[]): Draft2InventoryEntity[] {
   if (!earlier) return [...entities];
   return entities.map((entity) => {
+    // The editor said a name the finder lists as a person is a thing: it stays one.
+    const thing = entity.kind === "person" ? earlier.entities.find((candidate) => candidate.decidedThing && candidate.kind === "thing" && comparableText(candidate.name) === comparableText(entity.name)) : undefined;
+    if (thing) return { ...entity, kind: "thing", decidedThing: true, ...(thing.note ? { note: thing.note } : {}) };
     const before = earlier.entities.find((candidate) => sameEntity(candidate, entity));
     if (!before) return entity;
     const decided = before.person && (before.person.status === "confirmed" || before.person.status === "rejected") ? { person: before.person } : {};
@@ -335,6 +343,8 @@ export type Draft2InventoryAction =
   | { action: "bank"; entityId: string; bankPhotoId: string; consent: boolean }
   | { action: "reject"; entityId: string }
   | { action: "reopen"; entityId: string }
+  /** The editor says a name listed as a person is a thing (a plant, a dish, a product): it may be drawn, generic, and is never looked up. */
+  | { action: "thing"; entityId: string }
   | { action: "photo"; entityId: string; storyPhotoId: string | null }
   | { action: "photos" }
   | { action: "roster" }
@@ -368,8 +378,8 @@ export function parseInventoryAction(value: unknown): Draft2InventoryAction {
     if (!storyPhotoId) throw new Draft2InputError("Name the story photo (storyPhotoId), or null to unlink it.");
     return { action: "photo", entityId, storyPhotoId };
   }
-  if (body.action === "reject" || body.action === "reopen") return { action: body.action, entityId };
-  throw new Draft2InputError("The action is confirm, reject, reopen, photo, bank, photos, roster or characters.");
+  if (body.action === "reject" || body.action === "reopen" || body.action === "thing") return { action: body.action, entityId };
+  throw new Draft2InputError("The action is confirm, reject, reopen, thing, photo, bank, photos, roster or characters.");
 }
 
 /** The person an action names, which must be a person the search looked up. */
@@ -393,8 +403,17 @@ export function rejectedEntity(entity: Draft2InventoryEntity): Draft2InventoryEn
   throw new Draft2InputError(`${entity.name} has no match to set aside.`);
 }
 
-/** The entity once the editor takes a decision back: a person's candidates wait again; a place set aside is the lookups' match again. */
+/** A name listed as a person that is a thing: the editor's word, or Wikidata's (a taxon, a dish, a product), kept in its note. */
+export function thingEntity(entity: Draft2InventoryEntity, note?: string): Draft2InventoryEntity {
+  if (entity.kind !== "person") throw new Draft2InputError(`${entity.name} is not listed as a person.`);
+  const { person, ...rest } = entity;
+  void person;
+  return { ...rest, kind: "thing", decidedThing: true, note: note ?? "The editor: not a person, a thing the facts name." };
+}
+
+/** The entity once the editor takes a decision back: a person's candidates wait again; a place set aside is the lookups' match again; a thing is a person to look up again. */
 export function reopenedEntity(entity: Draft2InventoryEntity): Draft2InventoryEntity {
+  if (entity.kind === "thing") { const { decidedThing, note, ...rest } = entity; void decidedThing; void note; return { ...rest, kind: "person", person: { status: "none", candidates: [], note: "Search people and places again to look this name up." } }; }
   if (entity.kind === "person" && entity.person) return { ...entity, person: { ...entity.person, status: entity.person.candidates.length ? "candidates" : "none", confirmed: undefined } };
   if (entity.kind === "place" && entity.place?.status === "rejected") return { ...entity, place: { ...entity.place, status: "verified" } };
   throw new Draft2InputError(`${entity.name} has no decision to take back.`);
@@ -492,7 +511,7 @@ export function inventoryForModels(inventory: Draft2Inventory) {
       const shows = [material.portrait ? "documentary portrait (a real photo pasted unchanged)" : "", material.photo ? "verified place photo" : "", material.map ? "verified map" : ""].filter(Boolean);
       return {
         id: entity.id, name: entity.name, kind: entity.kind, role: entity.role, description: entity.description, factIds: entity.factIds,
-        verifiedMaterial: shows.length ? shows : entity.kind === "organization" ? ["none: organizations are never drawn, no logos"] : ["none: never depict them; tell the story without showing them"],
+        verifiedMaterial: shows.length ? shows : entity.kind === "organization" ? ["none: organizations are never drawn, no logos"] : entity.kind === "thing" ? ["a thing the facts name: it may be drawn, generic, as the facts describe it, never as a brand or a product shot"] : ["none: never depict them; tell the story without showing them"],
       };
     }),
     storyPhotos: referencePhotos(inventory).map(({ id, name, description }) => ({ id, name, description })),

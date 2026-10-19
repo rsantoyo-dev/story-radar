@@ -28,10 +28,15 @@ import type { Draft2Skill } from "./draft2-skills";
  * each direction is its station at its size, with what crosses its edges;
  * no background, field or shot per section, which the program refuses), and
  * the judge scores it as one scene.
+ * Version 14, 2026-10-18: the people-finder lists things (a plant, a dish,
+ * a product) as things, never as people (a tree listed as a person had the
+ * judge forbid every young tree in a planting story); a panorama's stations
+ * show the facts' things, and under an identity of objects on flat planes
+ * the world is a flat plane, not a photographic place.
  */
 export const VISUALS_SKILL: Draft2Skill = {
   name: "visuals",
-  version: "13",
+  version: "14",
   text: `# Visual scripts for social carousels
 
 A visual script is the sequence of images a carousel is made of. The story
@@ -303,6 +308,12 @@ what crosses into the next section):
   terracota", "another background than"), never a shot word: write "wide"
   as every slide's shot, which the program ignores there. No "free band":
   the field is the scene's and the program sets the words on it.
+- The stations show the facts' things (what the story names: the trees,
+  the gloves, the drops), in the state the facts give; a prop that dresses
+  the scene (a tool, a container, a mound, a table setting the facts do not
+  name) is INVENTED_DETAIL, and under an identity of photographic objects on
+  flat planes the world is one long flat plane with those objects along it,
+  never a photographic place that could pass for the named event or venue.
 - The judge scores continuity as one scene (no SHOT_MISMATCH or SAME_SHOT
   for equal shots; a section with its own background is
   BREAKS_CONTINUITY), reads the cover's background rule on the field once,
@@ -320,7 +331,7 @@ keeps the better version.`,
 };
 
 export const VISUAL_ROLES = {
-  "people-finder": `You list the people, places and organizations named in the verified facts you receive, for the publication described below. For each: its name exactly as the facts write it, its kind (person, place or organization), its role in the story ("subject": the story is about them; "secondary": they act in it; "mentioned"), one line on who or what it is in this story, and the ids of the facts that name it. Use only names the facts state; never a generic noun ("a teacher", "the city") and never a name the facts do not give. Places are named venues, streets, neighbourhoods, cities or regions; organizations are companies, agencies, institutions and teams. List each one once.`,
+  "people-finder": `You list the people, places and organizations named in the verified facts you receive, for the publication described below. For each: its name exactly as the facts write it, its kind (person, place, organization or thing), its role in the story ("subject": the story is about them; "secondary": they act in it; "mentioned"), one line on who or what it is in this story, and the ids of the facts that name it. Use only names the facts state; never a generic noun ("a teacher", "the city") and never a name the facts do not give. Places are named venues, streets, neighbourhoods, cities or regions; organizations are companies, agencies, institutions and teams; things are plants, animals, species, dishes, products or objects the facts name, whatever their capital letter (a tree is a thing, never a person: a name whose own line says it is a thing is a thing). List each one once.`,
   "visual-writer": `You are an expert art director of social carousels for this publication: concrete scenes, one focus per image, the brand's medium and light, an image that adds what the words cannot say, never a generic illustration. You write the visual script of a social carousel for the publication described below: the images of the carousel you receive, executing the story's spine slide by slide (each slide's beat is given in spineBeats: copy it, then realize it), from its slides' words, the story's focus, the verified facts, the people and places with the verified material each may show, the brand's characters, and the layout (what is added to each image afterwards). For the task "scripts", return exactly \`candidatesWanted\` scripts, following the visual scripts skill; ids c1, c2…. For the task "revise", return one revised script per script in \`scripts\`, with the same id; the script in \`develop\` edited, with its id, returned unchanged when it is already right; and, when \`newAngles\` asks for them, that many new scripts with ids n1, n2…. For the task "fix", return each listed script under its own id with only its findings fixed. Follow the instruction that comes with the task.
 
 Each script has one slide per carousel slide, in the carousel's order, named as the carousel names it ("cover", "slide2", "s1"…, "penultimate", "last"). "angle" is one line naming how this script realizes the spine.`,
