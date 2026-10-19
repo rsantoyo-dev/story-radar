@@ -8,8 +8,6 @@ import Link from "next/link";
 import { SignOutButton } from "./account/sign-out-button";
 import { SIGNED_IN_CREDENTIAL } from "./modules/auth/session-credential";
 import { AutoCollectionPanel } from "./auto-collection-panel";
-import { DailyPreparationPanel } from "./daily-preparation-panel";
-import { DailyEditorialPlannerPanel } from "./daily-editorial-planner-panel";
 import { StoryPhotosPanel } from "./story-photos-panel";
 import type { StoryContentEdition } from "./modules/stories/story-materials.types";
 
@@ -24,6 +22,7 @@ import { FacebookConnectionPanel } from "./facebook-connection-panel";
 import { MetaConnectionPanel } from "./meta-connection-panel";
 import { EditorialProfilePanel } from "./editorial-profile-panel";
 import { UrgentStoriesBanner } from "./urgent-stories-banner";
+import { Draft2TodayPanel } from "./draft-2-today-panel";
 import { AcquisitionLensesPanel } from "./acquisition-lenses-panel";
 import { TopicOverviewPanel } from "./topic-overview-panel";
 import { NewStoryDialog, type CreatedStory } from "./new-story-dialog";
@@ -43,7 +42,7 @@ import { topicThemeStyle } from "@/design/topic-themes";
 import { dashboardViewFromHash, DASHBOARD_VIEW_TITLES } from "./dashboard-navigation";
 import { storyPublicationStage } from "./story-publication-stage";
 import type { CreativeProfile } from "./modules/stories/creative-content.types";
-import { storyWorkspace } from "./draft-2-canvas.core";
+import { storyWorkspace, type Draft2StepKey } from "./draft-2-canvas.core";
 import type { WorkspaceSourceCatalog } from "./modules/sources/workspace-source-catalog.repository";
 
 type DatabaseStats = {
@@ -788,10 +787,10 @@ export function RadarDashboard({
     }
   }
 
-  function openCreativeStory(storyId: string, options?: { editorialRunId?: string; draftId?: string; preparationRunId?: string; tab?: string }) {
-    // Draft 2 is the workspace; the v1 studio opens only for what it alone has (a v1 draft, a preparation run, a publication to review).
+  function openCreativeStory(storyId: string, options?: { editorialRunId?: string; tab?: string; step?: Draft2StepKey }) {
+    // Draft 2 is the workspace; a publication to review goes to the story page, which opens Draft 2's publication step or the page of a story published with the earlier studio.
     const studio = storyWorkspace(options) === "studio";
-    const url = new URL(`/topics/${encodeURIComponent(selectedTopicId)}/stories/${encodeURIComponent(storyId)}${studio ? "" : "/draft-2"}`, window.location.origin);
+    const url = new URL(`/topics/${encodeURIComponent(selectedTopicId)}/stories/${encodeURIComponent(storyId)}${studio ? "" : `/draft-2${options?.step ? `/${options.step}` : ""}`}`, window.location.origin);
     url.searchParams.set("from", window.location.hash || "#production");
     try {
       const returnContext = crypto.randomUUID();
@@ -803,12 +802,7 @@ export function RadarDashboard({
       }));
       url.searchParams.set("returnContext", returnContext);
     } catch { /* The section link still works without session storage. */ }
-    if (studio) {
-      if (options?.editorialRunId) url.searchParams.set("editorialRunId", options.editorialRunId);
-      if (options?.draftId) url.searchParams.set("draftId", options.draftId);
-      if (options?.preparationRunId) url.searchParams.set("preparationRunId", options.preparationRunId);
-      if (options?.tab) url.searchParams.set("tab", options.tab);
-    }
+    if (studio && options?.tab) url.searchParams.set("tab", options.tab);
     router.push(url.pathname + url.search);
   }
 
@@ -1015,28 +1009,6 @@ export function RadarDashboard({
     });
   }
 
-  async function handlePlannerSelect(storyId: string, title: string, decision: "review" | "shortlist") {
-    if (!canAuthenticate || isBusy) throw new Error("Another operation is running. Please try again.");
-    setActiveOperation("review");
-    setActiveStoryId(storyId);
-    try {
-      if (decision === "review") {
-        await promoteReviewCandidate(secret, selectedTopicId, storyId);
-      } else {
-        await reviewStories(secret, selectedTopicId, [storyId], "approved");
-      }
-      setSelectedStoryIds(ids => ids.filter(id => id !== storyId));
-      setNotice({ tone: "success", title: "Story approved", message: `Your human approval for “${title}” is recorded.` });
-      // Approval is already saved; a dashboard refresh failure must not report
-      // the approval itself as failed or encourage a duplicate submission.
-      const refreshed = await fetchDatabaseStats(secret, selectedTopicId).catch(() => undefined);
-      if (refreshed) setStats(refreshed);
-    } finally {
-      setActiveOperation(undefined);
-      setActiveStoryId(undefined);
-    }
-  }
-
   /** Resolves true once the stories left production; false when cancelled or refused. */
   async function handleUnselectStories(storyIds: string[]): Promise<boolean> {
     if (storyIds.length === 0) return false;
@@ -1045,8 +1017,8 @@ export function RadarDashboard({
     if (
       !window.confirm(
         single
-          ? "Remove this story from production? It stays collected with its AI evaluation, drafts and publication records, and you can approve it again later. A Today run preparing it stops instead of selecting it again."
-          : `Remove ${storyIds.length} stories from production? They stay collected with their AI evaluation, drafts and publication records, and you can approve them again later. Today runs preparing them stop instead of selecting them again.`,
+          ? "Remove this story from production? It stays collected with its AI evaluation, drafts and publication records, and you can approve it again later."
+          : `Remove ${storyIds.length} stories from production? They stay collected with their AI evaluation, drafts and publication records, and you can approve them again later.`,
       )
     ) {
       return false;
@@ -1735,9 +1707,10 @@ export function RadarDashboard({
           >
 
         <section id="overview" className={styles.anchorTarget} hidden={activeView !== "today"}>
-          <UrgentStoriesBanner key={`urgent-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} onCountChange={setUrgentCount} onOpenStory={(storyId, preparationRunId) => openCreativeStory(storyId, { preparationRunId, tab: "script" })} />
-          <DailyPreparationPanel onOpenDraft={(storyId,_title,draftId,preparationRunId)=>openCreativeStory(storyId,{draftId,preparationRunId,tab:"script"})} onUnselect={(storyId)=>handleUnselectStories([storyId])} key={`daily-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy || isTopicLoading} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} onCompleted={()=>{void fetchDatabaseStats(secret,selectedTopicId).then(setStats).catch(()=>{});}} />
-          <DailyEditorialPlannerPanel key={`planner-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats} onViewContent={handleViewContent} onPrepareContent={handlePrepareContent} onSelect={handlePlannerSelect} preparingStoryId={activeOperation === "prepare" ? activeStoryId : undefined} />
+          <UrgentStoriesBanner key={`urgent-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} onCountChange={setUrgentCount} onOpenStory={(storyId) => openCreativeStory(storyId)} />
+          <Draft2TodayPanel key={`today-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={!canAuthenticate || isBusy} refreshKey={stats}
+            stories={[...productionStories, ...publishedStories.filter((story) => !productionStories.includes(story))].map((story) => ({ storyId: story.storyId, title: story.title, sourceName: story.sourceName, contentStatus: story.contentStatus, published: storyPublicationStage(story).publishedDestinations }))}
+            onOpen={(storyId, step) => openCreativeStory(storyId, step ? { step } : undefined)} />
           <TopicOverviewPanel
             key={selectedTopicId}
             secret={panelSecret}
@@ -1834,7 +1807,7 @@ export function RadarDashboard({
         </div>
 
         <div id="strategy-automation" className={styles.anchorTarget} hidden={activeView !== "strategy" || activeNavHash !== "#strategy/automation"}>
-          <AutoCollectionPanel key={`automation-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} onOpenStory={(storyId, preparationRunId) => openCreativeStory(storyId, { preparationRunId, tab: "script" })} />
+          <AutoCollectionPanel key={`automation-${selectedTopicId}`} topicId={selectedTopicId} secret={panelSecret} disabled={isBusy} onOpenStory={(storyId) => openCreativeStory(storyId)} />
         </div>
 
         <div id="editorial-creative" className={styles.anchorTarget} hidden={activeView !== "identity"}>
@@ -2120,7 +2093,7 @@ export function RadarDashboard({
 
         <section className={styles.workQueue} hidden={activeView !== "publications" || activeNavHash !== "#publications"} aria-label="Pending publications">
           <div className={styles.queueHeading}><div><p className={styles.kicker}>Instagram</p><h2>Review before publishing</h2></div><span>{countLabel(pendingInstagramStories.length, "story", "stories")} without an Instagram publication record</span></div>
-          <p className={styles.queueIntro}>Open the studio to check the script, images, and destination account before authorizing publication.</p>
+          <p className={styles.queueIntro}>Open the story in Draft 2 to approve its carousel and authorize the publication.</p>
           {pendingInstagramStories.length > 0 ? <div className={styles.queueList}>
             {pendingInstagramStories.map((story) => (
               <article className={styles.queueItem} key={story.storyId}>

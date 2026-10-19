@@ -18,17 +18,17 @@ test("the canvas link keeps the dashboard section and return context, and drops 
   assert.equal(draft2Href(topicId, storyId, { from: "javascript:alert(1)", returnContext: "not-a-context" }), `/topics/${topicId}/stories/${storyId}/draft-2`);
 });
 
-test("the way back opens the story's script tab with the same context", () => {
-  assert.equal(storyHref(topicId, storyId, { from: "#production" }), `/topics/${topicId}/stories/${storyId}?from=%23production&tab=script`);
-  assert.equal(storyHref(topicId, storyId), `/topics/${topicId}/stories/${storyId}?tab=script`);
+test("the story's page outside the canvas opens its publication with the same context", () => {
+  assert.equal(storyHref(topicId, storyId, { from: "#production" }), `/topics/${topicId}/stories/${storyId}?from=%23production&tab=publication`);
+  assert.equal(storyHref(topicId, storyId), `/topics/${topicId}/stories/${storyId}?tab=publication`);
 });
 
-test("a story opens in Draft 2 unless the editor asks for a v1 draft, a v1 preparation run or a publication to review", () => {
+test("a story opens in Draft 2; only a publication to review goes to the story page, which resolves it (the studio retired, 2026-10-19)", () => {
   assert.equal(storyWorkspace(), "draft-2");
   assert.equal(storyWorkspace({ tab: "script" }), "draft-2", "the Production list's draft workspace");
   assert.equal(storyWorkspace({ tab: "focus" }), "draft-2", "a candidate opened for production");
-  assert.equal(storyWorkspace({ draftId: "d1", tab: "script" }), "studio");
-  assert.equal(storyWorkspace({ preparationRunId: "r1", tab: "script" }), "studio");
+  assert.equal(storyWorkspace({ draftId: "d1", tab: "script" }), "draft-2", "an old link to a v1 draft");
+  assert.equal(storyWorkspace({ preparationRunId: "r1", tab: "script" }), "draft-2", "an old link to a v1 preparation run");
   assert.equal(storyWorkspace({ tab: "publication" }), "studio");
 });
 

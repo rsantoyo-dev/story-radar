@@ -82,15 +82,15 @@ export type UrgentStatus = { label: string; tone: "info" | "success" | "warning"
 export function urgentStatus(story: UrgentStory, autoPrepare = true): UrgentStatus {
   switch (story.status) {
     case "ready":
-      return { label: "Draft ready to review", tone: "success" };
+      return { label: "Content ready: open it in Draft 2", tone: "success" };
     case "preparing":
-      return { label: "Preparing its brief and draft…", tone: "info" };
+      return { label: "Preparing its content…", tone: "info" };
     case "blocked":
       return { label: story.blockedStep ? `Needs you at the ${story.blockedStep} step` : "Needs you", tone: "warning" };
     case "dismissed":
       return { label: "Dismissed", tone: "neutral" };
     default:
-      return { label: autoPrepare ? "Waiting for its brief and draft" : "Flagged", tone: "info" };
+      return { label: autoPrepare ? "Waiting for its content" : "Flagged", tone: "info" };
   }
 }
 

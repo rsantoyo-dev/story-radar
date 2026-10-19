@@ -28,7 +28,6 @@ import {
   instagramPublicationJobs,
   instagramPublicationPackages,
   stories,
-  storyCreativeBriefs,
   storyEditorialEvaluations,
   storySocialPublications,
   storySources,
@@ -154,9 +153,9 @@ export async function getTopicOverview(
       errorSection<OverviewProductionStages>(
         {
           selectedStories: 0,
-          briefs: 0,
-          draftsInReview: 0,
-          imagesToReview: 0,
+          inDraft2: 0,
+          needsYou: 0,
+          approved: 0,
           readyOrPublished: 0,
         },
         error,
@@ -524,9 +523,7 @@ async function readProduction(
 ): Promise<OverviewSection<OverviewProductionStages>> {
   const [
     [selectedRow],
-    [briefsRow],
-    [draftsRow],
-    [imagesRow],
+    [draft2Row],
     deliveredStoryRows,
     frozenPackageStoryRows,
   ] = await Promise.all([
@@ -539,36 +536,20 @@ async function readProduction(
           eq(topicStories.processingStatus, "selected"),
         ),
       ),
-    db
-      .select({ value: countDistinct(storyCreativeBriefs.storyId) })
-      .from(storyCreativeBriefs)
-      .where(eq(storyCreativeBriefs.topicId, topicId)),
-    db
-      .select({ value: count() })
-      .from(creativeDrafts)
-      .where(
-        and(
-          eq(creativeDrafts.topicId, topicId),
-          eq(creativeDrafts.status, "draft"),
-        ),
-      ),
-    db
-      .select({ value: count() })
-      .from(creativeAssets)
-      .innerJoin(
-        creativeAssetBatches,
-        eq(creativeAssetBatches.id, creativeAssets.batchId),
-      )
-      .innerJoin(
-        creativeDrafts,
-        eq(creativeDrafts.id, creativeAssetBatches.draftId),
-      )
-      .where(
-        and(
-          eq(creativeDrafts.topicId, topicId),
-          eq(creativeAssets.status, "generated"),
-        ),
-      ),
+    // Draft 2's latest session per story (2026-10-19): working, stopped for
+    // the editor (needs-review, failed, or running with no heartbeat), or
+    // approved for publishing.
+    db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE latest.publication->>'approvedAt' IS NULL AND latest.status <> 'failed')::int AS "inDraft2",
+        COUNT(*) FILTER (WHERE latest.publication->>'approvedAt' IS NULL AND (latest.status IN ('needs-review', 'failed') OR (latest.status = 'running' AND latest.updated_at < now() - interval '10 minutes')))::int AS "needsYou",
+        COUNT(*) FILTER (WHERE latest.publication->>'approvedAt' IS NOT NULL)::int AS approved
+      FROM (
+        SELECT DISTINCT ON (story_id) story_id, status, publication, updated_at
+        FROM draft2_sessions WHERE topic_id = ${topicId}::uuid
+        ORDER BY story_id, created_at DESC
+      ) latest
+    `).then((result) => result.rows as { inDraft2: number; needsYou: number; approved: number }[]),
     // "Ready or published": distinct stories that either have a confirmed
     // Instagram delivery or a frozen (delivery-ready) package. A frozen package
     // is genuinely "ready"; an approved draft on its own is not, so approval
@@ -604,9 +585,9 @@ async function readProduction(
     asOf: generatedAt,
     data: {
       selectedStories: Number(selectedRow?.value ?? 0),
-      briefs: Number(briefsRow?.value ?? 0),
-      draftsInReview: Number(draftsRow?.value ?? 0),
-      imagesToReview: Number(imagesRow?.value ?? 0),
+      inDraft2: Number(draft2Row?.inDraft2 ?? 0),
+      needsYou: Number(draft2Row?.needsYou ?? 0),
+      approved: Number(draft2Row?.approved ?? 0),
       readyOrPublished,
     },
   };

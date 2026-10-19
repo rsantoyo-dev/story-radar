@@ -54,11 +54,12 @@ export type OverviewCandidate = {
   scoreState: OverviewScoreState;
 };
 
+/** Production as Draft 2 runs it (2026-10-19, the studio retired): the selected stories, those Draft 2 is working on, those that stopped for the editor, those approved, and those delivered or frozen for delivery. */
 export type OverviewProductionStages = {
   selectedStories: number;
-  briefs: number;
-  draftsInReview: number;
-  imagesToReview: number;
+  inDraft2: number;
+  needsYou: number;
+  approved: number;
   readyOrPublished: number;
 };
 

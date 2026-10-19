@@ -34,12 +34,14 @@ export function draft2StepFromPath(pathname: string): Draft2StepKey | undefined 
 
 /**
  * Where a story opens from the dashboard (2026-10-16: "Draft 2 is what
- * appears by default"): the canvas, unless the editor asks for something only
- * the v1 studio has, a v1 draft, a v1 preparation run or a publication to
- * review.
+ * appears by default"; 2026-10-19: the studio retired): the canvas, except a
+ * publication to review, which goes to the story page: it opens Draft 2's
+ * publication step when the story has a Draft 2 session, else the page of a
+ * story published with the earlier studio. A v1 draft or preparation run in
+ * an old link opens Draft 2.
  */
 export function storyWorkspace(options: { draftId?: string; preparationRunId?: string; tab?: string } = {}): "draft-2" | "studio" {
-  return options.draftId || options.preparationRunId || options.tab === "publication" ? "studio" : "draft-2";
+  return options.tab === "publication" ? "studio" : "draft-2";
 }
 
 /** Back to the dashboard section the story was opened from (Production by default), restoring where the editor was. */
@@ -49,10 +51,10 @@ export function dashboardHref(topicId: string, context: StoryLinkContext = {}): 
   return `/?topicId=${encodeURIComponent(topicId)}${returnContext}${section}`;
 }
 
-/** The story's v1 studio, on its script tab, with the same context. */
+/** The story's page outside the canvas (its publication, or a story published with the earlier studio), with the same context. */
 export function storyHref(topicId: string, storyId: string, context: StoryLinkContext = {}): string {
   const search = contextSearch(context);
-  search.set("tab", "script");
+  search.set("tab", "publication");
   return `/topics/${encodeURIComponent(topicId)}/stories/${encodeURIComponent(storyId)}?${search}`;
 }
 

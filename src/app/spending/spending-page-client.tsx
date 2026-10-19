@@ -182,7 +182,7 @@ export function SpendingPageClient({ signedIn = false }: { signedIn?: boolean })
           <table className={styles.spendingTable}>
             <thead><tr><th scope="col">Story</th><th scope="col">Brand</th><th scope="col">Calls</th><th scope="col">Credits</th><th scope="col">Our cost</th><th scope="col">Margin</th></tr></thead>
             <tbody>{report.stories.length ? report.stories.map((story) => <tr key={story.storyId}>
-              <th scope="row"><Link href={`/topics/${story.topicId}/stories/${story.storyId}?tab=visuals`}>{story.title}</Link></th>
+              <th scope="row"><Link href={`/topics/${story.topicId}/stories/${story.storyId}/draft-2`}>{story.title}</Link></th>
               <td>{story.topicName}</td><td>{story.count}</td><td>{credits(story.chargedMicros)}</td><td>{usd(cost(story))}</td><td>{margin(story)}</td>
             </tr>) : <tr><td colSpan={6}>No story spending in this period.</td></tr>}</tbody>
           </table>

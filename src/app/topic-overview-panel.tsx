@@ -383,9 +383,9 @@ export function TopicOverviewPanel({
               {(
                 [
                   ["Selected", production.selectedStories],
-                  ["Briefs", production.briefs],
-                  ["Drafts in review", production.draftsInReview],
-                  ["Images to review", production.imagesToReview],
+                  ["In Draft 2", production.inDraft2],
+                  ["Needs you", production.needsYou],
+                  ["Approved", production.approved],
                   ["Ready / published", production.readyOrPublished],
                 ] as const
               ).map(([label, value]) => (

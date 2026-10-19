@@ -277,6 +277,11 @@
 /* Adding an account to tag: its username, who it is and whom in the story it stands for. */
 .mentionForm { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: density(3); }
 
+/* A story published with the earlier studio: its page outside the canvas (published-story-page-client.tsx). */
+.publishedBody { display: grid; gap: density(4); width: min(100%, 68rem); margin-inline: auto; padding: density(4); }
+.publishedBody h1 { @ds-typo (title); margin: 0; }
+.publishedBody p { @ds-typo (body); margin: 0; color: palette(dark-main); }
+
 /* ---------- Provider calls ---------- */
 .trace { padding-top: density(2); }
 .traceList { margin-top: density(2); }

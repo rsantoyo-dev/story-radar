@@ -12,8 +12,10 @@ import { pendingPreparations, startPreparation, startScoopPreparation } from "./
 
 /**
  * The scheduled reader (one bounded pass per call; see the auto-collection
- * worker route). Scoops are prepared ahead but never approved or published:
- * the preparation stops, with its work saved, wherever a human is needed.
+ * worker route). The due run collects, evaluates and selects; a scoop is
+ * approved and its content prepared, ready for Draft 2 (since 2026-10-19, the
+ * studio retired, nothing writes a v1 brief or draft); the preparation stops,
+ * with its work saved, wherever a human is needed.
  */
 
 /** Spend guard: scoop preparations a Topic may start per rolling 24 h. */
@@ -128,9 +130,10 @@ async function prepareNextScoop(topic: Settings, now: Date): Promise<boolean> {
     storyCollectionContexts(topic.topicId, scoop.storyId),
     db.select({ title: stories.title }).from(stories).where(eq(stories.id, scoop.storyId)).limit(1),
   ]);
+  // Since the studio retired (2026-10-19) a scoop is approved and its content prepared, ready for Draft 2; no v1 brief or draft is written.
   const run = await startScoopPreparation({
     topicId: topic.topicId, lineId: topic.lineId, lineName: line.name, timezone: topic.timezone,
-    storyId: scoop.storyId, storyTitle: story[0]?.title, scoopId: scoop.id, collectionRunId: contexts[0]?.runId,
+    storyId: scoop.storyId, storyTitle: story[0]?.title, scoopId: scoop.id, collectionRunId: contexts[0]?.runId, targetStep: "content",
   });
   if (!run) return false; // Another run is active; retried on the next pass.
   await db.update(topicScoops).set({ preparationRunId: run.id, status: "preparing", updatedAt: now }).where(eq(topicScoops.id, scoop.id));

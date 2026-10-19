@@ -172,22 +172,3 @@ test("invalidation does not count or separately retire a concurrent newer versio
   assert.equal((result as { draftsRetired: number }).draftsRetired, 0);
   assert.equal(revisions, 1);
 });
-
-test("unsaved text prevents the fidelity handler from sending or reloading anything", async () => {
-  const source = readFileSync(resolve("src/app/creative-draft-workspace.tsx"), "utf8");
-  const ast = ts.createSourceFile("workspace.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  let handler = "";
-  function visit(node: ts.Node) {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === "handleSetVisualFidelity") handler = node.getText(ast);
-    ts.forEachChild(node, visit);
-  }
-  visit(ast);
-  assert.ok(handler);
-  const code = ts.transpileModule(handler + "\nexports.run = handleSetVisualFidelity;", { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
-  const exports: { run?: (input: unknown) => Promise<void> } = {};
-  runInNewContext(code, {
-    exports, activeDraftId: "draft", busy: false, dirty: true, viewingHistoricalDraft: false,
-    run: () => assert.fail("Must preserve unsaved edits without a request or reload"),
-  });
-  await exports.run!({ mode: "photo-required", reason: "Verified photo" });
-});

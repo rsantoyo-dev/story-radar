@@ -27,10 +27,10 @@ test("an urgent story stays on the banner until it is seen or dismissed", () => 
 });
 
 test("an urgent story's preparation reads in the editor's words", () => {
-  assert.deepEqual(urgentStatus(story({ status: "ready" })), { label: "Draft ready to review", tone: "success" });
-  assert.deepEqual(urgentStatus(story({ status: "preparing" })), { label: "Preparing its brief and draft…", tone: "info" });
+  assert.deepEqual(urgentStatus(story({ status: "ready" })), { label: "Content ready: open it in Draft 2", tone: "success" });
+  assert.deepEqual(urgentStatus(story({ status: "preparing" })), { label: "Preparing its content…", tone: "info" });
   assert.deepEqual(urgentStatus(story({ status: "blocked", blockedStep: "brief" })), { label: "Needs you at the brief step", tone: "warning" });
-  assert.equal(urgentStatus(story()).label, "Waiting for its brief and draft");
+  assert.equal(urgentStatus(story()).label, "Waiting for its content");
   assert.equal(urgentStatus(story(), false).label, "Flagged", "without preparation ahead it is only flagged");
 });
 

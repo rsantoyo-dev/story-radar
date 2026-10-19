@@ -131,3 +131,54 @@ export async function activeDraft2Session(topicId: string, storyId: string): Pro
     .orderBy(desc(draft2Sessions.createdAt)).limit(1);
   return row;
 }
+
+/** One story's latest Draft 2 session at a glance, for the dashboard's Today: where it stands, whether it is still running, what it cost. */
+export type Draft2SessionSummary = {
+  id: string;
+  storyId: string;
+  step: Draft2Step;
+  status: Draft2SessionStatus;
+  pipeline: Draft2Pipeline;
+  createdAt: string;
+  updatedAt: string;
+  error: string | null;
+  /** Running and seen alive within its window; a running row past it was lost mid-request. */
+  alive: boolean;
+  /** When the editor approved the carousel for publishing, if they did. */
+  approvedAt: string | null;
+  /** The meter's estimate of every provider call and image charge, in micro-dollars, and the time inside the calls. */
+  costMicros: number;
+  ms: number;
+  calls: number;
+};
+
+/**
+ * The latest session of every story of a Topic (2026-10-19, Today gathers
+ * Draft 2): one row per story, its cost and time summed in the database from
+ * the trace and the images' charges, so the dashboard never downloads a
+ * trace.
+ */
+export async function listDraft2SessionSummaries(topicId: string): Promise<Draft2SessionSummary[]> {
+  const rows = await db.execute(sql`
+    SELECT DISTINCT ON (s.story_id)
+      s.id, s.story_id AS "storyId", s.step, s.status, s.pipeline, s.error,
+      s.created_at AS "createdAt", s.updated_at AS "updatedAt",
+      s.publication->>'approvedAt' AS "approvedAt",
+      (s.status = 'running' AND s.updated_at > ${aliveSince()}) AS alive,
+      (COALESCE((SELECT SUM(COALESCE((e->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(s.trace) e), 0)
+        + COALESCE((SELECT SUM(COALESCE((a->>'costMicros')::numeric, 0)) FROM jsonb_array_elements(COALESCE(s.images->'slides', '[]'::jsonb)) sl, jsonb_array_elements(COALESCE(sl->'attempts', '[]'::jsonb)) a), 0)
+        + COALESCE((s.images->'anchorPlate'->>'costMicros')::numeric, 0)
+        + COALESCE((s.images->'masterPlate'->>'costMicros')::numeric, 0))::bigint AS "costMicros",
+      COALESCE((SELECT SUM(COALESCE((e->>'durationMs')::numeric, 0)) FROM jsonb_array_elements(s.trace) e WHERE e->>'step' IS NOT NULL), 0)::bigint AS ms,
+      (SELECT COUNT(*) FROM jsonb_array_elements(s.trace) e WHERE e->>'step' IS NOT NULL)::int AS calls
+    FROM draft2_sessions s
+    WHERE s.topic_id = ${topicId}::uuid
+    ORDER BY s.story_id, s.created_at DESC
+  `);
+  return (rows.rows as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id), storyId: String(row.storyId), step: row.step as Draft2Step, status: row.status as Draft2SessionStatus, pipeline: row.pipeline as Draft2Pipeline,
+    createdAt: new Date(row.createdAt as string).toISOString(), updatedAt: new Date(row.updatedAt as string).toISOString(),
+    error: typeof row.error === "string" ? row.error : null, alive: row.alive === true, approvedAt: typeof row.approvedAt === "string" ? row.approvedAt : null,
+    costMicros: Number(row.costMicros ?? 0), ms: Number(row.ms ?? 0), calls: Number(row.calls ?? 0),
+  }));
+}
