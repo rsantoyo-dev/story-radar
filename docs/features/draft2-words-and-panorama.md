@@ -107,11 +107,12 @@ from above at one scale, each step the next drop along it). Since then:
 The editor: "fonts preloaded and per brand, two kinds… some 30 to choose
 from", and "eventually we take the words off the other images too".
 
-- **The fonts** (`brand-fonts.ts`): 33 open Google Fonts families plus the
+- **The fonts** (`brand-fonts.ts`): 36 open Google Fonts families plus the
   bundled Liberation Sans, in `fonts/brand/<dir>/` with their licenses (OFL;
   Roboto Slab Apache 2.0): display serifs (Fraunces Soft, Fraunces, DM Serif
   Display, Playfair Display, Young Serif, Gloock, Abril Fatface), text serifs,
-  slabs, sans, condensed and handwritten faces. A variable family is one file
+  slabs, sans (Inter since 2026-10-18), display sans (Lilita One, Bowlby One
+  SC, 2026-10-18), condensed and handwritten faces. A variable family is one file
   whose weight is the `wght` axis; Fraunces Soft sets `SOFT` 100 (rounded
   serifs), and the optical size follows the size the words are drawn at.
 - **Drawn by Skia** (`@napi-rs/canvas`, now a direct dependency and a server
@@ -124,7 +125,28 @@ from", and "eventually we take the words off the other images too".
   (`creative_profiles.words_style`, migration 0115, nullable; absent:
   Liberation Sans). Fogón Lab's guide describes "a very heavy display serif
   with soft rounded serifs" and "a clean geometric sans of medium weight":
-  Fraunces Soft Black and DM Sans Medium.
+  Fraunces Soft Black and DM Sans Medium. Since 2026-10-18 each role may be
+  set in capitals (`upper`), which starts every slide's layout in capitals;
+  Salut St-Jean: Lilita One in capitals for the headlines, Inter Semibold for
+  the text. A brand may also set a longer text in another font (`paragraph`,
+  "Longer text"): from `from` words (8 to 60, counted as the review counts
+  them), a slide's text starts its layout in it. Fogón Lab since 2026-10-18:
+  Fraunces Soft Black for titles and hooks, DM Sans Bold for texts and
+  subtitles, DM Sans Regular from 16 words (its covers run about 12, its inner
+  paragraphs 19 to 31).
+- **The text's data** (`draft2-data-marks.ts`, 2026-10-18): a brand may set a
+  weight for the dates, places and figures (`data.weight`, "Dates, places,
+  figures"). The program then marks in each slide's text its days, dates,
+  times, prices and "free", figures with their unit, and the story's places
+  by the names People and places found (not the brand's own city), as `**`
+  marks in `setAs.text`, in the text's family at that weight; the practical
+  line takes it whole. The layout's text role keeps `data: true`: when the
+  slide's words change, a kept layout's stale marks are made again; marks the
+  editor took off stay off. French, English and Spanish patterns; a place
+  whose People and places name differs from the text (an English "Milan
+  Boulevard" for "boulevard Milan") is not found, and the editor marks it.
+  Salut Brossard since 2026-10-18: Sora ExtraBold headlines, Inter Medium
+  text, its data in Inter Semibold.
 - **The layout** (`Draft2WordsLayout`): the program now writes one for every
   slide it letters: the block's box, alignment, each role's font, weight,
   size and colour, and the background (none, a card or a band, its colour and

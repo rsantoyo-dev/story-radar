@@ -1,8 +1,8 @@
 "use client";
 
-import { BRAND_FONTS, DEFAULT_WORDS_STYLE, FONT_WEIGHT_NAME, brandFontById, brandFontChoice, type BrandFontCategory, type BrandFontChoice, type CreativeWordsStyle } from "@/app/modules/stories/brand-fonts";
+import { BRAND_FONTS, DEFAULT_WORDS_STYLE, FONT_WEIGHT_NAME, brandFontById, brandFontChoice, type BrandFontCategory, type BrandFontChoice, type CreativeWordsParagraph, type CreativeWordsRole, type CreativeWordsStyle, PARAGRAPH_FROM } from "@/app/modules/stories/brand-fonts";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   BRAND_CONTRIBUTION_ASPECTS,
@@ -2299,13 +2299,15 @@ function CharacterReferencePreview({
 }
 
 const FONT_CATEGORY_LABELS: Record<BrandFontCategory, string> = {
-  "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", condensed: "Condensed", handwritten: "Handwritten",
+  "display serif": "Display serif", serif: "Serif", slab: "Slab serif", sans: "Sans", "display sans": "Display sans", condensed: "Condensed", handwritten: "Handwritten",
 };
 
 /**
  * The brand's fonts for the words the program sets on its slides (the focus
  * has the program set them): one family and weight for the headlines, one for
- * the text, from the fonts the server bundles.
+ * the text, from the fonts the server bundles, each in capitals or as written;
+ * and, if the brand wants them, another for a slide's longer text and a
+ * heavier weight for the data the program marks in the text.
  */
 export function WordsStyleEditor({
   style,
@@ -2318,34 +2320,74 @@ export function WordsStyleEditor({
 }) {
   const current = style ?? DEFAULT_WORDS_STYLE;
   const categories = [...new Set(BRAND_FONTS.map((font) => font.category))];
-  const role = (key: keyof CreativeWordsStyle, label: string) => {
+  const fontOptions = categories.map((category) => (
+    <optgroup key={category} label={FONT_CATEGORY_LABELS[category]}>
+      {BRAND_FONTS.filter((entry) => entry.category === category).map((entry) => (
+        <option key={entry.id} value={entry.id}>{entry.name}</option>
+      ))}
+    </optgroup>
+  ));
+  // A role as checked: a known family at one of its weights, in capitals only when asked.
+  const checked = (merged: CreativeWordsRole, fallback: BrandFontChoice): CreativeWordsRole => ({ ...brandFontChoice(merged, fallback), ...(merged.upper ? { upper: true as const } : {}) });
+  const weightAndCapitals = (choice: CreativeWordsRole, weights: readonly number[], set: (next: Partial<CreativeWordsRole>) => void) => (
+    <>
+      <label className={styles.carouselChromeSelect}>
+        <span>Weight</span>
+        <select value={choice.weight} onChange={(event) => set({ weight: Number(event.target.value) })}>
+          {weights.map((weight) => (
+            <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>
+          ))}
+        </select>
+      </label>
+      <label className={styles.brandEnabledToggle}>
+        <input type="checkbox" checked={Boolean(choice.upper)} onChange={(event) => set({ upper: event.target.checked ? true : undefined })} />
+        <span>Capitals</span>
+      </label>
+    </>
+  );
+  const role = (key: "headline" | "text", label: string, extra?: ReactNode) => {
     const choice = current[key];
     const font = brandFontById(choice.font) ?? brandFontById(DEFAULT_WORDS_STYLE[key].font)!;
-    const set = (next: Partial<BrandFontChoice>) => onChange({ ...current, [key]: brandFontChoice({ ...choice, ...next }, DEFAULT_WORDS_STYLE[key]) });
+    const set = (next: Partial<CreativeWordsRole>) => onChange({ ...current, [key]: checked({ ...choice, ...next }, DEFAULT_WORDS_STYLE[key]) });
     return (
       <div className={styles.carouselChromeOptions}>
         <label className={styles.carouselChromeSelect}>
           <span>{label}</span>
-          <select value={font.id} onChange={(event) => set({ font: event.target.value })}>
-            {categories.map((category) => (
-              <optgroup key={category} label={FONT_CATEGORY_LABELS[category]}>
-                {BRAND_FONTS.filter((entry) => entry.category === category).map((entry) => (
-                  <option key={entry.id} value={entry.id}>{entry.name}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <select value={font.id} onChange={(event) => set({ font: event.target.value })}>{fontOptions}</select>
         </label>
-        <label className={styles.carouselChromeSelect}>
-          <span>Weight</span>
-          <select value={choice.weight} onChange={(event) => set({ weight: Number(event.target.value) })}>
-            {font.weights.map((weight) => (
-              <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>
-            ))}
-          </select>
-        </label>
+        {weightAndCapitals(choice, font.weights, set)}
+        {extra}
       </div>
     );
+  };
+  // The data's weight (dates, times, prices, figures, places), in the text's family.
+  const textFont = brandFontById(current.text.font) ?? brandFontById(DEFAULT_WORDS_STYLE.text.font)!;
+  const setData = (weight: number | undefined) => {
+    const { data: _old, ...rest } = current;
+    void _old;
+    onChange(weight ? { ...rest, data: { weight } } : rest);
+  };
+  const dataControl = (
+    <label className={styles.carouselChromeSelect}>
+      <span>Dates, places, figures</span>
+      <select value={current.data ? brandFontChoice({ font: textFont.id, weight: current.data.weight }, current.text).weight : ""} onChange={(event) => setData(event.target.value ? Number(event.target.value) : undefined)}>
+        <option value="">As the text</option>
+        {textFont.weights.map((weight) => (
+          <option key={weight} value={weight}>{FONT_WEIGHT_NAME[weight] ?? weight}</option>
+        ))}
+      </select>
+    </label>
+  );
+  // The longer text's font: none sets every text in the text's; one starts from the text's choice.
+  const paragraph = current.paragraph;
+  const paragraphFont = paragraph ? brandFontById(paragraph.font) ?? brandFontById(DEFAULT_WORDS_STYLE.text.font)! : undefined;
+  const setParagraph = (next: Partial<CreativeWordsParagraph> | null) => {
+    const { paragraph: _old, ...rest } = current;
+    void _old;
+    if (!next) return onChange(rest);
+    const merged = { ...(paragraph ?? { ...current.text, from: PARAGRAPH_FROM.start }), ...next };
+    // The word count kept as typed (a clamp on each key would turn the "2" of "20" into 8): the server keeps it within PARAGRAPH_FROM.
+    onChange({ ...rest, paragraph: { ...checked(merged, current.text), from: Math.max(1, Math.round(merged.from)) } });
   };
   return (
     <section className={styles.carouselChromePanel} aria-labelledby="words-style-title">
@@ -2354,13 +2396,42 @@ export function WordsStyleEditor({
           <strong id="words-style-title">Words on slides</strong>
           <p>
             The fonts the program sets each slide&apos;s words in, when a story&apos;s focus has the program set them:
-            one for the headlines, one for the text and the call to action. Every font is open and bundled with the app.
+            one for the headlines, one for the text and the call to action, and if you want another for a longer text.
+            With a weight for dates, places and figures, the program marks them in each slide&apos;s text (and its practical line) in it;
+            the slide studio shows the marks and takes any off.
+            Every font is open and bundled with the app.
           </p>
         </div>
       </header>
       <fieldset className={styles.carouselChromeControls} disabled={disabled}>
         {role("headline", "Headlines")}
-        {role("text", "Text")}
+        {role("text", "Text", dataControl)}
+        <div className={styles.carouselChromeOptions}>
+          <label className={styles.carouselChromeSelect}>
+            <span>Longer text</span>
+            <select value={paragraphFont?.id ?? ""} onChange={(event) => setParagraph(event.target.value ? { font: event.target.value } : null)}>
+              <option value="">As the text</option>
+              {fontOptions}
+            </select>
+          </label>
+          {paragraph && paragraphFont ? (
+            <>
+              {weightAndCapitals(paragraph, paragraphFont.weights, setParagraph)}
+              <label className={styles.carouselChromeSelect}>
+                <span>From (words)</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={PARAGRAPH_FROM.min}
+                  max={PARAGRAPH_FROM.max}
+                  step={1}
+                  value={paragraph.from}
+                  onChange={(event) => { const from = Number(event.target.value); if (Number.isFinite(from) && from > 0) setParagraph({ from }); }}
+                />
+              </label>
+            </>
+          ) : null}
+        </div>
       </fieldset>
     </section>
   );

@@ -66,6 +66,12 @@ export type Draft2WordsRole = {
   upper?: true;
   /** Letter spacing, in thousandths of the size (negative tightens). */
   tracking?: number;
+  /**
+   * The text's data marked by the program (2026-10-18, draft2-data-marks.ts):
+   * its dates, times, prices, figures and places marked in setAs, marked again
+   * when the slide's words change, and its practical line in the mark's face.
+   */
+  data?: true;
 };
 /** Where a part of the words sits and what is behind it: its box (its height follows the words), alignment and background. */
 export type Draft2WordsPlace = {
@@ -143,6 +149,7 @@ export function parseWordsLayout(value: unknown): Draft2WordsLayout {
       ...(mark ? { mark: { weight: brandFontChoice({ font: choice.font, weight: mark.weight }, choice).weight, color: color(mark.color, roleColor) } } : {}),
       ...(given.upper === true ? { upper: true as const } : {}),
       ...(tracking ? { tracking } : {}),
+      ...(given.data === true ? { data: true as const } : {}),
     };
   };
   const place = (entry: Record<string, unknown>, fallback?: Draft2WordsPlace): Draft2WordsPlace => {

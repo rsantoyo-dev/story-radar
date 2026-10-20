@@ -6,7 +6,8 @@ import { generateOpenAiStructuredResponse } from "../stories/openai-structured-r
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { buildCreativeImagePrompt } from "../stories/build-creative-image-prompt";
 import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-contracts";
-import { autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, wordsParts, type Draft2TextBand, type Draft2WordsPalette, type Draft2WordsParts } from "./draft2-text-layer";
+import { storyPlaces } from "./draft2-data-marks";
+import { autoWordsLayout, drawWords, remarkData, setSlideWords, textBandFor, textBandPrompt, wordsBlockBottom, wordsPalette, wordsParts, type Draft2TextBand, type Draft2WordsPalette, type Draft2WordsParts } from "./draft2-text-layer";
 import { DEFAULT_WORDS_STYLE, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { focusPresentation, type Draft2Presentation } from "./draft2-focus.types";
 import {
@@ -103,6 +104,8 @@ type Context = {
   wordsPalette: Draft2WordsPalette;
   /** The brand's fonts for the words: its headline and text families, else the bundled Liberation Sans. */
   wordsStyle: CreativeWordsStyle;
+  /** The story's places, which the program marks with the text's data when the brand sets a data weight. */
+  wordsPlaces: string[];
   topicId: string;
   storyId: string;
   sessionId: string;
@@ -708,9 +711,13 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
   if (ctx.presentation.text === "program" || attempt.own) {
     const words = wordsFor(ctx, slide);
     // A layout the attempt already carries (the editor's, or the one its words are set again with) is kept; otherwise the program chooses one.
-    if (attempt.wordsLayout) out = await drawWords({ image: out, words, layout: attempt.wordsLayout });
+    // A kept layout whose marked data no longer keeps the slide's words (they changed) marks them again.
+    if (attempt.wordsLayout) {
+      attempt.wordsLayout = remarkData(attempt.wordsLayout, words, ctx.wordsPlaces);
+      out = await drawWords({ image: out, words, layout: attempt.wordsLayout });
+    }
     else {
-      const set = await setSlideWords({ image: out, words, band: textBandOf(ctx, slide, attempt), palette: ctx.wordsPalette, style: ctx.wordsStyle, cover: slide.order === 1 });
+      const set = await setSlideWords({ image: out, words, band: textBandOf(ctx, slide, attempt), palette: ctx.wordsPalette, style: ctx.wordsStyle, places: ctx.wordsPlaces, cover: slide.order === 1 });
       out = set.image;
       attempt.wordsLayout = set.layout;
     }
@@ -948,6 +955,7 @@ async function imagesContext({ topicId, storyId, sessionId, run, target, facts, 
     ...(overlay ? { overlay } : {}), ...(snapshot ? { brandSnapshot: snapshot } : {}), logos: new Map(), characters, brandSelections, units, draft, brief, fal, descriptor,
     ...(googleConfig() ? { google: googleConfig() } : {}), signal, trace, narrative: visualNarrative(target.visual),
     presentation: run.presentation ?? focusPresentation(undefined), wordsPalette: wordsPalette(profile.brandPalette), wordsStyle: profile.wordsStyle ?? DEFAULT_WORDS_STYLE,
+    wordsPlaces: storyPlaces(target.inventory?.entities ?? [], profile.region),
     ...(target.visual.focus?.values?.spine?.panorama ? { panorama: target.visual.focus.values.spine.panorama } : {}),
   };
 }
@@ -1226,7 +1234,7 @@ async function applyWordsLayout({ topicId, session, images, slide: name, layout,
     if (!own && (!all || !current?.words)) return slide;
     const { shown, base } = await shownBase(ctx, slide);
     // A slide lettered before layouts were kept has no box of its own: the program finds again where it set the words.
-    const place = shown.wordsLayout ?? await autoWordsLayout({ image: base, words: wordsFor(ctx, slide), band: textBandOf(ctx, slide, shown), palette: ctx.wordsPalette, style: ctx.wordsStyle, cover: slide.order === 1 });
+    const place = shown.wordsLayout ?? await autoWordsLayout({ image: base, words: wordsFor(ctx, slide), band: textBandOf(ctx, slide, shown), palette: ctx.wordsPalette, style: ctx.wordsStyle, places: ctx.wordsPlaces, cover: slide.order === 1 });
     const next = own ? layout : withStyleOf(place, layout);
     const attempt: Draft2ImageAttempt = {
       version: Math.max(...slide.attempts.map((entry) => entry.version)) + 1, kind: "words", status: "generated", baseVersion: shown.version,

@@ -368,7 +368,8 @@
   @ds-typo (label);
 }
 
-.carouselChromeSelect select {
+.carouselChromeSelect select,
+.carouselChromeSelect input {
   @ds-input(outlined neutral 2);
   min-width: 0;
 }

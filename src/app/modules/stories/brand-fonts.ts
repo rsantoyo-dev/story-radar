@@ -8,7 +8,7 @@
  * lists and the server registers (brand-fonts.server.ts).
  */
 
-export type BrandFontCategory = "display serif" | "serif" | "slab" | "sans" | "condensed" | "handwritten";
+export type BrandFontCategory = "display serif" | "serif" | "slab" | "sans" | "display sans" | "condensed" | "handwritten";
 export type BrandFontFile = { file: string; weight?: number };
 export type BrandFont = {
   id: string;
@@ -49,6 +49,7 @@ export const BRAND_FONTS: readonly BrandFont[] = [
   { id: "zilla-slab", name: "Zilla Slab", category: "slab", dir: "zillaslab", files: [{ file: "ZillaSlab-Regular.ttf", weight: 400 }, { file: "ZillaSlab-Medium.ttf", weight: 500 }, { file: "ZillaSlab-Bold.ttf", weight: 700 }], weights: [400, 500, 700], license: "OFL" },
   { id: "alfa-slab-one", name: "Alfa Slab One", category: "slab", dir: "alfaslabone", files: [{ file: "AlfaSlabOne-Regular.ttf", weight: 400 }], weights: [400], license: "OFL" },
   // Sans.
+  { id: "inter", name: "Inter", category: "sans", dir: "inter", files: variable("Inter[opsz,wght].ttf"), weights: [400, 500, 600, 700, 900], opsz: [14, 32], license: "OFL" },
   { id: "dm-sans", name: "DM Sans", category: "sans", dir: "dmsans", files: variable("DMSans[opsz,wght].ttf"), weights: [400, 500, 700, 900], opsz: [9, 40], license: "OFL" },
   { id: "jost", name: "Jost", category: "sans", dir: "jost", files: variable("Jost[wght].ttf"), weights: [400, 500, 700, 900], license: "OFL" },
   { id: "outfit", name: "Outfit", category: "sans", dir: "outfit", files: variable("Outfit[wght].ttf"), weights: [400, 500, 700, 900], license: "OFL" },
@@ -63,6 +64,9 @@ export const BRAND_FONTS: readonly BrandFont[] = [
   { id: "ibm-plex-sans", name: "IBM Plex Sans", category: "sans", dir: "ibmplexsans", files: variable("IBMPlexSans[wdth,wght].ttf"), weights: [400, 500, 700], license: "OFL" },
   { id: "sora", name: "Sora", category: "sans", dir: "sora", files: variable("Sora[wght].ttf"), weights: [400, 500, 700, 800], license: "OFL" },
   { id: "liberation-sans", name: "Liberation Sans", category: "sans", dir: "..", files: [{ file: "LiberationSans-Regular.ttf", weight: 400 }, { file: "LiberationSans-Bold.ttf", weight: 700 }], weights: [400, 700], license: "OFL" },
+  // Rounded and heavy display sans: titles set in capitals.
+  { id: "lilita-one", name: "Lilita One", category: "display sans", dir: "lilitaone", files: [{ file: "LilitaOne-Regular.ttf", weight: 400 }], weights: [400], license: "OFL" },
+  { id: "bowlby-one-sc", name: "Bowlby One SC", category: "display sans", dir: "bowlbyonesc", files: [{ file: "BowlbyOneSC-Regular.ttf", weight: 400 }], weights: [400], license: "OFL" },
   // Condensed and heavy display sans.
   { id: "bebas-neue", name: "Bebas Neue", category: "condensed", dir: "bebasneue", files: [{ file: "BebasNeue-Regular.ttf", weight: 400 }], weights: [400], license: "OFL" },
   { id: "oswald", name: "Oswald", category: "condensed", dir: "oswald", files: variable("Oswald[wght].ttf"), weights: [400, 500, 700], license: "OFL" },
@@ -97,9 +101,20 @@ export const FONT_WEIGHT_NAME: Record<number, string> = { 400: "Regular", 500: "
 /**
  * The brand's fonts for the words the program sets on its slides: one for
  * the headlines, one for the text (the practical line and the call to action
- * take the text's family). Absent, the bundled Liberation Sans.
+ * take the text's family), each in capitals or as written (2026-10-18).
+ * A brand may set a slide's longer text in another (2026-10-18, Fogón Lab:
+ * "DM Sans Bold for texts and subtitles, Regular for longer paragraphs"):
+ * from `from` words, counted as the program counts them, the text takes the
+ * paragraph's font. And a brand may set the text's data heavier (2026-10-18,
+ * Salut Brossard: "SemiBold for dates, places and important data"): the
+ * program marks them in the text (draft2-data-marks.ts) at `data.weight`, the
+ * text's font's nearest. Absent, the bundled Liberation Sans.
  */
-export type CreativeWordsStyle = { headline: BrandFontChoice; text: BrandFontChoice };
+export type CreativeWordsRole = BrandFontChoice & { upper?: true };
+export type CreativeWordsParagraph = CreativeWordsRole & { from: number };
+export type CreativeWordsStyle = { headline: CreativeWordsRole; text: CreativeWordsRole; paragraph?: CreativeWordsParagraph; data?: { weight: number } };
+/** The words from which a slide's text is a paragraph: the range the editor may set, and where it starts. */
+export const PARAGRAPH_FROM = { min: 8, max: 60, start: 16 } as const;
 export const DEFAULT_WORDS_STYLE: CreativeWordsStyle = { headline: { font: FALLBACK_BRAND_FONT, weight: 700 }, text: { font: FALLBACK_BRAND_FONT, weight: 400 } };
 
 /** A brand's words style as stored or sent: each choice checked against the catalog; nothing usable is none. */
@@ -107,8 +122,18 @@ export function parseCreativeWordsStyle(value: unknown): CreativeWordsStyle | nu
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
   if (!record.headline && !record.text) return null;
+  const role = (entry: unknown, fallback: BrandFontChoice): CreativeWordsRole => ({
+    ...brandFontChoice(entry, fallback),
+    ...(entry && typeof entry === "object" && (entry as Record<string, unknown>).upper === true ? { upper: true as const } : {}),
+  });
+  const paragraph = record.paragraph && typeof record.paragraph === "object" ? record.paragraph as Record<string, unknown> : undefined;
+  const data = record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>).weight : undefined;
+  const dataWeight = typeof data === "number" && Number.isFinite(data) ? Math.round(Math.min(900, Math.max(100, data)) / 100) * 100 : undefined;
+  const from = typeof paragraph?.from === "number" && Number.isFinite(paragraph.from) ? Math.round(Math.min(PARAGRAPH_FROM.max, Math.max(PARAGRAPH_FROM.min, paragraph.from))) : PARAGRAPH_FROM.start;
   return {
-    headline: brandFontChoice(record.headline, DEFAULT_WORDS_STYLE.headline),
-    text: brandFontChoice(record.text, DEFAULT_WORDS_STYLE.text),
+    headline: role(record.headline, DEFAULT_WORDS_STYLE.headline),
+    text: role(record.text, DEFAULT_WORDS_STYLE.text),
+    ...(paragraph && brandFontById(typeof paragraph.font === "string" ? paragraph.font : undefined) ? { paragraph: { ...role(paragraph, DEFAULT_WORDS_STYLE.text), from } } : {}),
+    ...(dataWeight ? { data: { weight: dataWeight } } : {}),
   };
 }

@@ -37,6 +37,11 @@ test("a brand's fonts as stored: a known family at one of its weights, the neare
   assert.deepEqual(brandFontChoice({ font: "dm-sans", weight: 520 }, DEFAULT_WORDS_STYLE.text), { font: "dm-sans", weight: 500 });
   assert.deepEqual(brandFontChoice({ font: "no-such-font", weight: 700 }, DEFAULT_WORDS_STYLE.headline), DEFAULT_WORDS_STYLE.headline);
   assert.deepEqual(parseCreativeWordsStyle({ headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 500 } }), { headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 500 } });
+  assert.deepEqual(parseCreativeWordsStyle({ headline: { font: "lilita-one", weight: 400, upper: true }, text: { font: "inter", weight: 600, upper: "yes" } }), { headline: { font: "lilita-one", weight: 400, upper: true }, text: { font: "inter", weight: 600 } }, "capitals only when set");
+  assert.deepEqual(parseCreativeWordsStyle({ headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 700 }, paragraph: { font: "dm-sans", weight: 400, from: 3 } })?.paragraph, { font: "dm-sans", weight: 400, from: 8 }, "a longer text's font, from at least 8 words");
+  assert.equal(parseCreativeWordsStyle({ headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 700 }, paragraph: { font: "no-such-font", weight: 400 } })?.paragraph, undefined, "an unknown longer text's font is none");
+  assert.deepEqual(parseCreativeWordsStyle({ headline: { font: "sora", weight: 800 }, text: { font: "inter", weight: 500 }, data: { weight: 640 } })?.data, { weight: 600 }, "the data's weight, in hundreds");
+  assert.equal(parseCreativeWordsStyle({ headline: { font: "sora", weight: 800 }, text: { font: "inter", weight: 500 }, data: {} })?.data, undefined);
   assert.equal(parseCreativeWordsStyle(null), null);
   assert.equal(parseCreativeWordsStyle({}), null);
 });

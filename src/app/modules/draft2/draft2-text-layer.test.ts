@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import { TEXT_CANVAS, autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, wordsPalette, type Draft2TextBand } from "./draft2-text-layer";
+import { TEXT_CANVAS, autoWordsLayout, drawWords, setSlideWords, textBandFor, textBandPrompt, remarkData, textStyleFor, wordsPalette, type Draft2TextBand } from "./draft2-text-layer";
 
 test("where the program sets the words: along the top, below a logo on top; along the bottom when a photo bleeds from the top or the map sits top right", () => {
   assert.deepEqual(textBandFor({}), { edge: "top", left: 72, top: 64, width: 936, height: 540 });
@@ -57,6 +57,30 @@ test("a layout sets the words where it says, in the brand's fonts: in its box, c
   const style = { headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 500 } };
   const auto = await autoWordsLayout({ image: teal, words, band: textBandFor({}), palette: { ink: "#253746", paper: "#F6F0E4" }, style });
   assert.deepEqual([auto.headline.font, auto.headline.weight, auto.text.font, auto.text.weight, auto.background.kind], ["fraunces-soft", 900, "dm-sans", 500, "none"], "the brand's fonts, on the calm teal with no card");
+  const capitals = await autoWordsLayout({ image: teal, words, band: textBandFor({}), palette: { ink: "#253746", paper: "#F6F0E4" }, style: { headline: { font: "lilita-one", weight: 400, upper: true as const }, text: { font: "inter", weight: 600 } } });
+  assert.deepEqual([capitals.headline.upper, capitals.text.upper], [true, undefined], "a brand's headlines in capitals start the layout in capitals");
+  // A longer text in the paragraph's font, counted as the program counts words; a short one in the text's.
+  const fogon = { headline: { font: "fraunces-soft", weight: 900 }, text: { font: "dm-sans", weight: 700 }, paragraph: { font: "dm-sans", weight: 400, from: 16 } };
+  const long = "Al nivel del mar el agua hierve a 100 °C. En Bogotá hierve a unos 91 °C: es un hervor más frío.";
+  assert.deepEqual(textStyleFor(fogon, long), { font: "dm-sans", weight: 400 });
+  assert.deepEqual(textStyleFor(fogon, "A unos 91 °C, no a los 100 del nivel del mar."), { font: "dm-sans", weight: 700 });
+  const paragraphLayout = await autoWordsLayout({ image: teal, words: { ...words, text: long }, band: textBandFor({}), palette: { ink: "#253746", paper: "#F6F0E4" }, style: fogon });
+  assert.deepEqual([paragraphLayout.text.font, paragraphLayout.text.weight, "from" in paragraphLayout.text], ["dm-sans", 400, false], "the slide's layout starts from the paragraph's font, without its rule");
+  // The text's data marked in the brand's data weight, the practical line in it too; marked again when the words change, never when the editor took the marks off.
+  const brossard = { headline: { font: "sora", weight: 800 }, text: { font: "inter", weight: 500 }, data: { weight: 600 } };
+  const event = { headline: "Plante un arbre rare", text: "Le 21 octobre 2026, au Grand parc urbain, de 15 h à 18 h.", practical: "Samedi · 15 h · gratuit" };
+  const dated = await autoWordsLayout({ image: teal, words: event, band: textBandFor({}), palette: { ink: "#253746", paper: "#F6F0E4" }, style: brossard, places: ["Grand parc urbain"] });
+  assert.equal(dated.setAs?.text, "Le **21 octobre 2026**, au **Grand parc urbain**, de **15 h à 18 h**.");
+  assert.deepEqual([dated.text.weight, dated.text.mark?.weight, dated.text.data], [500, 600, true]);
+  const plainPractical = await drawWords({ image: teal, words: event, layout: { ...dated, text: { ...dated.text, data: undefined } } });
+  const heavyPractical = await drawWords({ image: teal, words: event, layout: dated });
+  assert.ok(await changedPixels(plainPractical, heavyPractical, { left: 0, top: 0, width: 1080, height: 1350 }) > 0, "the practical line in the data's weight");
+  const changed = { ...event, text: "Le 28 octobre 2026, au Grand parc urbain, dès 9 h." };
+  assert.equal(remarkData(dated, changed, ["Grand parc urbain"]).setAs?.text, "Le **28 octobre 2026**, au **Grand parc urbain**, dès **9 h**.");
+  const { setAs: _marks, ...unmarked } = dated;
+  void _marks;
+  assert.equal(remarkData(unmarked, changed, ["Grand parc urbain"]).setAs, undefined, "the marks the editor took off stay off");
+  assert.equal(remarkData(dated, event).setAs?.text, dated.setAs?.text, "marks that keep the words stay as they are");
   // Moved low and narrow, centred: nothing above the box changes.
   const low = { ...auto, box: { left: 240, top: 900, width: 600 }, align: "center" as const };
   const moved = await drawWords({ image: teal, words, layout: low });

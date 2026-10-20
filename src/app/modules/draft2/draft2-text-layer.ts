@@ -1,13 +1,15 @@
 import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import sharp, { type OverlayOptions } from "sharp";
 
-import { DEFAULT_WORDS_STYLE, brandFontById, type CreativeWordsStyle } from "../stories/brand-fonts";
+import { DEFAULT_WORDS_STYLE, brandFontById, brandFontChoice, type CreativeWordsRole, type CreativeWordsStyle } from "../stories/brand-fonts";
 import { canvasFont, registerBrandFonts } from "../stories/brand-fonts.server";
 import { lightness } from "../stories/creative-brand-logo-versions";
 import type { CreativeBrandPaletteColor } from "../stories/creative-content.types";
 import type { PortraitLayoutId } from "../stories/creative-portrait-composite";
 import type { MapPanelPosition } from "../stories/map-panel-position";
-import { readsAs, type Draft2SlideWords, type Draft2WordsLayout, type Draft2WordsPlace, type Draft2WordsRole } from "./draft2-images.types";
+import { markData } from "./draft2-data-marks";
+import { funnelWordCount } from "./draft2-funnel";
+import { readsAs, setAsMismatches, type Draft2SlideWords, type Draft2WordsLayout, type Draft2WordsPlace, type Draft2WordsRole } from "./draft2-images.types";
 
 /**
  * The slide's words set by the program (2026-10-17, the editor: "put the
@@ -173,7 +175,7 @@ function wrap(ctx: SKRSContext2D, words: string, role: Draft2WordsRole, width: n
   return lines;
 }
 
-/** The blocks of a layout's words: the headline, the text, the practical line (the text's font, smaller) and the call to action (the text's font, heavier). */
+/** The blocks of a layout's words: the headline, the text, the practical line (the text's font, smaller; in its mark's weight when the text's data is marked) and the call to action (the text's font, heavier). */
 function blocks(ctx: SKRSContext2D, words: Draft2SlideWords, layout: Draft2WordsLayout, width: number): Block[] {
   const heavier = (role: Draft2WordsRole): Draft2WordsRole => {
     const font = brandFontById(role.font);
@@ -182,7 +184,7 @@ function blocks(ctx: SKRSContext2D, words: Draft2SlideWords, layout: Draft2Words
   const parts: { words: string; role: Draft2WordsRole; lineHeight: number; part: Block["part"] }[] = [
     { words: readsAs(words.headline, layout.setAs?.headline), role: layout.headline, lineHeight: LINE_HEIGHT.headline, part: "headline" },
     { words: readsAs(words.text, layout.setAs?.text), role: layout.text, lineHeight: LINE_HEIGHT.text, part: "text" },
-    { words: words.practical ?? "", role: { ...layout.text, size: Math.round(layout.text.size * 0.8) }, lineHeight: LINE_HEIGHT.text, part: "text" },
+    { words: words.practical ?? "", role: { ...layout.text, size: Math.round(layout.text.size * 0.8), ...(layout.text.data ? { weight: markOf(layout.text).weight } : {}) }, lineHeight: LINE_HEIGHT.text, part: "text" },
     { words: words.cta ?? "", role: heavier({ ...layout.text, size: Math.round(layout.text.size * 0.9) }), lineHeight: LINE_HEIGHT.text, part: "text" },
   ];
   return parts.filter((part) => part.words.trim()).map((part) => ({
@@ -296,15 +298,28 @@ export async function drawWords({ image, words, layout }: { image: Uint8Array; w
   return new Uint8Array(await sharp(Buffer.from(image)).composite(layers).png().toBuffer());
 }
 
+/** The brand's font for a slide's text: its paragraph's from that many words, counted as the program counts them; else its text's. */
+export function textStyleFor(style: CreativeWordsStyle, text: string): CreativeWordsRole {
+  if (!style.paragraph || funnelWordCount(text) < style.paragraph.from) return style.text;
+  const { from: _from, ...role } = style.paragraph;
+  void _from;
+  return role;
+}
+
 /**
  * The layout the program chooses for a slide: the band's box, the brand's
- * fonts, straight on a calm band in the palette colour that reads (a card of
- * the palette's lightest colour over a busy one), and the sizes brought down
- * together until the words fit the band (a cover starts larger). A bottom
- * band's block ends at the band's bottom.
+ * fonts (a longer text in its paragraph's, the text's data marked in its
+ * data weight when the brand sets one), straight on a calm band in the
+ * palette colour that reads (a card of the palette's lightest colour over a
+ * busy one), and the sizes brought down together until the words fit the
+ * band (a cover starts larger). A bottom band's block ends at the band's
+ * bottom.
  */
-export async function autoWordsLayout({ image, words, band, palette, style = DEFAULT_WORDS_STYLE, cover = false }: {
-  image: Uint8Array; words: Draft2SlideWords; band: Draft2TextBand; palette: Draft2WordsPalette; style?: CreativeWordsStyle; cover?: boolean;
+export async function autoWordsLayout({ image, words, band, palette, style = DEFAULT_WORDS_STYLE, places = [], cover = false }: {
+  image: Uint8Array; words: Draft2SlideWords; band: Draft2TextBand; palette: Draft2WordsPalette; style?: CreativeWordsStyle;
+  /** The story's places, marked with the text's data. */
+  places?: readonly string[];
+  cover?: boolean;
 }): Promise<Draft2WordsLayout> {
   registerBrandFonts();
   const reading = await bandReading(image, band);
@@ -315,9 +330,13 @@ export async function autoWordsLayout({ image, words, band, palette, style = DEF
   const background: Draft2WordsLayout["background"] = plain ? { kind: "none", color: palette.paper, opacity: 0.92 } : { kind: "card", color: palette.paper, opacity: 0.92 };
   const padding = plain ? 0 : PANEL_PADDING;
   const ctx = createCanvas(16, 16).getContext("2d");
+  const textStyle = textStyleFor(style, words.text);
+  const data = style.data ? { mark: { weight: brandFontChoice({ font: textStyle.font, weight: style.data.weight }, textStyle).weight, color }, data: true as const } : {};
+  const marked = style.data ? markData(words.text, places) : words.text;
   let layout: Draft2WordsLayout = {
     box: { left: band.left, top: band.top, width: band.width }, align: "left",
-    headline: { ...style.headline, size: cover ? 88 : 66, color }, text: { ...style.text, size: cover ? 40 : 38, color }, background,
+    headline: { ...style.headline, size: cover ? 88 : 66, color }, text: { ...textStyle, size: cover ? 40 : 38, color, ...data }, background,
+    ...(marked !== words.text ? { setAs: { text: marked } } : {}),
   };
   for (let scale = 1; scale >= 0.55; scale -= 0.05) {
     const sized: Draft2WordsLayout = { ...layout, headline: { ...layout.headline, size: Math.round((cover ? 88 : 66) * scale) }, text: { ...layout.text, size: Math.round((cover ? 40 : 38) * scale) } };
@@ -331,10 +350,25 @@ export async function autoWordsLayout({ image, words, band, palette, style = DEF
   return layout;
 }
 
+/**
+ * A kept layout for the slide's words as they are now: when it marks the
+ * text's data and its marks no longer keep the slide's words (they changed),
+ * the data marked again in them. Marks the editor took off stay off.
+ */
+export function remarkData(layout: Draft2WordsLayout, words: Draft2SlideWords, places: readonly string[] = []): Draft2WordsLayout {
+  if (!layout.text.data || !setAsMismatches(words, layout).includes("text")) return layout;
+  const { setAs, ...rest } = layout;
+  const { text: _stale, ...kept } = setAs ?? {};
+  void _stale;
+  const marked = markData(words.text, places);
+  const next: NonNullable<Draft2WordsLayout["setAs"]> = marked !== words.text ? { ...kept, text: marked } : kept;
+  return next.headline !== undefined || next.text !== undefined ? { ...rest, setAs: next } : rest;
+}
+
 /** The slide with its words set as the program chooses: the layout it chose comes back with it, for the editor. */
-export async function setSlideWords({ image, words, band, palette, style, cover = false }: {
-  image: Uint8Array; words: Draft2SlideWords; band: Draft2TextBand; palette: Draft2WordsPalette; style?: CreativeWordsStyle; cover?: boolean;
+export async function setSlideWords({ image, words, band, palette, style, places, cover = false }: {
+  image: Uint8Array; words: Draft2SlideWords; band: Draft2TextBand; palette: Draft2WordsPalette; style?: CreativeWordsStyle; places?: readonly string[]; cover?: boolean;
 }): Promise<{ image: Uint8Array; layout: Draft2WordsLayout; panel: boolean; color: string }> {
-  const layout = await autoWordsLayout({ image, words, band, palette, style, cover });
+  const layout = await autoWordsLayout({ image, words, band, palette, style, places, cover });
   return { image: await drawWords({ image, words, layout }), layout, panel: layout.background.kind !== "none", color: layout.headline.color };
 }
