@@ -328,6 +328,12 @@ export async function failStoryContentEnrichment(
 
 /** The addresses the story was collected from, every source merged into it, first collected first: where it was reported. */
 export async function storySourceUrls(storyId: string): Promise<string[]> {
-  const rows = await db.select({ url: storySources.sourceUrl }).from(storySources).where(eq(storySources.storyId, storyId)).orderBy(asc(storySources.createdAt));
-  return rows.map((row) => row.url);
+  return (await storySourceCredits(storyId)).map((row) => row.url);
+}
+
+/** The same, each with the story's title: an aggregator's item (Google News) names its outlet at the end of it. */
+export async function storySourceCredits(storyId: string): Promise<{ url: string; title: string }[]> {
+  return db.select({ url: storySources.sourceUrl, title: stories.title }).from(storySources)
+    .innerJoin(stories, eq(stories.id, storySources.storyId))
+    .where(eq(storySources.storyId, storyId)).orderBy(asc(storySources.createdAt));
 }

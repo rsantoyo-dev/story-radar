@@ -299,3 +299,16 @@ has a composition grammar (field height, ground line, cut lines, station
 sizes, a margin from the cuts); the scene is drawn at medium quality; Sol
 reads a section as a section; a v3 panorama keeps the judge's revision
 round.
+
+
+## Addendum, 2026-10-20: lines under the words
+
+The program set words with no card on a band its lightness spread found calm
+(96 × 56 copy, spread ≤ 14), which a thin line barely moves: a swing's chain
+(St-Jean's parc Bella), a panorama's dashed carrier and a clock (Fogón Lab's
+altitude), a tree's crown (Brossard's planting) ran through the words. Now a
+calm band also needs fewer than 2 cells of an 8 × 5 grid over the words' block
+carrying lines (`lineCells`: 4 % of a cell's pixels changing by more than 10 L*
+points from a neighbour, read at 320 px wide); otherwise the words take their
+card. On the six published carousels measured, the crossed words had 2 to 15
+such cells, the clean fields 0 or 1.

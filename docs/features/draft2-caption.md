@@ -217,3 +217,15 @@ v1's candidate checks apply unchanged: the draft and every image approved,
 The post names where the story was reported ("Source : journaldemontreal.com")
 after the caption and before the credits; the editor may leave it out per
 post. See draft2-news-integrity.md.
+
+
+## Addendum, 2026-10-20: the outlet behind Google News
+
+Every link of a Google News feed points to news.google.com, so the source line
+of Salut Brossard's posts read "Source : news.google.com". `captionSourceHosts`
+now credits an aggregator's item by the outlet its title names (Google ends each
+title with " - Outlet", a name or an address: "Ville de Brossard", "tvrs.ca"),
+never the aggregator itself; an outlet already credited by its address is not
+credited twice ("lecourrierdusud.ca" and "Le Courrier du sud"). The titles come
+with the sources (`storySourceCredits`). A caption written before keeps its line
+until it is written again.

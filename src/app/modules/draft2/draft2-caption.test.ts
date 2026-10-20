@@ -113,7 +113,7 @@ function harness({ writes = [], judgments = [], session, sources = [] }: { write
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
-    "../stories/story-content.repository": { storySourceUrls: async (id: string) => id === storyId ? sources : [] },
+    "../stories/story-content.repository": { storySourceUrls: async (id: string) => id === storyId ? sources : [], storySourceCredits: async (id: string) => id === storyId ? sources.map((url) => ({ url, title: "A story" })) : [] },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("openai", input), cachedInputTokens: 900 }) },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => ({ ...answer("anthropic", input), cachedInputTokens: 0 }) },
     "./draft2-session.repository": {
@@ -268,6 +268,15 @@ test("the source line reads in the publication's language and names at most thre
   assert.equal(captionTypes.captionSourceLine(["a.com"], "french"), "Source\u00a0: a.com");
   assert.equal(captionTypes.captionSourceLine([], "French"), undefined);
   assert.equal(json(captionTypes.captionSourceHosts(["https://www.a.com/x", "not a url", "https://b.org/y", "https://c.net", "https://d.io", "https://A.com/z"])), json(["a.com", "b.org", "c.net"]));
+});
+
+test("a Google News item credits the outlet its title names, never news.google.com (Salut Brossard read \"Source : news.google.com\" until 2026-10-20); an outlet already credited by its address is not credited twice", () => {
+  const google = (title: string) => ({ url: "https://news.google.com/rss/articles/CBMiXYZ?oc=5", title });
+  assert.equal(json(captionTypes.captionSourceHosts([google("Patinage thématique – Soirée costumée d’Halloween - Ville de Brossard")])), json(["Ville de Brossard"]));
+  assert.equal(json(captionTypes.captionSourceHosts([google("Actualités | Les marchés de Noël sont de retour sur la Rive-Sud - https://www.tvrs.ca/")])), json(["tvrs.ca"]), "an outlet given as its address is credited as its host");
+  assert.equal(json(captionTypes.captionSourceHosts([google("A headline without its outlet")])), json([]), "no outlet named: the aggregator is not credited");
+  assert.equal(json(captionTypes.captionSourceHosts(["https://lecourrierdusud.ca/brossard-x", google("Brossard: ils percutent une auto de police - Le Courrier du sud"), { url: "https://www.fm1033.ca/a", title: "x" }, google("Un titre - FM 103,3")])), json(["lecourrierdusud.ca", "fm1033.ca"]), "the same outlet, by its address and by its name, once");
+  assert.equal(captionTypes.aggregatorOutlet("No outlet here"), undefined);
 });
 
 test("the editor can choose any caption of the run", async () => {

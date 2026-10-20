@@ -159,16 +159,41 @@ export const shownSource = (caption: Pick<Draft2Caption, "source" | "sourceHidde
 export const CAPTION_MAX_SOURCES = 3;
 /** Addresses that are the publication's own (its owned content), never a source to credit. */
 const OWN_HOSTS = /(^|\.)presscraftor\.local$/u;
+/** Hosts that relay other outlets' stories: every link of a Google News feed points to news.google.com, so the outlet is credited instead (Salut Brossard's posts read "Source : news.google.com" until 2026-10-20). */
+const AGGREGATOR_HOSTS = /(^|\.)news\.google\.com$/u;
 
-/** The addresses of the story's sources, as a post credits them: the host without "www.", once each, the publication's own content left out. */
-export function captionSourceHosts(urls: readonly string[]): string[] {
-  const hosts: string[] = [];
-  for (const url of urls) {
+/**
+ * The outlet an aggregator's item comes from: Google News ends every title
+ * with " - Outlet", an outlet's name or its address ("… - https://www.tvrs.ca/",
+ * credited as its host). Undefined when the title names none.
+ */
+export function aggregatorOutlet(title: string | undefined): string | undefined {
+  const at = title ? title.lastIndexOf(" - ") : -1;
+  const name = at > 0 ? title!.slice(at + 3).trim() : "";
+  if (!name || name.length > 60) return undefined;
+  try { return new URL(name).hostname.toLowerCase().replace(/^www\./u, "") || undefined; } catch { return name; }
+}
+
+/** One outlet however it is written: "lecourrierdusud.ca" and "Le Courrier du sud", "fm1033.ca" and "FM 103,3". */
+const creditKey = (value: string) => value.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/\.[a-z]{2,}$/u, "").replace(/[^a-z0-9]/gu, "");
+
+/**
+ * Where the story was reported, as a post credits it: each source's host
+ * without "www.", or, for an aggregator's item, the outlet its title names
+ * (dropped when it names none: an aggregator is never credited); once each,
+ * the publication's own content left out.
+ */
+export function captionSourceHosts(sources: readonly (string | { url: string; title?: string })[]): string[] {
+  const credits: string[] = [];
+  for (const source of sources) {
+    const { url, title } = typeof source === "string" ? { url: source, title: undefined } : source;
     let host: string;
     try { host = new URL(url).hostname.toLowerCase().replace(/^www\./u, ""); } catch { continue; }
-    if (host && !OWN_HOSTS.test(host) && !hosts.includes(host)) hosts.push(host);
+    const credit = AGGREGATOR_HOSTS.test(host) ? aggregatorOutlet(title) : host;
+    if (!credit || OWN_HOSTS.test(credit) || credits.some((entry) => creditKey(entry) === creditKey(credit))) continue;
+    credits.push(credit);
   }
-  return hosts.slice(0, CAPTION_MAX_SOURCES);
+  return credits.slice(0, CAPTION_MAX_SOURCES);
 }
 
 /** The line that credits where the story was reported, in the publication's language ("Source : journaldemontreal.com"); none without a source. */

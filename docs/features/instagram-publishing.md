@@ -167,3 +167,18 @@ La lectura directa de la guía de Facebook Pages no estuvo disponible durante es
 **PUB-01:** implementada la evaluación de candidaturas en servidor y su panel en los recorridos creativos. La verificación puntual no crea una orden. El bloqueo inicial por PUB-02 y su evolución constan en [la ficha](../stories/PUB-01.md).
 
 **25 de septiembre de 2026:** añadidos diagnóstico de entorno y disparador externo del worker; los pendientes de despliegue están fechados en [PUB-11](../stories/PUB-11.md). La documentación de esta ampliación no ejecuta migraciones, cambia credenciales ni publica contenido.
+
+## Addendum, 2026-10-20: the delivery serves exactly what was frozen
+
+Hello Austin's COTA carousel (2026-10-19) went out on Instagram with the lower
+fifth of slide 5 a flat grey (#808080), the mark of a JPEG decoded from a cut
+transfer and re-encoded by Instagram. The frozen file in R2 was whole (its size
+and SHA-256 match the package); the delivery route served it without declaring
+its length, so a short transfer could pass for a whole image. `GET
+/api/deliver/[token]` now checks the bytes it read against the frozen size and
+SHA-256 (`resolveDeliveryFile` returns both) and declares `Content-Length` (HEAD
+too): a cut transfer is an error to the fetcher, so the container fails and the
+order shows it, and a read that does not match is never served (502, logged
+without the token or the key). The Austin post itself stays as published: a
+carousel cannot be edited on Instagram; delete and publish it again to replace
+slide 5.

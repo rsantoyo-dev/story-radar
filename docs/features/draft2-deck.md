@@ -139,3 +139,13 @@ its image. A list or a procedure keeps its items as before.
 A headline states its slide's fact, never a comment on the facts or a
 comparison without its terms; the fairness skill joins the writer and the
 judge. See draft2-news-integrity.md.
+
+
+## Addendum, 2026-10-20: a figure on three slides
+
+`RESTATES_FIGURE`: a figure (a percentage, an amount, a temperature:
+`figuresIn`) is said on two slides of the carousel at most, where it lands and
+where it pays off. A deck slide that states one the opening and the closing (or
+two other slides) already state is a program finding, so the fix pass removes
+it. canada en breve's inflation carousel said "without gas, 2.2%" on slide 2, a
+deck slide and the last slide.

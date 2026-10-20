@@ -63,7 +63,7 @@ export const DECK_RESTATEMENT_OVERLAP = 0.5;
 export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "grounding", "voice", "focus", "originality"] as const;
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
-  "RESTATES_SLIDE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
+  "RESTATES_SLIDE", "RESTATES_FIGURE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -194,6 +194,22 @@ export function parseDeckEvaluation(answer: string, candidateIds: readonly strin
   return funnelParseEvaluation(answer, candidateIds, { criteria: DECK_CRITERIA, codes: DECK_ISSUE_CODES, parts: DECK_PARTS, parseProposal: deckFrom, maxProposals: 1 });
 }
 
+/**
+ * A figure (a percentage, an amount, a temperature) is said on two slides of
+ * the carousel at most: where it lands and where it pays off. canada en
+ * breve's inflation carousel said "without gas, 2.2%" on slide 2, a deck slide
+ * and the last slide (2026-10-19).
+ */
+export const DECK_FIGURE_MAX_SLIDES = 2;
+
+/** The figures a text states, as one key each: "2,2 %" and "2.2%" are "2.2%", "$60" and "60 $" are "60$". A count, a year or a time is not one. */
+export function figuresIn(value: string): string[] {
+  const found = new Set<string>();
+  for (const match of value.matchAll(/(\d+(?:[.,]\d+)?)\s?(%|°|\$|€)/gu)) found.add(`${match[1].replace(",", ".")}${match[2]}`);
+  for (const match of value.matchAll(/([$€])\s?(\d+(?:[.,]\d+)?)/gu)) found.add(`${match[2].replace(",", ".")}${match[1]}`);
+  return [...found];
+}
+
 const RECAP = /\b(in summary|to sum up|in short|to recap|the bottom line|en résumé|en bref|pour résumer|en somme|en resumen|en conclusión|en conclusion|para resumir|resumiendo|en síntesis)\b/iu;
 const EMOJI = /\p{Extended_Pictographic}/gu;
 
@@ -216,7 +232,10 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
     ["slide 2", `${opening.slide2.headline} ${opening.slide2.body}`],
     ...(closing.penultimate ? [["the penultimate slide", `${closing.penultimate.headline} ${closing.penultimate.body}`] as const] : []),
     ["the last slide", `${closing.last.headline} ${closing.last.body}`],
-  ].map(([name, value]) => [name, longWords(value)] as const);
+  ] as const;
+  const fixedWords = fixed.map(([name, value]) => [name, longWords(value)] as const);
+  // The figures the opening and the closing already state: the deck adds a third mention of none of them.
+  const fixedFigures = fixed.map(([name, value]) => [name, figuresIn(value)] as const);
   const isList = shape.kind === "list";
   const keys = new Map<string, Draft2DeckCandidate>();
   const issues: Draft2DeckIssue[] = [];
@@ -230,6 +249,7 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
         : `The deck has ${slides.length} slides; it carries ${shape.items.length} ${shape.kind === "list" ? "items" : "steps"}, one per slide.`);
     }
     const words = slides.map((slide) => longWords(`${slide.headline} ${slide.body}`));
+    const figures = slides.map((slide) => figuresIn(`${slide.headline} ${slide.body} ${slide.practical}`));
     slides.forEach((slide, index) => {
       const part = `s${index + 1}`;
       const label = `Deck slide ${index + 1}`;
@@ -255,7 +275,14 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       if (item && !slide.factIds.includes(item)) add("ITEM_OUT_OF_PLACE", part, `${label} should carry the ${shape.kind === "list" ? "item" : "step"} that starts with ${item}, in order.`);
       const recap = RECAP.exec(`${slide.headline} ${slide.body}`);
       if (recap) add("RECAP_LABEL", part, `"${recap[0]}" sums up instead of moving the story on.`);
-      const repeated = fixed.find(([, other]) => wordOverlap(words[index], other) >= DECK_RESTATEMENT_OVERLAP)?.[0]
+      // A figure already on two other slides of the carousel: a third mention repeats it.
+      const restated = figures[index].flatMap((figure) => {
+        const elsewhere = [...fixedFigures.filter(([, list]) => list.includes(figure)).map(([name]) => name),
+          ...figures.flatMap((list, other) => other !== index && list.includes(figure) ? [`deck slide ${other + 1}`] : [])];
+        return elsewhere.length >= DECK_FIGURE_MAX_SLIDES ? [`${figure} (also on ${elsewhere.join(" and ")})`] : [];
+      });
+      if (restated.length) add("RESTATES_FIGURE", part, `${label} states ${restated.join("; ")} again: a figure is said on ${DECK_FIGURE_MAX_SLIDES} slides at most, where it lands and where it pays off. Here say what it means for the reader instead, or move on.`);
+      const repeated = fixedWords.find(([, other]) => wordOverlap(words[index], other) >= DECK_RESTATEMENT_OVERLAP)?.[0]
         ?? words.slice(0, index).findIndex((other) => wordOverlap(words[index], other) >= DECK_RESTATEMENT_OVERLAP);
       if (typeof repeated === "string") add("RESTATES_SLIDE", part, `${label} repeats ${repeated} instead of moving the story on.`);
       else if (repeated >= 0) add("RESTATES_SLIDE", part, `${label} repeats deck slide ${repeated + 1}.`);

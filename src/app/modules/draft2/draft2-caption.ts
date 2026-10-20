@@ -19,7 +19,7 @@ import { FAIRNESS_SKILL } from "./skills/fairness";
 import { READER_SKILL } from "./skills/reader";
 import { adaptationCreditLine, placePhotoAdaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
 import type { CreativeProfile } from "../stories/creative-content.types";
-import { storySourceUrls } from "../stories/story-content.repository";
+import { storySourceCredits } from "../stories/story-content.repository";
 import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import type { Draft2SessionRow } from "@/db/schema";
 
@@ -110,7 +110,7 @@ async function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption |
   return {
     imagesRunId: images.runId, carousel: visual.carousel, focus: visual.focus,
     mentions: confirmedMentions(session.mentions), mentionsVersion, credits: captionCredits(images, session.inventory),
-    sources: captionSourceHosts(await storySourceUrls(session.storyId)),
+    sources: captionSourceHosts(await storySourceCredits(session.storyId)),
     ...(session.caption?.creditsHidden ? { creditsHidden: true as const } : {}),
     ...(session.caption?.sourceHidden ? { sourceHidden: true as const } : {}),
   };

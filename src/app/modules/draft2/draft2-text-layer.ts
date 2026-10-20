@@ -93,8 +93,47 @@ async function bandReading(image: Uint8Array, band: Pick<Box, "left" | "top" | "
   return { mean, spread };
 }
 
+/**
+ * How many cells of an 8 × 5 grid over a region carry lines or edges: a cell
+ * whose pixels change by more than EDGE_STEP CIE points from a neighbour, on
+ * LINE_CELL_SHARE of them or more. A thin line (a dashed carrier, a chain, a
+ * tree's crown) barely moves the band's lightness spread on a small copy, so
+ * it is read here at a larger size, cell by cell.
+ */
+const EDGE_STEP = 10;
+const LINE_CELL_SHARE = 0.04;
+async function lineCells(image: Uint8Array, region: Box): Promise<number> {
+  const COLS = 8, ROWS = 5, WIDTH = 320;
+  const meta = await sharp(Buffer.from(image)).metadata();
+  const left = Math.max(0, Math.round(region.left));
+  const top = Math.max(0, Math.round(region.top));
+  const width = Math.min((meta.width ?? TEXT_CANVAS.width) - left, Math.round(region.width));
+  const height = Math.min((meta.height ?? TEXT_CANVAS.height) - top, Math.round(region.height));
+  if (width < COLS * 2 || height < ROWS * 2) return 0;
+  const scaledHeight = Math.max(ROWS * 2, Math.round((height * WIDTH) / width));
+  const { data, info } = await sharp(Buffer.from(image)).extract({ left, top, width, height }).resize(WIDTH, scaledHeight, { fit: "fill" }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const values = new Float32Array(WIDTH * scaledHeight);
+  for (let at = 0, pixel = 0; at < data.length; at += info.channels, pixel++) values[pixel] = lightness(data[at], data[at + 1], data[at + 2]);
+  const edges = new Array(COLS * ROWS).fill(0);
+  const sizes = new Array(COLS * ROWS).fill(0);
+  for (let y = 0; y < scaledHeight - 1; y++) for (let x = 0; x < WIDTH - 1; x++) {
+    const cell = Math.min(COLS - 1, Math.floor((x * COLS) / WIDTH)) + COLS * Math.min(ROWS - 1, Math.floor((y * ROWS) / scaledHeight));
+    const here = values[y * WIDTH + x];
+    sizes[cell]++;
+    if (Math.abs(here - values[y * WIDTH + x + 1]) > EDGE_STEP || Math.abs(here - values[(y + 1) * WIDTH + x]) > EDGE_STEP) edges[cell]++;
+  }
+  return edges.filter((count, cell) => sizes[cell] && count / sizes[cell] >= LINE_CELL_SHARE).length;
+}
+
 /** A band this calm (spread in CIE points) carries words with no card behind them; and they need this much contrast with it. */
 const CALM_SPREAD = 14;
+/**
+ * Words set with no card need fewer than this many cells carrying lines
+ * where they go (lineCells): on the seven published carousels measured on
+ * 2026-10-20, the words that a chain, a dashed line, a clock or a tree's crown
+ * crossed had 2 to 15; the ones on a clean field, 0 or 1.
+ */
+const BUSY_CELLS = 2;
 const PLAIN_CONTRAST = 45;
 /** The padding inside a card or a band, and the gap between the headline and the text. */
 const PANEL_PADDING = 32;
@@ -325,29 +364,39 @@ export async function autoWordsLayout({ image, words, band, palette, style = DEF
   const reading = await bandReading(image, band);
   const inkContrast = Math.abs(reading.mean - (colorLightness(palette.ink) ?? 0));
   const paperContrast = Math.abs(reading.mean - (colorLightness(palette.paper) ?? 100));
-  const plain = reading.spread <= CALM_SPREAD && Math.max(inkContrast, paperContrast) >= PLAIN_CONTRAST;
-  const color = plain ? (inkContrast >= paperContrast ? palette.ink : palette.paper) : palette.ink;
-  const background: Draft2WordsLayout["background"] = plain ? { kind: "none", color: palette.paper, opacity: 0.92 } : { kind: "card", color: palette.paper, opacity: 0.92 };
-  const padding = plain ? 0 : PANEL_PADDING;
+  const calm = reading.spread <= CALM_SPREAD && Math.max(inkContrast, paperContrast) >= PLAIN_CONTRAST;
   const ctx = createCanvas(16, 16).getContext("2d");
   const textStyle = textStyleFor(style, words.text);
-  const data = style.data ? { mark: { weight: brandFontChoice({ font: textStyle.font, weight: style.data.weight }, textStyle).weight, color }, data: true as const } : {};
   const marked = style.data ? markData(words.text, places) : words.text;
-  let layout: Draft2WordsLayout = {
-    box: { left: band.left, top: band.top, width: band.width }, align: "left",
-    headline: { ...style.headline, size: cover ? 88 : 66, color }, text: { ...textStyle, size: cover ? 40 : 38, color, ...data }, background,
-    ...(marked !== words.text ? { setAs: { text: marked } } : {}),
-  };
-  for (let scale = 1; scale >= 0.55; scale -= 0.05) {
-    const sized: Draft2WordsLayout = { ...layout, headline: { ...layout.headline, size: Math.round((cover ? 88 : 66) * scale) }, text: { ...layout.text, size: Math.round((cover ? 40 : 38) * scale) } };
-    const height = blocksHeight(blocks(ctx, words, sized, band.width - padding * 2), Math.round(sized.text.size * BLOCK_GAP)) + padding * 2;
-    layout = sized;
-    if (height <= band.height) {
-      if (band.edge === "bottom") layout = { ...layout, box: { ...layout.box, top: band.top + band.height - height } };
-      break;
+  /** The words with no card (plain) or on a card, sized to fit the band, and how tall the block is. */
+  const layoutFor = (plain: boolean): { layout: Draft2WordsLayout; height: number } => {
+    const color = plain ? (inkContrast >= paperContrast ? palette.ink : palette.paper) : palette.ink;
+    const background: Draft2WordsLayout["background"] = plain ? { kind: "none", color: palette.paper, opacity: 0.92 } : { kind: "card", color: palette.paper, opacity: 0.92 };
+    const padding = plain ? 0 : PANEL_PADDING;
+    const data = style.data ? { mark: { weight: brandFontChoice({ font: textStyle.font, weight: style.data.weight }, textStyle).weight, color }, data: true as const } : {};
+    let layout: Draft2WordsLayout = {
+      box: { left: band.left, top: band.top, width: band.width }, align: "left",
+      headline: { ...style.headline, size: cover ? 88 : 66, color }, text: { ...textStyle, size: cover ? 40 : 38, color, ...data }, background,
+      ...(marked !== words.text ? { setAs: { text: marked } } : {}),
+    };
+    let height = band.height;
+    for (let scale = 1; scale >= 0.55; scale -= 0.05) {
+      const sized: Draft2WordsLayout = { ...layout, headline: { ...layout.headline, size: Math.round((cover ? 88 : 66) * scale) }, text: { ...layout.text, size: Math.round((cover ? 40 : 38) * scale) } };
+      height = blocksHeight(blocks(ctx, words, sized, band.width - padding * 2), Math.round(sized.text.size * BLOCK_GAP)) + padding * 2;
+      layout = sized;
+      if (height <= band.height) {
+        if (band.edge === "bottom") layout = { ...layout, box: { ...layout.box, top: band.top + band.height - height } };
+        break;
+      }
     }
+    return { layout, height: Math.min(height, band.height) };
+  };
+  // A calm band still gets a card when lines cross where the words go (a chain, a dashed line, a tree's crown): the spread misses them.
+  if (calm) {
+    const plain = layoutFor(true);
+    if (await lineCells(image, { left: band.left, top: plain.layout.box.top, width: band.width, height: plain.height }) < BUSY_CELLS) return plain.layout;
   }
-  return layout;
+  return layoutFor(false).layout;
 }
 
 /**

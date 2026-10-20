@@ -261,6 +261,9 @@ export type DeliveryFileTarget = {
   objectKey: string;
   contentType: string;
   disposition: "ok" | "gone";
+  /** The frozen JPEG's size and SHA-256, so the delivery serves exactly the bytes that were frozen, never fewer. */
+  byteSize: number;
+  sha256: string;
 };
 
 /**
@@ -278,6 +281,8 @@ export async function resolveDeliveryFile(
       objectKey: instagramDeliveryFiles.objectKey,
       contentType: instagramDeliveryFiles.contentType,
       expiresAt: instagramDeliveryFiles.expiresAt,
+      byteSize: instagramDeliveryFiles.byteSize,
+      sha256: instagramDeliveryFiles.sha256,
       packageStatus: instagramPublicationPackages.status,
     })
     .from(instagramDeliveryFiles)
@@ -294,6 +299,8 @@ export async function resolveDeliveryFile(
     objectKey: row.objectKey,
     contentType: row.contentType,
     disposition: gone ? "gone" : "ok",
+    byteSize: row.byteSize,
+    sha256: row.sha256,
   };
 }
 

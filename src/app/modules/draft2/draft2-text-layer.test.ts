@@ -157,3 +157,15 @@ test("the text set apart: the headline in its box, the text in its own with its 
   assert.ok(await pixelsOf(set, { left: 120, top: 1000, width: 840, height: 60 }, [0xf6, 0xf0, 0xe4]) > 5_000, "the text's own card");
   assert.equal(await pixelsOf(set, { left: 0, top: 64, width: 60, height: 200 }, [0xf6, 0xf0, 0xe4]), 0, "no card behind the headline");
 });
+
+test("a calm band still takes a card when a thin line crosses where the words go (a chain, a dashed carrier, a tree's crown), which the band's lightness spread misses; a clean field keeps the words with no card", async () => {
+  const { autoWordsLayout } = await import("./draft2-text-layer");
+  const cream = "#F6F0E4";
+  const words = { headline: "Des jeux conçus avec des parents", text: "La Ville s'est entourée de parents d'enfants handicapés et de partenaires de la santé." };
+  const palette = { ink: "#253746", paper: cream };
+  const field = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#E9DFC8" } }).png().toBuffer());
+  assert.equal((await autoWordsLayout({ image: field, words, band: textBandFor({}), palette })).background.kind, "none", "a clean field");
+  const line = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><path d="M 80 120 C 400 260, 700 60, 1000 300" stroke="#2A2A2A" stroke-width="6" stroke-dasharray="18 12" fill="none"/><line x1="860" y1="0" x2="860" y2="600" stroke="#3A3A3A" stroke-width="4"/></svg>`;
+  const crossed = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#E9DFC8" } }).composite([{ input: Buffer.from(line) }]).png().toBuffer());
+  assert.equal((await autoWordsLayout({ image: crossed, words, band: textBandFor({}), palette })).background.kind, "card", "a dashed line and a chain through the words");
+});

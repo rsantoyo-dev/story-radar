@@ -168,3 +168,20 @@ test("each deck slide carries the facts its spine beat rests on, the middle beat
   assert.match(mechanicalDeckIssues([deck("c1")], facts, { opening, closing, shape: arc, emojis: 2, beats })[0].detail, /^Deck slide 2 leaves out the facts its beat rests on: f2 \(A DOD official says awards took less than a week\.\); f3 \(Startups can apply without a past contract\.\)\. State at least 2 of the beat's 3, and cite them\.$/);
   assert.deepEqual(findings(deck("c1"), { beats: [["f1"], ["f4", "f2"]] }), [], "a beat of two needs one");
 });
+
+test("a figure is said on two slides of the carousel at most: a deck slide stating one the opening and the closing already state is a finding (canada en breve's \"without gas, 2.2%\" ran three times)", async () => {
+  const { figuresIn } = await import("./draft2-deck.types");
+  assert.deepEqual(figuresIn("Sin gasolina, la inflación fue 2,2 %. El súper subió 1.7% y la gasolina $60."), ["2.2%", "1.7%", "60$"]);
+  assert.deepEqual(figuresIn("Le 21 octobre 2026, de 15 h à 18 h, 4 cases"), [], "a date, a time or a count is not a figure");
+  const inflation: Draft2Fact = { id: "f6", claim: "Without gasoline, inflation was 2.2% in September.", evidence: "2.2%", kind: "event", status: "established", importance: 90 };
+  const withFigure: Draft2ClosingOpening = { ...opening, slide2: { headline: "Without gas, 2.2%", body: "Without gasoline, inflation was 2.2% in September.", factIds: ["f6"] } };
+  const closingWithFigure: Draft2DeckClosing = { ...closing, last: { ...closing.last, body: "Without gasoline it was 2.2%: read each line, not only the headline.", factIds: ["f6"] } };
+  const [first, second, third] = deck("c1").slides;
+  const again = slide("Gas pushed the number", "Without gasoline, the index rose 2.2% instead.", ["f6"]);
+  const issues = mechanicalDeckIssues([deck("c1", [first, again, third])], [...facts, inflation], { opening: withFigure, closing: closingWithFigure, shape: arc, emojis: 2 }).filter((issue) => issue.code === "RESTATES_FIGURE");
+  assert.deepEqual(issues.map((issue) => issue.part), ["s2"]);
+  assert.match(issues[0].detail, /2\.2% \(also on slide 2 and the last slide\)/);
+  const twice = mechanicalDeckIssues([deck("c1", [first, again, third])], [...facts, inflation], { opening: withFigure, closing, shape: arc, emojis: 2 }).filter((issue) => issue.code === "RESTATES_FIGURE");
+  assert.deepEqual(twice, [], "on two slides, where it lands and where it pays off, it stands");
+  void second;
+});
