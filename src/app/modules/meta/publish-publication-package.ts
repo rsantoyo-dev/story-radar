@@ -3,7 +3,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 
 import { after } from "next/server";
-import { and, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -21,6 +21,8 @@ import {
 import {
   PublicationJobConflictError,
   releasedUncertainError,
+  SCHEDULE_EXPIRY_MARGIN_MS,
+  schedulePublishAt,
   UNRESOLVED_SEND_STATUSES,
   unresolvedSendMessage,
   unresolvedSendsTo,
@@ -183,6 +185,7 @@ function mapJobRow(row: JobDbRow): PublicationJobRow {
     lastError: row.lastError,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
+    publishAt: row.publishAt,
   };
 }
 
@@ -226,13 +229,17 @@ async function loadJobRow(jobId: string): Promise<JobDbRow> {
 /**
  * Creates (or returns the existing) publish order for a frozen package and kicks
  * its first pass. Idempotent: a double click, a retry and a concurrent request
- * converge on one row via the unique `idempotency_key`.
+ * converge on one row via the unique `idempotency_key`. With `publishAt` the
+ * order is scheduled instead: it waits as `scheduled` (no worker step touches
+ * it) until promoteDueScheduledJobs queues it at that time, and its package and
+ * delivery links are kept valid until then (keepPackageUntil).
  */
 export async function requestPublishNow(
   topicId: string,
   draftId: string,
   packageId: string,
   retryJobId?: string,
+  { publishAt: requestedPublishAt }: { publishAt?: unknown } = {},
 ): Promise<PublicationJobView> {
   const [pkg] = await db
     .select()
@@ -266,6 +273,8 @@ export async function requestPublishNow(
   if (pkg.status !== "frozen" || pkg.expiresAt.getTime() <= Date.now()) {
     throw new PublicationJobConflictError("The package is stale, consumed or expired. Validate and freeze again.");
   }
+  const publishAt = schedulePublishAt(requestedPublishAt, { now: new Date(), frozenAt: pkg.createdAt });
+  if (publishAt && retryJobId) throw new PublicationJobConflictError("A retry publishes now; schedule a new order instead.");
   const destination = await getChannelPublicationDestination(topicId, channel);
   if (destination.igUserId !== pkg.igUserId || (destination.pageId ?? null) !== (channel === "instagram-direct" ? null : pkg.pageId) ||
       destination.connectionVersion !== pkg.connectionVersion) {
@@ -295,8 +304,10 @@ export async function requestPublishNow(
       batchId: pkg.batchId,
       packageId,
       idempotencyKey: key,
-      status: "queued",
-      startedAt: now,
+      // A scheduled order starts its delivery window when it is promoted, not now.
+      status: publishAt ? "scheduled" : "queued",
+      startedAt: publishAt ? null : now,
+      publishAt: publishAt ?? null,
       mediaType: pkg.mediaType,
       igUserId: destination.igUserId,
       channel,
@@ -332,15 +343,81 @@ export async function requestPublishNow(
         (row.createdAt.getTime() === job.createdAt.getTime() && row.id < job.id));
     if (competing.length) {
       await db.delete(instagramPublicationJobs)
-        .where(and(eq(instagramPublicationJobs.id, job.id), eq(instagramPublicationJobs.status, "queued"), isNull(instagramPublicationJobs.leaseOwner)));
+        .where(and(eq(instagramPublicationJobs.id, job.id), inArray(instagramPublicationJobs.status, ["queued", "scheduled"]), isNull(instagramPublicationJobs.leaseOwner)));
       throw new PublicationJobConflictError(unresolvedSendMessage(publicationPlatformLabel(channel)));
     }
   }
 
-  if (job.status !== "published" && job.status !== "suspended") {
+  if (job.status === "scheduled" && job.publishAt) {
+    // The package and its delivery links (24 hours from the freeze) must outlive the wait.
+    await keepPackageUntil(job.packageId, new Date(job.publishAt.getTime() + SCHEDULE_EXPIRY_MARGIN_MS));
+  } else if (job.status !== "published" && job.status !== "suspended") {
     after(() => advancePublicationJob(job.id));
   }
   return toPublicationJobView(mapJobRow(job), maxAttempts());
+}
+
+/** Extends a frozen package and its delivery files to `until`, never shortening them; the content stays exactly as frozen. */
+async function keepPackageUntil(packageId: string, until: Date): Promise<void> {
+  await db.update(instagramPublicationPackages)
+    .set({ expiresAt: until, updatedAt: new Date() })
+    .where(and(eq(instagramPublicationPackages.id, packageId), eq(instagramPublicationPackages.status, "frozen"), lt(instagramPublicationPackages.expiresAt, until)));
+  await db.update(instagramDeliveryFiles)
+    .set({ expiresAt: until })
+    .where(and(eq(instagramDeliveryFiles.packageId, packageId), lt(instagramDeliveryFiles.expiresAt, until)));
+}
+
+/**
+ * Queues every scheduled order whose time has come (or only `jobIds`, for a
+ * read of them), starting its delivery window now; the ordinary passes then
+ * run it. Returns the queued ids. A worker on code that predates scheduling
+ * never selects a `scheduled` row, so an order cannot go out early.
+ */
+export async function promoteDueScheduledJobs(jobIds?: readonly string[]): Promise<string[]> {
+  if (jobIds && !jobIds.length) return [];
+  const now = new Date();
+  const rows = await db.update(instagramPublicationJobs)
+    .set({ status: "queued", startedAt: now, updatedAt: now, leaseOwner: null, leaseUntil: null })
+    .where(and(
+      eq(instagramPublicationJobs.status, "scheduled"),
+      lte(instagramPublicationJobs.publishAt, now),
+      isNull(instagramPublicationJobs.leaseOwner),
+      ...(jobIds ? [inArray(instagramPublicationJobs.id, [...jobIds])] : []),
+    ))
+    .returning({ id: instagramPublicationJobs.id });
+  return rows.map((row) => row.id);
+}
+
+/** The editor withdraws a scheduled order before its time: nothing was sent, so the row goes and the package may be sent or scheduled again. */
+export async function cancelScheduledPublicationJob(topicId: string, draftId: string, jobId: string): Promise<void> {
+  const [cancelled] = await db.delete(instagramPublicationJobs)
+    .where(and(
+      eq(instagramPublicationJobs.id, jobId),
+      eq(instagramPublicationJobs.topicId, topicId),
+      eq(instagramPublicationJobs.draftId, draftId),
+      eq(instagramPublicationJobs.status, "scheduled"),
+      isNull(instagramPublicationJobs.leaseOwner),
+    ))
+    .returning({ id: instagramPublicationJobs.id });
+  if (!cancelled) throw new PublicationJobConflictError("Only an order still waiting for its time can be cancelled; this one is already publishing or done.");
+}
+
+/** The editor sends a scheduled order now instead of at its time. */
+export async function publishScheduledNow(topicId: string, draftId: string, jobId: string): Promise<PublicationJobView> {
+  const now = new Date();
+  const [queued] = await db.update(instagramPublicationJobs)
+    .set({ status: "queued", publishAt: now, startedAt: now, updatedAt: now })
+    .where(and(
+      eq(instagramPublicationJobs.id, jobId),
+      eq(instagramPublicationJobs.topicId, topicId),
+      eq(instagramPublicationJobs.draftId, draftId),
+      eq(instagramPublicationJobs.status, "scheduled"),
+      isNull(instagramPublicationJobs.leaseOwner),
+    ))
+    .returning();
+  if (!queued) throw new PublicationJobConflictError("This order is no longer waiting for its time.");
+  after(() => advancePublicationJob(queued.id));
+  return toPublicationJobView(mapJobRow(queued), maxAttempts());
 }
 
 function unresolvedSendRows(topicId: string, draftId: string) {
@@ -442,6 +519,8 @@ export async function advancePublicationJob(jobId: string): Promise<void> {
 
 /** Called by a supervised worker/cron, independently of browser reads. Oldest updates first for fairness. */
 export async function resumePublicationJobs(): Promise<{ selected: number }> {
+  // Scheduled orders whose time has come join the queue first, so this pass can start them.
+  await promoteDueScheduledJobs();
   const rows = await db.select({ id: instagramPublicationJobs.id }).from(instagramPublicationJobs)
     .where(and(runnableJob(), leaseAvailable())).orderBy(instagramPublicationJobs.updatedAt).limit(4);
   const outcomes = await Promise.allSettled(rows.map(row => advancePublicationJob(row.id)));
@@ -667,7 +746,11 @@ async function buildDependencies(
 
 function reconcileOnRead(rows: JobDbRow[]): void {
   const now = Date.now();
+  // A scheduled order read after its time is queued and started now, without waiting for the worker's next pass.
+  const due = rows.filter((row) => row.status === "scheduled" && row.publishAt && row.publishAt.getTime() <= now).map((row) => row.id);
+  if (due.length) after(async () => { for (const id of await promoteDueScheduledJobs(due)) await advancePublicationJob(id); });
   for (const row of rows) {
+    if (row.status === "scheduled") continue;
     const stale =
       !isTerminalPublicationJobStatus(row.status as PublicationJobStatus) &&
       (!row.leaseUntil || row.leaseUntil.getTime() < now);

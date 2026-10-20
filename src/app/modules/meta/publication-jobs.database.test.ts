@@ -363,3 +363,52 @@ test("a send still being confirmed blocks other versions and cannot be marked as
     assert.equal((await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg)).id, first.id);
   } finally { await h.client.close(); }
 });
+
+test("a scheduled order waits until its time with its package and delivery links kept valid, then the worker publishes it once; before that it can be sent now or cancelled", async () => {
+  const h = await setup();
+  try {
+    const at = new Date(Date.now() + 3 * 86_400_000);
+    const job = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: at.toISOString() });
+    assert.deepEqual([job.status, job.publishAt, job.startedAt, h.calls.after], ["scheduled", at.toISOString(), null, 0], "no pass is kicked, and the delivery window has not started");
+    const keptUntil = at.getTime() + core.SCHEDULE_EXPIRY_MARGIN_MS;
+    const [pkg] = await h.db.select().from(schema.instagramPublicationPackages);
+    assert.equal(pkg.expiresAt.getTime(), keptUntil, "the 24-hour package outlives the wait");
+    assert.ok((await h.db.select().from(schema.instagramDeliveryFiles)).every((file) => file.expiresAt.getTime() === keptUntil), "and so do its delivery links");
+    await h.step(); await h.step();
+    assert.deepEqual([(await h.row()).status, h.calls.create, h.calls.publish], ["scheduled", 0, 0], "the worker's passes leave it alone before its time");
+    assert.equal((await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg)).status, "scheduled", "a second request for the same post is the same scheduled order");
+    await h.client.exec("UPDATE instagram_publication_jobs SET publish_at = now() - interval '1 minute'");
+    await h.finish();
+    assert.deepEqual([(await h.row()).status, h.calls.publish], ["published", 1], "its time came: queued by the worker, published once");
+  } finally {
+    await h.client.close();
+  }
+});
+
+test("a scheduled order is cancelled without a trace of a send and can be scheduled again; sent now, it publishes through the ordinary passes; the window is checked", async () => {
+  const h = await setup();
+  try {
+    const at = new Date(Date.now() + 86_400_000).toISOString();
+    const first = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: at });
+    await h.repo.cancelScheduledPublicationJob(ids.topic, ids.draft, first.id);
+    assert.equal((await h.db.select().from(schema.instagramPublicationJobs)).length, 0, "nothing was sent: the order goes");
+    await assert.rejects(h.repo.cancelScheduledPublicationJob(ids.topic, ids.draft, first.id), /Only an order still waiting for its time can be cancelled/);
+    const again = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: at });
+    const now = await h.repo.publishScheduledNow(ids.topic, ids.draft, again.id);
+    assert.equal(now.status, "queued");
+    await h.finish();
+    assert.deepEqual([(await h.row()).status, h.calls.publish], ["published", 1]);
+    await assert.rejects(h.repo.publishScheduledNow(ids.topic, ids.draft, again.id), /no longer waiting/);
+  } finally {
+    await h.client.close();
+  }
+  const late = await setup();
+  try {
+    await assert.rejects(late.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: new Date(Date.now() + 7 * 86_400_000).toISOString() }), /at most 6 days ahead/);
+    await assert.rejects(late.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: new Date(Date.now() + 60_000).toISOString() }), /at least 5 minutes from now/);
+    await assert.rejects(late.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, undefined, { publishAt: "tomorrow-ish" }), /valid publication time/);
+    assert.equal((await late.db.select().from(schema.instagramPublicationJobs)).length, 0, "a refused time opens no order");
+  } finally {
+    await late.client.close();
+  }
+});

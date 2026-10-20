@@ -84,6 +84,12 @@ export const instagramPublicationJobs = pgTable(
     lastError: text("last_error"),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
     finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
+    /**
+     * When a scheduled order publishes (status `scheduled`): the worker promotes
+     * it to `queued` once this time has come, and it then runs as any order.
+     * Null for an order sent at once.
+     */
+    publishAt: timestamp("publish_at", { withTimezone: true, mode: "date" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -104,11 +110,12 @@ export const instagramPublicationJobs = pgTable(
       table.leaseUntil,
     ),
     index("instagram_publication_jobs_package_idx").on(table.packageId),
+    index("instagram_publication_jobs_schedule_idx").on(table.status, table.publishAt),
     check(
       "instagram_publication_jobs_values_check",
       sql`${table.attempts} >= 0
         AND ${table.status} IN (
-          'queued', 'preparing', 'creating-containers', 'containers-ready',
+          'scheduled', 'queued', 'preparing', 'creating-containers', 'containers-ready',
           'publishing', 'pending-confirmation', 'published', 'failed', 'suspended'
         )
         AND (${table.mediaType} IS NULL OR ${table.mediaType} IN ('image', 'carousel'))
@@ -131,6 +138,10 @@ export const instagramPublicationJobs = pgTable(
       "instagram_publication_jobs_channel_check",
       sql`${table.channel} IN ('instagram-direct', 'instagram-page', 'facebook-page')
         AND (${table.channel} = 'instagram-direct' OR ${table.pageId} IS NOT NULL)`,
+    ),
+    check(
+      "instagram_publication_jobs_schedule_check",
+      sql`${table.status} <> 'scheduled' OR ${table.publishAt} IS NOT NULL`,
     ),
     check(
       "instagram_publication_jobs_dates_check",

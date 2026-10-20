@@ -26,6 +26,8 @@ export const MAX_JOB_AGE_MS = 30 * 60_000;
 export const MAX_ATTEMPTS = 4;
 
 export type PublicationJobStatus =
+  /** Waiting for its publication time (publishAt); no worker step touches it until it is promoted to queued. */
+  | "scheduled"
   | "queued"
   | "preparing"
   | "creating-containers"
@@ -82,6 +84,8 @@ export type PublicationJobRow = {
   lastError: string | null;
   startedAt: Date | null;
   finishedAt: Date | null;
+  /** When a scheduled order publishes; null for an order sent at once. */
+  publishAt?: Date | null;
 };
 
 export type PublicationJobPatch = Partial<{
@@ -133,6 +137,8 @@ export type PublicationJobView = {
   lastError: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  /** When a scheduled order publishes (ISO); null for an order sent at once. */
+  publishAt: string | null;
 };
 
 export type PublishJobDependencies = {
@@ -201,12 +207,38 @@ export function toPublicationJobView(row: PublicationJobRow, maxAttempts = MAX_A
     lastError: row.lastError,
     startedAt: row.startedAt ? row.startedAt.toISOString() : null,
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+    publishAt: row.publishAt ? row.publishAt.toISOString() : null,
   };
+}
+
+/** A scheduled order publishes at least this far ahead: time to cancel, and to the worker's next pass. */
+export const SCHEDULE_MIN_LEAD_MS = 5 * 60_000;
+/**
+ * At most this far after the package was frozen: its delivery JPEGs sit in R2's
+ * seven-day retention class (r2-retention.ts) until published, so six days
+ * leaves a day's margin before the files could be deleted.
+ */
+export const SCHEDULE_MAX_AHEAD_MS = 6 * 24 * 60 * 60_000;
+/** How long past its publication time a scheduled package and its delivery links stay valid, for a late worker pass and its retries. */
+export const SCHEDULE_EXPIRY_MARGIN_MS = 2 * 60 * 60_000;
+
+/**
+ * The publication time an editor asked for, checked: a valid instant at least
+ * SCHEDULE_MIN_LEAD_MS from now and at most SCHEDULE_MAX_AHEAD_MS after the
+ * package was frozen. Undefined when no time was given (publish now).
+ */
+export function schedulePublishAt(value: unknown, { now, frozenAt }: { now: Date; frozenAt: Date }): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const at = typeof value === "string" ? new Date(value) : undefined;
+  if (!at || !Number.isFinite(at.getTime())) throw new PublicationJobConflictError("Choose a valid publication time.");
+  if (at.getTime() < now.getTime() + SCHEDULE_MIN_LEAD_MS) throw new PublicationJobConflictError("Choose a time at least 5 minutes from now, or publish now.");
+  if (at.getTime() > frozenAt.getTime() + SCHEDULE_MAX_AHEAD_MS) throw new PublicationJobConflictError("A post can be scheduled at most 6 days ahead: its prepared images are kept a week.");
+  return at;
 }
 
 /** A send may be in flight, or its outcome is still being checked. */
 export const UNRESOLVED_SEND_STATUSES = [
-  "queued", "preparing", "creating-containers", "containers-ready", "publishing", "pending-confirmation",
+  "scheduled", "queued", "preparing", "creating-containers", "containers-ready", "publishing", "pending-confirmation",
 ] as const satisfies readonly PublicationJobStatus[];
 
 export type SendDestinationRow = {
@@ -278,7 +310,8 @@ export function publicationRetryPatch(row: PublicationJobRow, maxAttempts = MAX_
 /** One bounded step per claim. The independent worker resumes the persisted state. */
 export async function runPublishPublicationJob(deps: PublishJobDependencies): Promise<PublicationJobView> {
   let row = await deps.loadJob();
-  if (row.status === "failed" || row.status === "suspended") return toPublicationJobView(row);
+  // A scheduled order waits for its promotion to queued (promoteDueScheduledJobs); a terminal one is done.
+  if (row.status === "scheduled" || row.status === "failed" || row.status === "suspended") return toPublicationJobView(row);
   const pkg = await deps.loadPackage();
   try {
     // A known media id means ONLY local repair, even after expiry or reconnection.

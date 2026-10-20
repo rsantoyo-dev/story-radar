@@ -14,6 +14,7 @@ import {
   isUnresolvedSend,
   PublicationJobLeaseLostError,
   releasedUncertainError,
+  schedulePublishAt,
   unresolvedSendsTo,
   type ContainerStatusCode,
   type FrozenPackageForPublish,
@@ -494,4 +495,27 @@ test("a released order records who checked, when, and after how many attempts", 
     releasedUncertainError("Instagram", 2, new Date("2026-10-07T15:04:30Z")),
     "An editor checked Instagram on 2026-10-07 15:04 UTC and confirmed this post was not published (after 2 attempts). It can be published again.",
   );
+});
+
+test("a scheduled order is an unsettled send (no second send of the draft to that account) and never runs a step: the run returns before reading the package", async () => {
+  const destination = { channel: "instagram-direct" as const, accountId: "1789" };
+  const scheduled = { id: "j1", status: "scheduled", failureKind: null, channel: "instagram-direct", igUserId: "1789", pageId: null, createdAt: new Date() };
+  assert.deepEqual(unresolvedSendsTo([scheduled], destination).map((row) => row.id), ["j1"]);
+  const job = { id: "j1", packageId: "p1", topicId: "t1", status: "scheduled", mediaType: "image", igUserId: "1789", channel: "instagram-direct", pageId: null, connectionVersion: "c", apiVersion: "v21.0",
+    accessState: null, quotaRemaining: null, childContainers: [], parentContainerId: null, publishedMediaId: null, permalink: null, attempts: 0, failureKind: null, lastError: null, startedAt: null, finishedAt: null,
+    publishAt: new Date("2026-10-21T13:00:00.000Z") } as const;
+  const view = await runPublishPublicationJob({ loadJob: async () => job, loadPackage: async () => { throw new Error("a scheduled order must not read its package"); } } as unknown as Parameters<typeof runPublishPublicationJob>[0]);
+  assert.deepEqual([view.status, view.publishAt, view.startedAt], ["scheduled", "2026-10-21T13:00:00.000Z", null]);
+});
+
+test("the schedule window: at least 5 minutes from now, at most 6 days after the freeze (the delivery JPEGs' 7-day class), a valid instant; nothing means now", () => {
+  const now = new Date("2026-10-19T12:00:00.000Z");
+  const frozenAt = new Date("2026-10-19T11:58:00.000Z");
+  assert.equal(schedulePublishAt(undefined, { now, frozenAt }), undefined);
+  assert.equal(schedulePublishAt("", { now, frozenAt }), undefined);
+  assert.equal(schedulePublishAt("2026-10-21T13:00:00.000Z", { now, frozenAt })?.toISOString(), "2026-10-21T13:00:00.000Z");
+  assert.throws(() => schedulePublishAt("2026-10-19T12:04:00.000Z", { now, frozenAt }), /at least 5 minutes/);
+  assert.throws(() => schedulePublishAt("2026-10-25T12:00:00.000Z", { now, frozenAt }), /at most 6 days ahead/);
+  assert.throws(() => schedulePublishAt("not a date", { now, frozenAt }), /valid publication time/);
+  assert.throws(() => schedulePublishAt(1_760_000_000_000, { now, frozenAt }), /valid publication time/, "an ISO string only");
 });

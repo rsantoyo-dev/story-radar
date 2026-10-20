@@ -4,8 +4,10 @@ import {
   topicRequestErrorResponse,
 } from "@/app/api/radar/radar-topic";
 import {
+  cancelScheduledPublicationJob,
   getPublicationJob,
   listPublicationJobs,
+  publishScheduledNow,
   releaseUncertainPublicationJob,
   requestPublishNow,
 } from "@/app/modules/meta/publish-publication-package";
@@ -36,7 +38,7 @@ export async function POST(request: Request, context: Context) {
   if (!draftId) return noStoreJson({ error: "draftId must be a valid UUID" }, 400);
 
   try {
-    const body = (await request.json()) as { packageId?: unknown; retryJobId?: unknown };
+    const body = (await request.json()) as { packageId?: unknown; retryJobId?: unknown; publishAt?: unknown };
     if (typeof body.packageId !== "string" || !UUID_PATTERN.test(body.packageId)) {
       return noStoreJson({ error: "packageId must be a valid UUID" }, 400);
     }
@@ -44,10 +46,11 @@ export async function POST(request: Request, context: Context) {
       return noStoreJson({ error: "retryJobId must be a valid UUID" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
-    const job = await requestPublishNow(topicId, draftId, body.packageId, body.retryJobId as string | undefined);
+    // publishAt (ISO) schedules the order instead of sending it now.
+    const job = await requestPublishNow(topicId, draftId, body.packageId, body.retryJobId as string | undefined, { publishAt: body.publishAt });
     recordAuditEventLater({
-      action: "publication.publish.requested", entityType: "publication_package", entityId: body.packageId, topicId,
-      details: { draftId, retryJobId: body.retryJobId ?? null, jobId: job.id, status: job.status },
+      action: job.status === "scheduled" ? "publication.publish.scheduled" : "publication.publish.requested", entityType: "publication_package", entityId: body.packageId, topicId,
+      details: { draftId, retryJobId: body.retryJobId ?? null, jobId: job.id, status: job.status, publishAt: job.publishAt },
     });
     return noStoreJson({ job }, 202);
   } catch (error) {
@@ -85,7 +88,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-/** An editor checked the platform: the uncertain order did not post. */
+/** An editor checked the platform (the uncertain order did not post), or cancels or sends now an order still waiting for its time. */
 export async function PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
@@ -97,10 +100,20 @@ export async function PATCH(request: Request, context: Context) {
     if (typeof body.jobId !== "string" || !UUID_PATTERN.test(body.jobId)) {
       return noStoreJson({ error: "jobId must be a valid UUID" }, 400);
     }
-    if (body.action !== "confirm-not-published") {
-      return noStoreJson({ error: "action must be confirm-not-published" }, 400);
+    if (body.action !== "confirm-not-published" && body.action !== "cancel-schedule" && body.action !== "publish-now") {
+      return noStoreJson({ error: "action must be confirm-not-published, cancel-schedule or publish-now" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
+    if (body.action === "cancel-schedule") {
+      await cancelScheduledPublicationJob(topicId, draftId, body.jobId);
+      recordAuditEventLater({ action: "publication.schedule.cancelled", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
+      return noStoreJson({ cancelled: true });
+    }
+    if (body.action === "publish-now") {
+      const job = await publishScheduledNow(topicId, draftId, body.jobId);
+      recordAuditEventLater({ action: "publication.schedule.published_now", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
+      return noStoreJson({ job });
+    }
     const job = await releaseUncertainPublicationJob(topicId, draftId, body.jobId);
     recordAuditEventLater({ action: "publication.job.confirmed_not_published", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
     return noStoreJson({ job });

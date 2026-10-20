@@ -4,18 +4,25 @@ import { useEffect, useRef, useState } from "react";
 
 import { PUBLICATION_CHANNEL_LABELS, type PublicationChannel } from "./modules/meta/publication-channel";
 import { useConnectedPublicationChannels, type ChannelOption } from "./publication-channels-panel";
+import { scheduleInputBounds, scheduleLabel } from "./run-publish-schedule.core";
+import { Button } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
 
 type FrozenPackage = { id: string; caption: string; hashtags: string[]; slides: unknown[] };
-type JobView = { id: string; status: string; permalink?: string | null; lastError?: string | null; canRetry?: boolean };
+type JobView = { id: string; status: string; permalink?: string | null; lastError?: string | null; canRetry?: boolean; publishAt?: string | null };
 type Outcome = { channel: PublicationChannel; job?: JobView; error?: string };
 
 const TERMINAL = new Set(["published", "failed", "suspended"]);
+/** How often the page reads a scheduled order again: the server publishes it at its time; this only shows the change. */
+const SCHEDULED_REFRESH_MS = 60_000;
 
 /**
  * Publish the approved run from Prepare my day: freeze the exact package for
  * each chosen channel, show it for one explicit confirmation, then publish and
- * follow each order. Same server flow as the draft's Publication tab.
+ * follow each order. Same server flow as the draft's Publication tab. The
+ * confirmation can schedule the post instead (2026-10-19): the server keeps
+ * the order and its worker publishes it at that time, page open or not; a
+ * scheduled order can be sent now or cancelled until then.
  */
 export function RunPublishActions({ topicId, draftId, batchId, secret, disabled }: {
   topicId: string; draftId: string; batchId: string; secret: string; disabled?: boolean;
@@ -28,6 +35,10 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
   /** Which channel is being prepared right now, for a clear "nothing is published yet" status. */
   const [preparing, setPreparing] = useState<{ label: string; index: number; total: number }>();
   const preparation = useRef<AbortController | undefined>(undefined);
+  /** "" publishes now; a datetime-local value (the browser's time zone) schedules. */
+  const [scheduleAt, setScheduleAt] = useState("");
+  const [scheduling, setScheduling] = useState(false);
+  const timeZone = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
   /** Each channel's latest published order for this draft, so the panel says where it already went. */
   const [published, setPublished] = useState<Partial<Record<PublicationChannel, JobView>>>({});
   const channelKey = options?.map((option) => option.channel).join(",") ?? "";
@@ -88,11 +99,12 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
 
   async function publish() {
     if (!prepared) return;
+    const publishAt = scheduling && scheduleAt ? new Date(scheduleAt).toISOString() : undefined;
     setBusy(true); setError("");
     const started: Outcome[] = [];
     for (const { option, pkg } of prepared) {
       try {
-        const response = await fetch(url("publication-job", option.channel), { method: "POST", headers, body: JSON.stringify({ packageId: pkg.id }) });
+        const response = await fetch(url("publication-job", option.channel), { method: "POST", headers, body: JSON.stringify({ packageId: pkg.id, ...(publishAt ? { publishAt } : {}) }) });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error || "Could not start publishing");
         started.push({ channel: option.channel, job: body.job });
@@ -102,11 +114,47 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
     }
     setOutcomes(started);
     setPrepared(undefined);
+    setScheduling(false); setScheduleAt("");
     setBusy(false);
   }
 
-  // Follow each order until it is published, failed or suspended; the page drives it while open.
-  const pending = outcomes.filter((o) => o.job && !TERMINAL.has(o.job.status)).map((o) => `${o.channel}:${o.job!.id}`).join(",");
+  /** Sends a scheduled order now, or cancels it (nothing was sent: the post can be published or scheduled again). */
+  async function changeSchedule(outcome: Outcome, action: "publish-now" | "cancel-schedule") {
+    if (!outcome.job) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(url("publication-job", outcome.channel), { method: "PATCH", headers, body: JSON.stringify({ jobId: outcome.job.id, action }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "The scheduled post could not be changed");
+      setOutcomes((current) => action === "cancel-schedule"
+        ? current.filter((entry) => entry.channel !== outcome.channel)
+        : current.map((entry) => entry.channel === outcome.channel ? { ...entry, job: body.job as JobView } : entry));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The scheduled post could not be changed");
+    } finally { setBusy(false); }
+  }
+
+  // Follow each order until it is published, failed or suspended; the page drives it while open. A scheduled order is read once a minute.
+  const pending = outcomes.filter((o) => o.job && !TERMINAL.has(o.job.status) && o.job.status !== "scheduled").map((o) => `${o.channel}:${o.job!.id}`).join(",");
+  const waiting = outcomes.filter((o) => o.job?.status === "scheduled").map((o) => `${o.channel}:${o.job!.id}`).join(",");
+  useEffect(() => {
+    if (!waiting) return;
+    let disposed = false;
+    const timer = setInterval(async () => {
+      const next = await Promise.all(outcomes.map(async (outcome) => {
+        if (outcome.job?.status !== "scheduled") return outcome;
+        try {
+          const response = await fetch(url("publication-job", outcome.channel, `&jobId=${encodeURIComponent(outcome.job.id)}`), { headers, cache: "no-store" });
+          const body = await response.json();
+          return response.ok && body.job ? { ...outcome, job: body.job as JobView } : outcome;
+        } catch { return outcome; }
+      }));
+      if (!disposed) setOutcomes(next);
+    }, SCHEDULED_REFRESH_MS);
+    return () => { disposed = true; clearInterval(timer); };
+    // `waiting` captures exactly which orders are scheduled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
   useEffect(() => {
     if (!pending) return;
     let disposed = false;
@@ -131,6 +179,10 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
   if (!options.length) return <p><small>Connect the topic&rsquo;s Facebook Page or Instagram in Channels to publish from here.</small></p>;
   const working = busy || Boolean(pending);
   const label = (option: ChannelOption) => `${PUBLICATION_CHANNEL_LABELS[option.channel]}${option.accountHint ? ` (${option.accountHint})` : ""}`;
+  // A channel with a post already scheduled offers no second send: change or cancel the scheduled one.
+  const scheduledChannels = new Set(outcomes.filter((o) => o.job?.status === "scheduled").map((o) => o.channel));
+  const sendable = options.filter((option) => !scheduledChannels.has(option.channel));
+  const bounds = scheduleInputBounds(new Date());
 
   return <section className={styles.runPublish} aria-label="Publish">
     <h3>Publish</h3>
@@ -142,24 +194,35 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
       <p>This takes about 30 seconds per channel. Nothing is published until you confirm on the next screen.</p>
       <div className={styles.dailyPlannerActions}><button type="button" className={styles.secondaryButton} onClick={cancelPreparation}>Cancel</button></div>
     </div> : null}
-    {!prepared && !working ? <div className={styles.dailyPlannerActions}>
-      {options.map((option) => <button key={option.channel} type="button" className={styles.secondaryButton} disabled={disabled || working} onClick={() => void prepare([option])}>
+    {!prepared && !working && sendable.length ? <div className={styles.dailyPlannerActions}>
+      {sendable.map((option) => <button key={option.channel} type="button" className={styles.secondaryButton} disabled={disabled || working} onClick={() => void prepare([option])}>
         {published[option.channel] ? "Publish again to" : "Publish to"} {PUBLICATION_CHANNEL_LABELS[option.channel]}
       </button>)}
-      {options.length > 1 ? <button type="button" className={styles.primaryButton} disabled={disabled || working} onClick={() => void prepare(options)}>Publish everywhere</button> : null}
+      {sendable.length > 1 ? <button type="button" className={styles.primaryButton} disabled={disabled || working} onClick={() => void prepare(sendable)}>Publish everywhere</button> : null}
     </div> : prepared ? <div className={styles.runPublishConfirm} role="group" aria-label="Confirm publication">
-      <strong>Publish this exact post now to {prepared.map((p) => label(p.option)).join(" and ")}?</strong>
+      <strong>{scheduling ? "Schedule" : "Publish"} this exact post {scheduling ? "" : "now "}to {prepared.map((p) => label(p.option)).join(" and ")}?</strong>
       <p>{prepared[0].pkg.slides.length} {prepared[0].pkg.slides.length === 1 ? "image" : "images"} · {prepared[0].pkg.caption.length > 280 ? `${prepared[0].pkg.caption.slice(0, 280)}…` : prepared[0].pkg.caption}</p>
       {prepared[0].pkg.hashtags.length ? <p><small>{prepared[0].pkg.hashtags.join(" ")}</small></p> : null}
+      <div role="radiogroup" aria-label="When to publish" className={styles.dailyPlannerActions}>
+        <label><input type="radio" name="publish-when" checked={!scheduling} disabled={busy} onChange={() => setScheduling(false)} /> Publish now</label>
+        <label><input type="radio" name="publish-when" checked={scheduling} disabled={busy} onChange={() => { setScheduling(true); setScheduleAt((current) => current || bounds.suggested); }} /> Schedule for later</label>
+      </div>
+      {scheduling ? <label className={styles.field}><span>Publication time <small>({timeZone})</small></span>
+        <input type="datetime-local" value={scheduleAt} min={bounds.min} max={bounds.max} step={300} disabled={busy} onChange={(event) => setScheduleAt(event.currentTarget.value)} />
+        <small>The server publishes it at this time, within about 5 to 15 minutes, with this page closed. Up to 6 days ahead; it can be sent now or cancelled until then.</small>
+      </label> : null}
       <div className={styles.dailyPlannerActions}>
-        <button type="button" className={styles.primaryButton} disabled={busy} onClick={() => void publish()}>{busy ? "Starting…" : "Confirm publish"}</button>
-        <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => setPrepared(undefined)}>Cancel</button>
+        <button type="button" className={styles.primaryButton} disabled={busy || (scheduling && !scheduleAt)} onClick={() => void publish()}>{busy ? "Starting…" : scheduling ? `Schedule for ${scheduleAt ? scheduleLabel(new Date(scheduleAt).toISOString()) : "…"}` : "Confirm publish"}</button>
+        <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => { setPrepared(undefined); setScheduling(false); setScheduleAt(""); }}>Cancel</button>
       </div>
     </div> : null}
     {error ? <p role="alert" className={styles.runPublishError}>{error}</p> : null}
     {outcomes.length ? <ul className={styles.runPublishResults}>{outcomes.map((outcome) => <li key={outcome.channel} data-status={outcome.error ? "failed" : outcome.job?.status}>
       <strong>{PUBLICATION_CHANNEL_LABELS[outcome.channel]}</strong>{" "}
       {outcome.error ? outcome.error
+        : outcome.job?.status === "scheduled" ? <>Scheduled for {outcome.job.publishAt ? scheduleLabel(outcome.job.publishAt) : "later"}{" "}
+          <Button size="compact" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "publish-now")}>Publish now</Button>{" "}
+          <Button size="compact" variant="quiet" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "cancel-schedule")}>Cancel the scheduled post</Button></>
         : outcome.job?.status === "published" ? <>Published{outcome.job.permalink ? <> · <a href={outcome.job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}</>
         : TERMINAL.has(outcome.job?.status ?? "") ? `${outcome.job?.status === "suspended" ? "Suspended" : "Failed"}: ${outcome.job?.lastError ?? "see the draft's Publication tab"}${outcome.job?.canRetry ? " Retry it from the draft's Publication tab." : ""}`
         : "Publishing… keep this page open."}

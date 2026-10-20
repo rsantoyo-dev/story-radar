@@ -27,6 +27,7 @@ const TERMINAL_JOB_STATUS: PublicationJobStatus[] = [
 
 function jobStatusText(status: PublicationJobStatus, platform: string): string {
   switch (status) {
+    case "scheduled": return "Scheduled";
     case "queued": return "Queued…";
     case "preparing": return "Re-checking access and approvals…";
     case "creating-containers": return `Uploading images to ${platform}…`;
@@ -249,7 +250,8 @@ export function InstagramPublicationCandidatePanel({ topicId, draftId, batchId, 
   const jobId = job?.id;
   const jobStatus = job?.status;
   useEffect(() => {
-    if (!jobId || !jobStatus || TERMINAL_JOB_STATUS.includes(jobStatus)) return;
+    // A scheduled order waits for its time on the server: no need to ask every few seconds.
+    if (!jobId || !jobStatus || TERMINAL_JOB_STATUS.includes(jobStatus) || jobStatus === "scheduled") return;
     let cancelled = false;
     const url = `/api/radar/creative/drafts/${encodeURIComponent(draftId)}/publication-job?topicId=${encodeURIComponent(topicId)}&jobId=${encodeURIComponent(jobId)}`;
     const poll = async () => {
