@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { after } from "next/server";
 import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
@@ -92,6 +93,24 @@ const NON_TERMINAL: PublicationJobStatus[] = [
 ];
 const LEASE_MS = 150_000; // Longer than the 120s request budget, including provider timeouts.
 const STEP_INTERVAL_MS = 5_000;
+/**
+ * How long one worker pass keeps driving an order, step after step, before
+ * it starts no new step (the last one ends well inside the route's 120 s and
+ * the 150 s lease). A carousel takes a dozen steps (one container per image,
+ * each image's status, the parent, the send, the confirmation), and the
+ * GitHub worker "every 5 minutes" ran every 10 to 20: at one step per pass, a
+ * scheduled Salut St-Jean post (2026-10-21) had made two containers when its
+ * 30-minute delivery window closed. The open page drives an order itself.
+ */
+const WORKER_PASS_BUDGET_MS = 75_000;
+/** The pause between two steps that moved the order on. */
+const WORKER_STEP_PAUSE_MS = 1_000;
+
+/** How far one call drives an order: one step (`budgetMs` 0, for a read or a request), or steps until the budget runs out. */
+export type PublicationWorkerPass = { budgetMs?: number; waitMs?: number; pauseMs?: number };
+
+/** What changes when a step moves an order on; the same after a step means Meta is still processing. */
+const progressOf = (row: JobDbRow) => JSON.stringify([row.status, row.childContainers, row.parentContainerId, row.publishedMediaId, row.lastError]);
 
 function configuredInteger(name: string, fallback: number, min: number, max: number): number {
   const value = Number(process.env[name]);
@@ -274,7 +293,6 @@ export async function requestPublishNow(
     throw new PublicationJobConflictError("The package is stale, consumed or expired. Validate and freeze again.");
   }
   const publishAt = schedulePublishAt(requestedPublishAt, { now: new Date(), frozenAt: pkg.createdAt });
-  if (publishAt && retryJobId) throw new PublicationJobConflictError("A retry publishes now; schedule a new order instead.");
   const destination = await getChannelPublicationDestination(topicId, channel);
   if (destination.igUserId !== pkg.igUserId || (destination.pageId ?? null) !== (channel === "instagram-direct" ? null : pkg.pageId) ||
       destination.connectionVersion !== pkg.connectionVersion) {
@@ -285,12 +303,15 @@ export async function requestPublishNow(
     if (existing.status !== "failed" && existing.status !== "suspended") return toPublicationJobView(mapJobRow(existing), maxAttempts());
     await assertNoUnresolvedSend(topicId, draftId, channel, accountId, existing.id);
     const patch = publicationRetryPatch(mapJobRow(existing), maxAttempts());
+    // A retry publishes now, or waits for a new time like any scheduled order (its delivery window starts when it is promoted).
     const [retried] = await db.update(instagramPublicationJobs)
-      .set({ ...patchToColumns(patch), packageId: pkg.id, batchId: pkg.batchId, startedAt: new Date(), leaseOwner: null, leaseUntil: null })
+      .set({ ...patchToColumns(patch), packageId: pkg.id, batchId: pkg.batchId,
+        ...(publishAt ? { status: "scheduled" as const, publishAt, startedAt: null } : { startedAt: new Date() }), leaseOwner: null, leaseUntil: null })
       .where(and(eq(instagramPublicationJobs.id, existing.id), eq(instagramPublicationJobs.status, existing.status),
         eq(instagramPublicationJobs.attempts, existing.attempts)))
       .returning();
-    if (retried) after(() => advancePublicationJob(retried.id));
+    if (retried && publishAt) await keepPackageUntil(pkg.id, new Date(publishAt.getTime() + SCHEDULE_EXPIRY_MARGIN_MS));
+    else if (retried) after(() => advancePublicationJob(retried.id));
     return toPublicationJobView(mapJobRow(retried ?? await loadJobRow(existing.id)), maxAttempts());
   }
   await assertNoUnresolvedSend(topicId, draftId, channel, accountId);
@@ -487,15 +508,28 @@ export async function releaseUncertainPublicationJob(
 }
 
 /** One bounded step, protected by a DB lease. No recursion or sleeping request. */
-export async function advancePublicationJob(jobId: string): Promise<void> {
+export async function advancePublicationJob(jobId: string, { budgetMs = 0, waitMs = STEP_INTERVAL_MS, pauseMs = WORKER_STEP_PAUSE_MS }: PublicationWorkerPass = {}): Promise<void> {
   const owner = randomUUID();
+  const deadline = Date.now() + Math.min(budgetMs, WORKER_PASS_BUDGET_MS);
   const [claimed] = await db.update(instagramPublicationJobs)
     .set({ leaseOwner: owner, leaseUntil: new Date(Date.now() + LEASE_MS), updatedAt: new Date() })
     .where(and(eq(instagramPublicationJobs.id, jobId), runnableJob(), leaseAvailable()))
     .returning({ id: instagramPublicationJobs.id });
   if (!claimed) return;
   try {
-    await runPublishPublicationJob(await buildDependencies(jobId, owner));
+    const dependencies = await buildDependencies(jobId, owner);
+    // Step after step while the lease is ours and the budget lasts: a step that moved the order on is followed
+    // after a short pause, one that found Meta still processing after the usual interval.
+    for (let before = progressOf(await loadJobRow(jobId)); ;) {
+      await runPublishPublicationJob(dependencies);
+      const current = await loadJobRow(jobId);
+      if (isTerminalPublicationJobStatus(current.status as PublicationJobStatus) || current.status === "scheduled" || current.leaseOwner !== owner) break;
+      const progress = progressOf(current);
+      const pause = progress === before ? waitMs : pauseMs;
+      if (Date.now() + pause >= deadline) break;
+      before = progress;
+      await sleep(pause);
+    }
     const [job] = await db
       .select({ status: instagramPublicationJobs.status, packageId: instagramPublicationJobs.packageId })
       .from(instagramPublicationJobs)
@@ -517,13 +551,13 @@ export async function advancePublicationJob(jobId: string): Promise<void> {
   }
 }
 
-/** Called by a supervised worker/cron, independently of browser reads. Oldest updates first for fairness. */
-export async function resumePublicationJobs(): Promise<{ selected: number }> {
+/** Called by a supervised worker/cron, independently of browser reads. Oldest updates first for fairness; each order is driven step after step for one pass's budget. */
+export async function resumePublicationJobs(pass: PublicationWorkerPass = { budgetMs: WORKER_PASS_BUDGET_MS }): Promise<{ selected: number }> {
   // Scheduled orders whose time has come join the queue first, so this pass can start them.
   await promoteDueScheduledJobs();
   const rows = await db.select({ id: instagramPublicationJobs.id }).from(instagramPublicationJobs)
     .where(and(runnableJob(), leaseAvailable())).orderBy(instagramPublicationJobs.updatedAt).limit(4);
-  const outcomes = await Promise.allSettled(rows.map(row => advancePublicationJob(row.id)));
+  const outcomes = await Promise.allSettled(rows.map(row => advancePublicationJob(row.id, pass)));
   if (outcomes.some(outcome => outcome.status === "rejected")) throw new Error("Publication worker step failed");
   return { selected: rows.length };
 }

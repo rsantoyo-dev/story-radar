@@ -59,3 +59,30 @@ needs this code deployed to production**, since the worker calls production.
 
 - Facebook's native scheduling (see above), and so Business Suite's planner.
 - Scheduled posts on the Today board.
+
+## Addendum, 2026-10-21: the worker drives an order to the end
+
+A Salut St-Jean carousel scheduled for 06:00 (Toronto) was never posted. The
+worker promoted both orders on time, but it advanced each order one step per
+pass, and GitHub's "every 5 minutes" ran every 10 to 20: in three passes the
+Instagram order had made two containers and the Facebook one none when their
+30-minute delivery window closed ("The delivery window expired"). An open page
+drives an order every 2.5 seconds, which is why publishing now always worked.
+Then the post could not be sent again: confirming it answered with the stopped
+order, and the only retry button was in v1's Publication tab, removed on
+2026-10-19.
+
+- **One pass drives each order step after step** (`resumePublicationJobs`,
+  75 seconds per pass, then no new step; the route allows 120 and the lease
+  150). A step that moved the order on is followed after one second; one that
+  found Meta still processing a container waits the usual five. A read or a
+  request still drives one step, as before.
+- **Confirming a stopped post retries its order.** When the server answers a
+  publish with an earlier order of the same post that stopped before anything
+  was posted (suspended `invalidated` or a retryable failure, `canRetry`), the
+  Publish screen retries it by name, now or at the new time. An uncertain
+  outcome is never retried here.
+- **A retry may be scheduled.** It waits as `scheduled`, its delivery window
+  starting at promotion, and its package and delivery links are kept until two
+  hours after the new time.
+- The confirmation now says "within about 5 to 20 minutes".

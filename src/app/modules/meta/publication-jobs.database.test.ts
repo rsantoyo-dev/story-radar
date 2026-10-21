@@ -115,7 +115,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
   async function step() {
     // Advance the scheduler clock without real sleeps; still claim through the production SQL.
     await client.exec("UPDATE instagram_publication_jobs SET lease_until=NULL WHERE lease_owner IS NULL");
-    await repo.resumePublicationJobs();
+    await repo.resumePublicationJobs({ budgetMs: 0 });
   }
   async function row() { return (await db.select().from(schema.instagramPublicationJobs))[0]; }
   async function finish() { for (let i = 0; i < 15; i++) { await step(); if (core.isTerminalPublicationJobStatus((await row()).status as core.PublicationJobStatus)) return; } throw new Error("unfinished"); }
@@ -127,7 +127,7 @@ test("concurrent publish requests and independent workers converge on one order 
   try {
     const jobs = await Promise.all([h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg), h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg)]);
     assert.equal(jobs[0].id, jobs[1].id);
-    await Promise.all([h.repo.resumePublicationJobs(), h.repo.resumePublicationJobs()]);
+    await Promise.all([h.repo.resumePublicationJobs({ budgetMs: 0 }), h.repo.resumePublicationJobs({ budgetMs: 0 })]);
     await h.finish();
     assert.equal((await h.row()).status, "published");
     assert.equal(h.calls.publish, 1);
@@ -213,9 +213,9 @@ test("a live lease is skipped and an expired publishing lease is reconciled with
     await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
     await h.db.update(schema.instagramPublicationJobs).set({ status: "publishing", parentContainerId: "1001", startedAt: new Date(),
       leaseOwner: "old-worker", leaseUntil: new Date(Date.now() + 60_000) });
-    assert.equal((await h.repo.resumePublicationJobs()).selected, 0);
+    assert.equal((await h.repo.resumePublicationJobs({ budgetMs: 0 })).selected, 0);
     await h.db.update(schema.instagramPublicationJobs).set({ leaseUntil: new Date(0) });
-    await h.repo.resumePublicationJobs();
+    await h.repo.resumePublicationJobs({ budgetMs: 0 });
     assert.equal((await h.row()).status, "pending-confirmation");
     assert.equal(h.calls.publish, 0);
   } finally { await h.client.close(); }
@@ -411,4 +411,46 @@ test("a scheduled order is cancelled without a trace of a send and can be schedu
   } finally {
     await late.client.close();
   }
+});
+
+test("one worker pass drives an order step after step until it is posted, waits while Meta processes, and stops at its budget", async () => {
+  // Salut St-Jean, 2026-10-21: a scheduled carousel made two containers in three passes, then its delivery window closed.
+  const h = await setup({ channel: "facebook-page" });
+  try {
+    await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.repo.resumePublicationJobs({ budgetMs: 5_000, waitMs: 5, pauseMs: 0 });
+    assert.deepEqual([(await h.row()).status, h.calls.upload, h.calls.feed], ["published", 2, 1], "both photos and the post in one pass");
+  } finally { await h.client.close(); }
+  const busy = await setup();
+  try {
+    busy.control.containerStatus = "IN_PROGRESS";
+    await busy.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    const started = Date.now();
+    await busy.repo.resumePublicationJobs({ budgetMs: 300, waitMs: 20, pauseMs: 0 });
+    assert.ok(Date.now() - started < 2_000, "the pass ends at its budget");
+    assert.deepEqual([(await busy.row()).status, busy.calls.create, busy.calls.publish], ["containers-ready", 1, 0], "one container, nothing sent while Meta processes");
+    busy.control.containerStatus = "FINISHED";
+    await busy.client.exec("UPDATE instagram_publication_jobs SET lease_until=NULL WHERE lease_owner IS NULL"); // the next pass, minutes later
+    await busy.repo.resumePublicationJobs({ budgetMs: 5_000, waitMs: 5, pauseMs: 0 });
+    assert.deepEqual([(await busy.row()).status, busy.calls.create, busy.calls.publish], ["published", 1, 1], "the next pass sends it once");
+  } finally { await busy.client.close(); }
+});
+
+test("an order whose delivery window closed is retried by name, now or at a new time; a plain replay stays read-only", async () => {
+  const h = await setup();
+  try {
+    const job = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.db.update(schema.instagramPublicationJobs).set({ status: "suspended", failureKind: "invalidated", attempts: 1,
+      lastError: "The delivery window expired. Review this order before publishing.", finishedAt: new Date() });
+    const replay = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    assert.deepEqual([replay.id, replay.status, replay.canRetry], [job.id, "suspended", true], "the same post answers with the stopped order");
+    const at = new Date(Date.now() + 3_600_000);
+    const scheduled = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg, job.id, { publishAt: at.toISOString() });
+    assert.deepEqual([scheduled.id, scheduled.status, scheduled.publishAt, scheduled.startedAt], [job.id, "scheduled", at.toISOString(), null], "retried at a new time, its window not started");
+    const [pkg] = await h.db.select().from(schema.instagramPublicationPackages);
+    assert.ok(pkg.expiresAt.getTime() >= at.getTime() + core.SCHEDULE_EXPIRY_MARGIN_MS, "the package outlives the wait");
+    await h.client.exec("UPDATE instagram_publication_jobs SET publish_at = now() - interval '1 minute'");
+    await h.finish();
+    assert.deepEqual([(await h.row()).status, h.calls.publish], ["published", 1]);
+  } finally { await h.client.close(); }
 });

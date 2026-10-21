@@ -22,7 +22,9 @@ const SCHEDULED_REFRESH_MS = 60_000;
  * follow each order. Same server flow as the draft's Publication tab. The
  * confirmation can schedule the post instead (2026-10-19): the server keeps
  * the order and its worker publishes it at that time, page open or not; a
- * scheduled order can be sent now or cancelled until then.
+ * scheduled order can be sent now or cancelled until then. Confirming a post
+ * whose earlier order stopped before anything was posted retries that order
+ * (2026-10-21: the only retry left once v1's Publication tab was removed).
  */
 export function RunPublishActions({ topicId, draftId, batchId, secret, disabled }: {
   topicId: string; draftId: string; batchId: string; secret: string; disabled?: boolean;
@@ -104,10 +106,18 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
     const started: Outcome[] = [];
     for (const { option, pkg } of prepared) {
       try {
-        const response = await fetch(url("publication-job", option.channel), { method: "POST", headers, body: JSON.stringify({ packageId: pkg.id, ...(publishAt ? { publishAt } : {}) }) });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || "Could not start publishing");
-        started.push({ channel: option.channel, job: body.job });
+        const send = async (retryJobId?: string): Promise<JobView> => {
+          const response = await fetch(url("publication-job", option.channel), { method: "POST", headers, body: JSON.stringify({ packageId: pkg.id, ...(retryJobId ? { retryJobId } : {}), ...(publishAt ? { publishAt } : {}) }) });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "Could not start publishing");
+          return body.job as JobView;
+        };
+        let job = await send();
+        // The same post was ordered before and stopped before anything was posted (a delivery window that
+        // closed, a retryable failure): the server answers with that order, and confirming again is the
+        // editor's explicit retry of it, now or at the new time. An uncertain outcome is never retried here.
+        if ((job.status === "suspended" || job.status === "failed") && job.canRetry) job = await send(job.id);
+        started.push({ channel: option.channel, job });
       } catch (err) {
         started.push({ channel: option.channel, error: err instanceof Error ? err.message : "Could not start publishing" });
       }
@@ -209,7 +219,7 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
       </div>
       {scheduling ? <label className={styles.field}><span>Publication time <small>({timeZone})</small></span>
         <input type="datetime-local" value={scheduleAt} min={bounds.min} max={bounds.max} step={300} disabled={busy} onChange={(event) => setScheduleAt(event.currentTarget.value)} />
-        <small>The server publishes it at this time, within about 5 to 15 minutes, with this page closed. Up to 6 days ahead; it can be sent now or cancelled until then.</small>
+        <small>The server publishes it at this time, within about 5 to 20 minutes, with this page closed. Up to 6 days ahead; it can be sent now or cancelled until then.</small>
       </label> : null}
       <div className={styles.dailyPlannerActions}>
         <button type="button" className={styles.primaryButton} disabled={busy || (scheduling && !scheduleAt)} onClick={() => void publish()}>{busy ? "Starting…" : scheduling ? `Schedule for ${scheduleAt ? scheduleLabel(new Date(scheduleAt).toISOString()) : "…"}` : "Confirm publish"}</button>
@@ -224,7 +234,7 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
           <Button size="compact" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "publish-now")}>Publish now</Button>{" "}
           <Button size="compact" variant="quiet" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "cancel-schedule")}>Cancel the scheduled post</Button></>
         : outcome.job?.status === "published" ? <>Published{outcome.job.permalink ? <> · <a href={outcome.job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}</>
-        : TERMINAL.has(outcome.job?.status ?? "") ? `${outcome.job?.status === "suspended" ? "Suspended" : "Failed"}: ${outcome.job?.lastError ?? "see the draft's Publication tab"}${outcome.job?.canRetry ? " Retry it from the draft's Publication tab." : ""}`
+        : TERMINAL.has(outcome.job?.status ?? "") ? `${outcome.job?.status === "suspended" ? "Suspended" : "Failed"}: ${outcome.job?.lastError ?? "no reason was recorded."}${outcome.job?.canRetry ? " Nothing was posted: publish it again to retry it." : ""}`
         : "Publishing… keep this page open."}
     </li>)}</ul> : null}
   </section>;
