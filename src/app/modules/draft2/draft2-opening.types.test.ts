@@ -365,6 +365,15 @@ test("no abbreviation the facts had to spell out: the program refuses the source
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], explaining)), [], "one the facts use without spelling it out (DOD) is not refused");
 });
 
+test("the cover may use an abbreviation slide 2's text spells out, as a headline leans on its first paragraph; never one no text explains", () => {
+  const explaining: Draft2Fact[] = [...facts, { id: "f4", claim: "L’Association des personnes retraitées de la Centrale des syndicats du Québec (AREQ-CSQ) va présenter son jeu.", evidence: "", kind: "event", status: "established", importance: 60 }];
+  const cover = { headline: "À la retraite, la vie sociale s'arrête-t-elle?", subheadline: "L'AREQ répond avec Par ici la retraite!" };
+  const explained = { headline: "L'AREQ: la retraite peut ouvrir des portes", body: "L'Association des personnes retraitées de la Centrale des syndicats du Québec (AREQ-CSQ) rappelle que la retraite peut ouvrir la porte aux rencontres." };
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover, slide2: explained })], explaining)).filter((code) => code.startsWith("ABBREVIATION")), []);
+  const unexplained = { headline: "L'AREQ: la retraite peut ouvrir des portes", body: "L'AREQ rappelle que la retraite peut ouvrir la porte aux rencontres." };
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover, slide2: unexplained })], explaining)).filter((code) => code.startsWith("ABBREVIATION")), ["ABBREVIATION c1 cover", "ABBREVIATION c1 slide2"]);
+});
+
 test("v3: five openings in two rounds, each a different angle; a cover that says what another says in other words is refused, a revision or a proposal's edit never", () => {
   assert.deepEqual(OPENING_PLAN_V3.map((round) => [round.fresh, round.revise, round.proposals, round.effort, round.judgeEffort]), [[5, 0, 2, "medium", "low"], [0, 1, 0, "medium", "low"]]);
   assert.equal(openingPlan("v3"), OPENING_PLAN_V3);

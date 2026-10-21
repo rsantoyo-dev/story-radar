@@ -194,3 +194,32 @@ editor saw: RACJ and SPAL in the Houston post, LF and LFS in the onion
 carousel, and PSL, CJE, PMSD and CNESST elsewhere. A carousel written before
 the rule keeps its abbreviations until the editor edits those slides by hand
 (the edit shows the finding) and makes their images again.
+
+### Compounds and a source's own name (2026-10-20)
+
+A Salut Brossard carousel on a board game said "L'AREQ" on the cover and
+four slides without saying what it is, though its facts wrote
+"L’Association des personnes retraitées de la Centrale des syndicats du
+Québec (AREQ-CSQ)". The editor: "in at least one place, not in a title, it
+must say that AREQ is…".
+
+- **A compound in brackets is read.** "(AREQ-CSQ)", "(RTL/STM)": each part
+  is an abbreviation the source explained. Before, only one token in
+  brackets was, so AREQ never counted and no step refused it.
+- **The source's own name counts.** AREQ's letters are those of the
+  association's older name; no initials of today's name carry them. When
+  no initials before the brackets carry an abbreviation's letters, the name
+  the source writes there is kept (within its clause, from the word with
+  the abbreviation's first letter that carries the most of its letters).
+  The finding shows it, and a text that writes that same name before the
+  abbreviation spells it out, capitals and elisions aside. A part of it
+  does not: "la Centrale des syndicats du Québec (AREQ-CSQ)" spells out CSQ
+  only. Initials compare without accents ("l'Éducation" gives E).
+- **In a text, never a headline.** The cover is read with slide 2's text
+  below it, as a headline with its first paragraph: an abbreviation slide
+  2's text spells out may stand on the cover. The finding and reader skill
+  v3 say to spell it out once, in a text and never a headline, where it
+  first appears or before.
+
+Run over the 31 latest reviewed sessions, the change finds only this
+carousel.

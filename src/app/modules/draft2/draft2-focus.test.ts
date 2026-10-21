@@ -197,7 +197,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   const planned = await h.plan();
   const planCall = planned.trace[planned.trace.length - 1];
   assert.equal(json([planned.step, planned.status, planned.error]), json(["spine", "ready", null]), "the Spine step claims the session and ends it ready");
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "17", levers: "1", spine: "11", reader: "2" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "17", levers: "1", spine: "11", reader: "3" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
   const spined = planned.focus!;
   assert.equal(json([spined.version, spined.values?.spine?.beats.length, spined.values?.direction, spined.reasons?.spine, spined.staleDirections]), json([2, 7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision, and the version moves");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
@@ -400,7 +400,7 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   assert.equal(json((call.contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "and People and places, as found now");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "17", levers: "1", spine: "11", reader: "2", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "17", levers: "1", spine: "11", reader: "3", narratives: "4" }]));
 });
 
 test("with the editor's notes, Claude revises the plan as it stands, the editor's changes in it; the whole new plan is Claude's and the notes are kept", async () => {

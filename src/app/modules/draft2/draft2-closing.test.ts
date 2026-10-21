@@ -149,7 +149,7 @@ test("Claude writes the ending of the chosen opening and Sol judges it; both rea
   assert.equal((sol.input.contents as JudgeContents).proposalsWanted, 2);
   assert.ok(String(claude.input.instructions).includes(closings.CLOSINGS_SKILL.text));
   assert.match(String(claude.input.instructions), /# The publication\n[^]*# Calls to action\n- The publication's style[^]*Follow Example Daily for every buying change\.\n- Emojis: at most 2 in the whole closing\./, "the call-to-action style follows the brand brief");
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["closing", "draft2_closing", { closings: "4", fairness: "2", reader: "2" }], ["closing", "draft2_closing_review", { closings: "4", fairness: "2", reader: "2" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["closing", "draft2_closing", { closings: "4", fairness: "2", reader: "3" }], ["closing", "draft2_closing_review", { closings: "4", fairness: "2", reader: "3" }]]));
   assert.equal(json([session.step, session.status, session.closing?.status, session.closing?.winnerId]), json(["closing", "ready", "ready", "c3"]));
   assert.equal(json([session.closing?.opening?.id, session.closing?.focus?.version, session.closing?.shape]), json(["c1", 2, "two-slides"]), "the run records what it ends and follows: the opening's focus (v2), not the session's (v3)");
   assert.equal(json(session.opening), json(OPENING), "the opening is left as it was");

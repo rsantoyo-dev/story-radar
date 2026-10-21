@@ -304,8 +304,10 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     for (const [part, value] of [["cover", `${cover.headline}\n${cover.subheadline}`], ["slide2", `${slide2.headline}\n${slide2.body}`]] as const) {
       const words = addressBreaches(value, reader);
       if (words.length && reader) add("WRONG_ADDRESS", part, addressFinding(words, reader));
-      // Slide 2's reader has seen the cover: an abbreviation the cover spelled out may return there.
-      const abbreviations = abbreviationBreaches(value, explained, part === "slide2" ? `${cover.headline}\n${cover.subheadline}` : "");
+      // Slide 2's reader has seen the cover: an abbreviation the cover spelled out may return there. The cover is read with
+      // slide 2's text, as a headline with its first paragraph: an abbreviation that text spells out may stand on the cover
+      // (2026-10-20, the editor on "L'AREQ": spelled out in a text, never in a title).
+      const abbreviations = abbreviationBreaches(value, explained, part === "slide2" ? `${cover.headline}\n${cover.subheadline}` : slide2.body);
       if (abbreviations.length) add("ABBREVIATION", part, abbreviationFinding(abbreviations, explained));
     }
     // Each slide carries the facts its spine beat rests on: a slide that spends its words elsewhere leaves the story's mechanism to no one.
