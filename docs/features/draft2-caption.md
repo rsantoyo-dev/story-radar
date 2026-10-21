@@ -229,3 +229,20 @@ never the aggregator itself; an outlet already credited by its address is not
 credited twice ("lecourrierdusud.ca" and "Le Courrier du sud"). The titles come
 with the sources (`storySourceCredits`). A caption written before keeps its line
 until it is written again.
+
+## A handle's digits are no number (2026-10-20)
+
+Luna accepted no caption of the Salut Brossard post on the AREQ board game:
+every version tagged the Randolph's confirmed account, @randolphdix30, and the
+program read its "30" as a number no cited fact states (`UNSUPPORTED_NUMBER`),
+a finding that keeps a version from winning. Luna said so in each of the three
+rounds and asked to keep the handle; the third round's writer cut the caption
+down to one fact instead. Over the 222 latest stored caption versions, eight
+lost to it, in two Brossard runs (@randolphdix30, @quartierdix30).
+
+- **The numbers a text states** (`numbersIn`, every step) leave out the digits
+  of an @handle (not one inside an email address), a #hashtag and a web
+  address. A time ("19h30") or a figure next to them still counts.
+- **No space before a comma or a period** in a caption (`captionText`): the
+  writer had put "@randolphdix30 , dans". An ellipsis and French spacing
+  before ":", "!" and "?" stay.

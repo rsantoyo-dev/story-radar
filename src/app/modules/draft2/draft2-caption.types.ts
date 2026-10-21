@@ -121,9 +121,13 @@ export const CAPTION_SCHEMA: Record<string, unknown> = {
 /** The judge's answer: scores, issues, the verdict and its own caption. */
 export const CAPTION_EVALUATION_SCHEMA: Record<string, unknown> = funnelEvaluationSchema({ criteria: CAPTION_CRITERIA, codes: CAPTION_ISSUE_CODES, maxScored: CAPTION_CANDIDATES + 2, item: captionItem, maxProposals: 1 });
 
-/** A text as posted: spaces tidied inside each line, at most one blank line between paragraphs, the line breaks kept. */
+/**
+ * A text as posted: spaces tidied inside each line, none before a comma or a
+ * period (no language here puts one there: "@randolphdix30 , dans" was a
+ * writer's), at most one blank line between paragraphs, the line breaks kept.
+ */
 export function captionText(value: string): string {
-  return value.replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+/gu, " ").trim()).join("\n").replace(/\n{3,}/gu, "\n\n").trim();
+  return value.replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+/gu, " ").replace(/ +(?=[,.](?!\.))/gu, "").trim()).join("\n").replace(/\n{3,}/gu, "\n\n").trim();
 }
 
 /** A hashtag as posted: without the #, letters, digits and underscores. */

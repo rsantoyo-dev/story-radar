@@ -768,9 +768,17 @@ export function wordOverlap(a: Set<string>, b: Set<string>): number {
   return union ? shared / union : 0;
 }
 
-/** The numbers a text states, as written and without separators ("$1.5 trillion" → 15), so "1,500" and "1500" compare equal. */
+/**
+ * Names that carry digits and state no quantity: an @handle ("@randolphdix30",
+ * not part of an email address), a #hashtag, a web address. A Salut Brossard
+ * caption lost every version to the "30" of the Randolph's confirmed handle
+ * (2026-10-20), which no fact could state.
+ */
+const NAMES_WITH_DIGITS = /(?<![\p{L}\p{N}._%+-])@[\p{L}\p{N}_.]+|#[\p{L}\p{N}_]+|\bhttps?:\/\/\S+|\bwww\.\S+/gu;
+
+/** The numbers a text states, as written and without separators ("$1.5 trillion" → 15), so "1,500" and "1500" compare equal; never the digits of a handle, a hashtag or a web address. */
 export function numbersIn(value: string): { written: string; digits: string }[] {
-  return (value.match(/\d[\d.,]*/g) ?? []).map((match) => {
+  return (value.replace(NAMES_WITH_DIGITS, " ").match(/\d[\d.,]*/g) ?? []).map((match) => {
     const written = match.replace(/[.,]+$/, "");
     return { written, digits: written.replace(/[.,]/g, "") };
   });

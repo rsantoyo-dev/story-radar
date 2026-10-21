@@ -23,6 +23,7 @@ test("two rounds: three captions and Sol's proposal, then the best revised besid
 
 test("a caption keeps its line breaks and one blank line between parts; spaces are tidied inside each line", () => {
   assert.equal(captionText("  Line one  \r\nLine   two\n\n\n\nPart two \t\n"), "Line one\nLine two\n\nPart two");
+  assert.equal(captionText("Au Randolph de Brossard, @randolphdix30 , dans une tournée . Et puis ... la suite : demain !"), "Au Randolph de Brossard, @randolphdix30, dans une tournée. Et puis ... la suite : demain !", "no space before a comma or a period; an ellipsis and French spacing stay");
   assert.equal(normalHashtag(" ##Longueuil "), "Longueuil");
 });
 
@@ -74,6 +75,7 @@ test("every account the editor confirmed is tagged, and no other; an email addre
   const [issue] = mechanicalCaptionIssues([caption("c1", { text: tagged })], facts, { credits: [], mentions: [{ handle: "@biblio.longueuil" }, { handle: "@cirqueeloize" }], rules: RULES });
   assert.deepEqual([issue.code, issue.detail], ["MENTION_MISSING", "@cirqueeloize is an account the editor confirmed; tag it once, where its name would go or right after it."], "one of two confirmed accounts left out");
   assert.deepEqual(codes([caption("c1", { text: `${TEXT}\nMerci @cirqueeloize.` })], { mentions: [{ handle: "@cirqueeloize" }] }), [], "a period after the handle ends the sentence");
+  assert.deepEqual(codes([caption("c1", { text: `${TEXT}\nAu Randolph (@randolphdix30).` })], { mentions: [{ handle: "@randolphdix30" }] }), [], "a confirmed handle's digits are no number the facts must state");
 });
 
 test("two captions that open alike: the second is a duplicate, unless both are the judge's proposal as written and as edited", () => {

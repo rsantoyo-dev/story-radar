@@ -11,6 +11,8 @@ test("the numbers a slide may state: the cited facts', a list's count and its it
   assert.deepEqual([...statedNumbers(facts, 5)].sort(), ["1", "10", "1200", "2", "3", "4", "5"], "a five-item list numbers its items 1 to 5 and states its count");
   assert.equal(statedNumbers(facts, 5).has("7"), false);
   assert.deepEqual(numbersIn("Tip 1 of 5: 1,200 visitors, 10 a.m.").map((number) => number.digits), ["1", "5", "1200", "10"]);
+  assert.deepEqual(numbersIn("Au Randolph de Brossard (@randolphdix30), à 19h30. #Brossard2026 https://randolph.ca/2026/10 www.areq.ca/p2").map((number) => number.digits), ["19", "30"], "a handle, a hashtag or a web address states no number; a time still does");
+  assert.deepEqual(numbersIn("Écris à info2026@areq.ca").map((number) => number.digits), ["2026"], "an email address is no handle");
 });
 
 test("a season run together in the source (\"20262027\") states both years, so a slide may write 2026-2027", () => {
