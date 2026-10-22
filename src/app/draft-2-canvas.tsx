@@ -30,7 +30,7 @@ import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, cutSections, imageCleared, standing
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, COMMENT_MAX_WORDS, captionPostText, shownComment, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
-import { AUTOPILOT_STEPS, autopilotStepRuns, nextAutopilotStep, NO_CLEAN_VERSION, stepOutcome, type AutopilotJobView, type Draft2AutopilotStep } from "@/app/modules/draft2/draft2-autopilot.core";
+import { AUTOPILOT_STEPS, type AutopilotJobView, type Draft2AutopilotStep } from "@/app/modules/draft2/draft2-autopilot.core";
 import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_MAX_EXTRA_ROUNDS, criterionFloor, criterionOf, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelResumeRound, funnelScorePasses, funnelVersions, hasMaterialError,
   type FunnelCandidate, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -98,7 +98,7 @@ const FOLLOW_UNREACHABLE_MS = 3 * 60_000;
 /** A request that ended without telling how the run went: the connection dropped, it timed out, or a gateway answered for the server. The run may go on. */
 class Draft2LostRequest extends Error {}
 
-/** One step the autopilot ran, how it ended, and what it took. */
+/** One step the autopilot ran, how it ended, and what it took (the server's job, since 2026-10-22). */
 type AutopilotEntry = { step: Draft2RunStep; status: "ready" | "needs-review" | "failed"; ms: number; startedAt: string; /** The best score a funnel step reached. */ score?: number; /** Why a step that had run was written again. */ reason?: string };
 type Autopilot = { active: boolean; startedAt: string; current?: Draft2RunStep; steps: AutopilotEntry[]; outcome?: string; finishedAt?: string; /** The step the run stops after ("Run to here"); the images otherwise. */ until?: Draft2StepKey };
 const STEP_TITLE: Record<Draft2RunStep, string> = {
@@ -321,8 +321,6 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const [acknowledged, setAcknowledged] = useState(false);
   // The step running now, readable from a loop that outlives the render that started it (the autopilot).
   const runningRef = useRef<Draft2RunStep | undefined>(undefined);
-  const [autopilot, setAutopilot] = useState<Autopilot>();
-  const stopRequested = useRef(false);
   // The autopilot on the server (2026-10-22): the story's latest job, read with the session and followed while it runs.
   const [serverJob, setServerJob] = useState<AutopilotJobView | null>();
   const [serverUntil, setServerUntil] = useState<Draft2AutopilotStep>("caption");
@@ -392,12 +390,12 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }, [serverJobRunning, loadSession]);
 
   /** Starts the autopilot on the server, to a step: the first pass starts at once and the job goes on with this page closed. */
-  async function startServerAutopilot() {
+  async function startServerAutopilot(until: Draft2AutopilotStep = serverUntil) {
     if (serverJobBusy || running) return;
     setServerJobBusy(true); setServerJobError(undefined);
     try {
       const response = await fetch(`/api/radar/draft2/autopilot?topicId=${encodeURIComponent(topicId)}`, {
-        method: "POST", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ storyId, until: serverUntil }),
+        method: "POST", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ storyId, until }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not start the autopilot on the server.");
@@ -528,64 +526,6 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       runningRef.current = undefined;
       setRunning(undefined);
     }
-  }
-
-  /**
-   * Runs every step to the images without stopping, from wherever the session
-   * stands, or to the step the editor named ("Run to here" on its screen):
-   * each step keeps the judge's winner; a step that ends under the gate is
-   * marked and the run goes on; a failure, or a step that needs the editor,
-   * stops it. The editor reviews at the end: re-runs or chooses in any step,
-   * confirms the accounts, writes the caption and approves.
-   */
-  async function runAutopilot({ until }: { until?: Draft2StepKey } = {}) {
-    if (runningRef.current || autopilot?.active) return;
-    stopRequested.current = false;
-    let state: Autopilot = { active: true, startedAt: new Date().toISOString(), steps: [], ...(until ? { until } : {}) };
-    const show = (change: Partial<Autopilot>) => { state = { ...state, ...change }; setAutopilot(state); };
-    show({});
-    let current: Draft2SessionView | null = session ?? null;
-    let previous: Draft2RunStep | undefined;
-    for (let guard = 0; guard < 14; guard++) {
-      if (stopRequested.current) { show({ outcome: "Stopped at your request; every step so far is kept." }); break; }
-      const next = nextAutopilotStep(current, Date.now());
-      if ("done" in next) { show({ outcome: "Every step through the caption is done. Choose the caption and approve the carousel for publishing." }); break; }
-      if ("blocked" in next) { show({ outcome: next.blocked }); break; }
-      // Past the step the editor named ("Run to here"), or past the images otherwise: stop there, with what was run; the caption stays the editor's in the tab.
-      const limit = (until ?? "images") as Draft2AutopilotStep;
-      if (!autopilotStepRuns(next.step, limit)) {
-        show({ outcome: !until ? "The images are made. Confirm the accounts to tag, write the caption and approve the carousel for publishing."
-          : state.steps.length ? `Reached the ${STEP_TITLE[until as Draft2RunStep].toLowerCase()}, as you asked; the steps after it wait for you.` : `The ${STEP_TITLE[until as Draft2RunStep].toLowerCase()} is already done; nothing to run before it.` });
-        break;
-      }
-      if (next.step === previous) {
-        show({ outcome: next.reason === NO_CLEAN_VERSION
-          ? `The ${STEP_TITLE[next.step].toLowerCase()} ended again with no clean version: every version has a program finding or a factual error. Choose one, edit it by hand, or write it again.`
-          : `The ${STEP_TITLE[next.step].toLowerCase()} step did not advance; look at it before going on.` });
-        break;
-      }
-      previous = next.step;
-      show({ current: next.step });
-      const begin = Date.now();
-      const result = await runStep(next.step, { continuing: next.continuing, on: current });
-      const status: AutopilotEntry["status"] = result ? stepOutcome(result, next.step) : "failed";
-      const score = result && (next.step === "opening" || next.step === "closing" || next.step === "deck" || next.step === "visual") ? bestScoreOf(result[next.step] as FunnelRun | null) : undefined;
-      show({ current: undefined, steps: [...state.steps, { step: next.step, status, ms: Date.now() - begin, startedAt: new Date(begin).toISOString(), ...(score !== undefined ? { score } : {}), ...(next.reason ? { reason: next.reason } : {}) }] });
-      if (!result || status === "failed") { show({ outcome: `The ${STEP_TITLE[next.step].toLowerCase()} step failed; the run stopped there.` }); break; }
-      current = result;
-      // The review's patches are applied as the editor wrote them; the Review screen shows each and undoes any.
-      if (next.step === "review" && proposedPatches(result.review).length) {
-        const patchedSession = await decideReviewPatch("apply-all", undefined, "autopilot", result);
-        if (patchedSession) current = patchedSession;
-      }
-      // A review under the acceptable score is the editor's to read before the images are made: its patches and the reader's reactions say what the words still lack (a 68 went on to the images once, 2026-10-17).
-      const reviewed = next.step === "review" ? current.review?.editor?.scores.overall : undefined;
-      if (reviewed !== undefined && reviewed < FUNNEL_ACCEPTABLE_SCORE) {
-        show({ outcome: `The review scored the carousel ${reviewed}/100, under ${FUNNEL_ACCEPTABLE_SCORE}: read its patches and the reader’s reactions, fix the words by hand or write a step again, then run the autopilot to the images.` });
-        break;
-      }
-    }
-    show({ active: false, current: undefined, finishedAt: new Date().toISOString() });
   }
 
   /** The models chosen in the Models card: kept on the session (its next runs), or until the facts create it; remembered as the default for the next story. */
@@ -1088,7 +1028,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const sourceShown = sourceOpen && current !== "facts";
 
   // Each step as the rail, the board and the pager show it: its state, what it produced, what it took.
-  const liveScreen = screenOfRun(running ?? autopilot?.current);
+  const liveScreen = screenOfRun(running ?? (serverJob?.status === "running" ? serverJob.currentStep ?? undefined : undefined));
   const available: Record<Draft2StepKey, boolean> = {
     facts: text.length > 0,
     focus: factsVerified && inventory?.status === "ready",
@@ -1145,8 +1085,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const stoppedAt = session ? new Date(session.updatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" }) : "";
   const traceOf = (screen: Draft2StepKey) => (session?.trace ?? []).filter((entry) => entry.step === screen || (screen === "caption" && entry.step === "mentions"));
 
-  // "Run to here": on a step's screen before the images, the autopilot runs every step up to this one and stops.
-  const runToHere = current && current !== "images" && current !== "caption" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current : undefined;
+  // "Run to here": on a step's screen before the caption, the autopilot runs every step up to this one and stops; the server's run takes any step, the tab's stops at the images.
+  const runToHere = current && current !== "caption" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current as Draft2AutopilotStep : undefined;
   // The pipeline, and a model other than the default chosen in the Models card, show beside the autopilot on every screen: the browser remembers the last choice for the next story.
   const chosenModels = session ? session.models : pendingModels;
   const pipeline: Draft2Pipeline = session ? session.pipeline ?? "v2" : pendingPipeline;
@@ -1154,12 +1094,14 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     <StatusBadge tone={pipeline === "v3" ? "info" : "neutral"}>{pipeline}</StatusBadge>
     {!draft2ChoiceIsEmpty(chosenModels) ? <StatusBadge tone="warning">{choiceSummary(chosenModels)}</StatusBadge> : null}
   </>;
-  const autopilotButtons = <>
-    {autopilot?.active ? <Button variant="secondary" size="compact" disabled={stopRequested.current} onClick={() => { stopRequested.current = true; }}>Stop after this step</Button> : null}
-    {runToHere && !autopilot?.active ? <Button variant="secondary" size="compact" disabled={!text.length || session === undefined || running !== undefined || serverJobRunning} onClick={() => { void runAutopilot({ until: runToHere }); }}>Run to here</Button> : null}
-    <Button variant="primary" size="compact" busy={autopilot?.active} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active || serverJobRunning} onClick={() => { void runAutopilot(); }}>
-      {autopilot?.active ? `Running ${autopilot.current ? STEP_TITLE[autopilot.current].toLowerCase() : ""}…${autopilot.until ? ` to the ${STEP_TITLE[autopilot.until as Draft2RunStep].toLowerCase()}` : ""}` : "Run to images"}
-    </Button>
+  // The buttons on every screen start the autopilot on the server (the page can be closed); the tab's own run lives on the overview.
+  const serverButtonsLocked = !text.length || session === undefined || running !== undefined || serverJobBusy;
+  const autopilotButtons = serverJobRunning ? <>
+    <StatusBadge tone="info">{serverJob?.currentStep ? `${STEP_TITLE[serverJob.currentStep]} running on the server` : "Running on the server"}{serverJob ? ` · to the ${STEP_TITLE[serverJob.until].toLowerCase()}` : ""}</StatusBadge>
+    <Button variant="secondary" size="compact" busy={serverJobBusy} disabled={serverJobBusy || Boolean(serverJob?.stopRequested)} onClick={() => { void stopServerAutopilot(); }}>{serverJob?.stopRequested ? "Stopping after this step…" : "Stop after this step"}</Button>
+  </> : <>
+    {runToHere ? <Button variant="secondary" size="compact" disabled={serverButtonsLocked} onClick={() => { void startServerAutopilot(runToHere); }}>Run to here</Button> : null}
+    <Button variant="primary" size="compact" busy={serverJobBusy} disabled={serverButtonsLocked} onClick={() => { void startServerAutopilot("caption"); }}>Run to the caption</Button>
   </>;
 
   // The names a run started now goes by: the funnel steps' writers and judges, the facts' extractor and reviewer, the images' reviewer.
@@ -1168,7 +1110,6 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const factsCast = { extractor: draft2ModelName(cast?.facts.extractor.model, "openai"), reviewer: draft2ModelName(cast?.facts.reviewer.model, "anthropic") };
   const imageReviewer = draft2ModelName(cast?.imageReview.model, "openai");
   const focusReviewer = draft2ModelName(cast?.focusReview?.model, "openai");
-  const commonJudge = new Set(FUNNEL_STEPS.map((step) => today[step].judge)).size === 1 ? today.opening.judge : undefined;
   const screens: Record<Draft2StepKey, { actions?: ReactNode; how: ReactNode; body: ReactNode }> = {
     facts: {
       actions: <>
@@ -1179,7 +1120,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       </>,
       how: <p>{factsCast.extractor} extracts the facts; {factsCast.reviewer} checks them against the article; they loop on {factsCast.reviewer}’s suggestions, at most three extractions. Running the facts again starts a new session: every later step starts over from the new facts, and the earlier session stays as history.</p>,
       body: <>
-        <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
+        <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || serverJobRunning} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
         {running === "facts" ? <LoadingState>{factsCast.extractor} is extracting; {factsCast.reviewer} reviews each round. This can take a minute or two.</LoadingState> : null}
         {runError?.step === "facts" ? <InlineNotice tone="error" title="The facts step stopped">{runError.message}</InlineNotice> : null}
         {session?.step === "facts" && session.error && running !== "facts" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
@@ -1581,32 +1522,20 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
             <PipelineStrip steps={screenSteps} />
             <p className={styles.screenVitals}>{doneSteps} of {DRAFT_2_STEPS.length} steps done{totals.calls ? ` · ${minutes(totals.ms)} in ${totals.calls} provider calls · ${usd(totals.costMicros)}` : ""}</p>
           </header>
-          <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || Boolean(autopilot?.active)} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
-          <section className={styles.autopilotCard} aria-labelledby="draft2-autopilot-title">
-            <div className={styles.autopilotHead}>
-              <div>
-                <h2 id="draft2-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
-                <p className={styles.autopilotIntro}>Runs every step to the images, from where the story stands: the facts if they are not verified, the people and places, the focus, the accounts to tag, the opening, the closing, the deck, the visual script and the images. Before the focus chooses the narrative form, it waits for you if people in People and places wait for your confirmation. Each step keeps {commonJudge ? `${commonJudge}’s` : "its judge’s"} winner; 95 is the goal, a step that ends from {FUNNEL_ACCEPTABLE_SCORE} is acceptable and marked for you, and one under {FUNNEL_ACCEPTABLE_SCORE} takes up to {FUNNEL_MAX_EXTRA_ROUNDS} extra rounds on its own before the run goes on; a failure, a step that needs you, or a review under {FUNNEL_ACCEPTABLE_SCORE} stops it. You review at the end: re-run or choose in any step, confirm the accounts, write the caption and approve.</p>
-              </div>
-              <ActionRow>{autopilotButtons}</ActionRow>
-            </div>
-            {autopilot ? <AutopilotView autopilot={autopilot} trace={session?.trace ?? []} now={now} /> : null}
-          </section>
+          <ModelsCard choice={session ? session.models : pendingModels} pipeline={pipeline} cast={cast} saving={savingModels} locked={running !== undefined || serverJobRunning} error={modelsError} onChange={(next) => { void chooseModels(next); }} onPipeline={(next) => { void choosePipeline(next); }} />
           <section className={styles.autopilotCard} aria-labelledby="draft2-server-autopilot-title">
             <div className={styles.autopilotHead}>
               <div>
-                <h2 id="draft2-server-autopilot-title" className={styles.autopilotTitle}>Autopilot on the server</h2>
-                <p className={styles.autopilotIntro}>The same steps, run by the server from where the story stands to the step you name, the caption by default: you can close this page. The run keeps going pass after pass, picks itself up after a lost request or a deploy, and stops with its reason when a step needs you; the Review’s patches are applied and its score noted, never a stop. Start it again to continue from wherever it stopped.</p>
+                <h2 id="draft2-server-autopilot-title" className={styles.autopilotTitle}>Autopilot</h2>
+                <p className={styles.autopilotIntro}>Runs every step on the server from where the story stands to the step you name, the caption by default: the facts if they are not verified, the people and places, the focus, the spine, the accounts to tag, the opening, the closing, the deck, the review (its patches applied, its score noted), the visual script, the images and the caption. You can close this page: the run keeps going pass after pass, picks itself up after a lost request or a deploy, and stops with its reason when a step needs you. Run it again to continue from wherever it stopped.</p>
               </div>
               <ActionRow>
-                {serverJobRunning ? <Button variant="secondary" size="compact" busy={serverJobBusy} disabled={serverJobBusy || Boolean(serverJob?.stopRequested)} onClick={() => { void stopServerAutopilot(); }}>Stop after this step</Button> : <>
-                  <label className={styles.factMeta}>To the{" "}
-                    <select value={serverUntil} disabled={serverJobBusy} onChange={(event) => setServerUntil(event.currentTarget.value as Draft2AutopilotStep)}>
-                      {AUTOPILOT_STEPS.map((step) => <option key={step} value={step}>{STEP_TITLE[step].toLowerCase()}</option>)}
-                    </select>
-                  </label>
-                  <Button variant="primary" size="compact" busy={serverJobBusy} disabled={!text.length || session === undefined || running !== undefined || autopilot?.active || serverJobBusy} onClick={() => { void startServerAutopilot(); }}>Run on the server</Button>
-                </>}
+                {serverJobRunning ? null : <label className={styles.factMeta}>To the{" "}
+                  <select value={serverUntil} disabled={serverJobBusy} onChange={(event) => setServerUntil(event.currentTarget.value as Draft2AutopilotStep)}>
+                    {AUTOPILOT_STEPS.map((step) => <option key={step} value={step}>{STEP_TITLE[step].toLowerCase()}</option>)}
+                  </select>
+                </label>}
+                {serverJobRunning ? autopilotButtons : <Button variant="primary" size="compact" busy={serverJobBusy} disabled={serverButtonsLocked} onClick={() => { void startServerAutopilot(); }}>Run on the server</Button>}
               </ActionRow>
             </div>
             {serverJobError ? <InlineNotice tone="error" title="The autopilot did not answer">{serverJobError}</InlineNotice> : null}

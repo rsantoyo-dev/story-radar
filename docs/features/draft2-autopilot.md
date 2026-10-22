@@ -219,11 +219,12 @@ images with a 68. A run started again goes on from the review as it stands
 
 ## Addendum, 2026-10-22: the autopilot on the server
 
-The same steps and decisions now run as a job on the server, to the step the
-editor names (the caption by default), with the page closed: "Run on the
-server" on the story's overview. The decisions moved out of the canvas into
-`draft2-autopilot.core.ts` (the tab imports them; its own run is unchanged,
-cut at the images); a pass of 270 s runs steps with their deadline, chains the
-next pass through `/api/internal/draft2/resume`, and the worker's cron and a
-read of the story resume a job whose pass was lost. The Review's score never
-stops the server's job. See `docs/features/draft2-server-autopilot.md`.
+The same steps and decisions now run as a job on the server, and only there,
+to the step the editor names (the caption by default), with the page closed:
+"Run to the caption" and "Run to here" on every screen, "Run on the server"
+on the overview. The decisions moved out of the canvas into
+`draft2-autopilot.core.ts`; a pass of 270 s runs steps with their deadline,
+chains the next pass through `/api/internal/draft2/resume`, and the worker's
+cron and a read of the story resume a job whose pass was lost. The tab's run
+described in §2, and its stop on a review under 90, were removed. See
+`docs/features/draft2-server-autopilot.md`.
