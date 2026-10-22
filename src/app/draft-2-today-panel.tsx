@@ -4,6 +4,7 @@ import { Button, StatusBadge, type StatusTone } from "@/app/ui/primitives";
 import { ranAt, type Draft2StepKey } from "./draft-2-canvas.core";
 import { TODAY_GROUPS, todayCards, type TodayCard, type TodayGroup, type TodayStory } from "./draft-2-today.core";
 import type { Draft2SessionSummary } from "./modules/draft2/draft2-session.repository";
+import type { AutopilotJobView } from "./modules/draft2/draft2-autopilot.core";
 import styles from "./radar-dashboard.generated.module.css";
 
 const GROUP_TONE: Record<TodayGroup, StatusTone> = { "needs-you": "warning", running: "info", "to-publish": "success", waiting: "neutral", "published-today": "success", "not-started": "neutral" };
@@ -27,15 +28,16 @@ export function Draft2TodayPanel({ topicId, secret, stories, disabled, refreshKe
   onOpen: (storyId: string, step?: Draft2StepKey) => void;
 }) {
   const [sessions, setSessions] = useState<Draft2SessionSummary[]>();
+  const [jobs, setJobs] = useState<AutopilotJobView[]>([]);
   const [error, setError] = useState<string>();
   const [tick, setTick] = useState(0);
-  const running = sessions?.some((session) => session.alive) ?? false;
+  const running = (sessions?.some((session) => session.alive) ?? false) || jobs.some((job) => job.status === "running");
   useEffect(() => {
     if (!secret.trim() || !topicId) return;
     const controller = new AbortController();
     fetch(`/api/radar/draft2/sessions?topicId=${encodeURIComponent(topicId)}`, { headers: { Authorization: `Bearer ${secret.trim()}` }, cache: "no-store", signal: controller.signal })
-      .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error ?? "Could not read the Draft 2 sessions."); return body as { sessions: Draft2SessionSummary[] }; })
-      .then((body) => { if (!controller.signal.aborted) { setSessions(body.sessions); setError(undefined); } })
+      .then(async (response) => { const body = await response.json(); if (!response.ok) throw new Error(body.error ?? "Could not read the Draft 2 sessions."); return body as { sessions: Draft2SessionSummary[]; jobs?: AutopilotJobView[] }; })
+      .then((body) => { if (!controller.signal.aborted) { setSessions(body.sessions); setJobs(body.jobs ?? []); setError(undefined); } })
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Could not read the Draft 2 sessions."); });
     return () => controller.abort();
   }, [topicId, secret, refreshKey, tick]);
@@ -45,7 +47,7 @@ export function Draft2TodayPanel({ topicId, secret, stories, disabled, refreshKe
     return () => clearInterval(timer);
   }, [running]);
   const now = new Date();
-  const cards = sessions ? todayCards(stories, sessions, now) : [];
+  const cards = sessions ? todayCards(stories, sessions, now, undefined, jobs) : [];
   const groups = TODAY_GROUPS.map((group) => ({ ...group, cards: cards.filter((card) => card.group === group.key) })).filter((group) => group.cards.length);
   return <section className={styles.workQueue} aria-label="Draft 2 today">
     <div className={styles.queueHeading}>

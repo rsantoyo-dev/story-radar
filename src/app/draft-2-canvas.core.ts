@@ -4,6 +4,8 @@
  * and the DOM so they are tested directly.
  */
 
+import { AUTOPILOT_STEPS } from "@/app/modules/draft2/draft2-autopilot.core";
+
 const RETURN_CONTEXT_PATTERN = /^[0-9a-f-]{36}$/i;
 
 type StoryLinkContext = { from?: string; returnContext?: string };
@@ -130,14 +132,13 @@ export const DRAFT_2_PHASES = [
 
 export const draft2StepPhase = (step: Draft2StepKey) => DRAFT_2_PHASES.find((phase) => (phase.steps as readonly string[]).includes(step))!;
 
-/** The steps the autopilot runs, in order: the accounts to tag (a run of the caption's screen) come after the spine, before the words. */
-export const AUTOPILOT_ORDER = ["facts", "inventory", "focus", "spine", "mentions", "opening", "closing", "deck", "review", "visual", "images"] as const;
+/** The steps the autopilot runs, in order (the shared core's, 2026-10-22): the accounts to tag come after the spine, before the words; the caption after the images. */
+export const AUTOPILOT_ORDER = AUTOPILOT_STEPS;
 
 /**
  * Whether the autopilot runs a step on its way to a target ("Run to here" on
  * a step's screen): every step up to the target, the target included. No
- * target, or one past the images (the caption, the publish), runs to the
- * images, as "Run to images" always did.
+ * target, or one the order does not know, runs every step.
  */
 export function autopilotRuns(step: string, until: string | undefined): boolean {
   const order: readonly string[] = AUTOPILOT_ORDER;

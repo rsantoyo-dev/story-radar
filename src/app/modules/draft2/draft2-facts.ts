@@ -30,14 +30,14 @@ const REVIEWER_MAX_OUTPUT_TOKENS = 12_000;
 const EXTRACTOR = composeInstructions("extractor", [FACTS_SKILL]);
 const REVIEWER = composeInstructions("reviewer", [FACTS_SKILL]);
 
-export type Draft2FactsInput = { topicId: string; storyId: string; /** The editor's choice of the funnel's writer and judge, kept on the new session. */ models?: Draft2ModelChoice; /** The pipeline the new session runs on (v2 or v3); the table's default (v2) when absent. */ pipeline?: Draft2Pipeline };
+export type Draft2FactsInput = { topicId: string; storyId: string; /** The editor's choice of the funnel's writer and judge, kept on the new session. */ models?: Draft2ModelChoice; /** The pipeline the new session runs on (v2 or v3); the table's default (v2) when absent. */ pipeline?: Draft2Pipeline; /** When the request ends (epoch ms), from a server pass; the route's own limit otherwise. */ deadline?: number };
 
 /**
  * Runs the Facts step for a story: extract, check, revise, at most three
  * extractions. Every provider call is checkpointed on the session so the
  * conversations survive for the next step and a failure keeps its trace.
  */
-export async function runDraft2Facts({ topicId, storyId, models, pipeline }: Draft2FactsInput): Promise<Draft2SessionRow> {
+export async function runDraft2Facts({ topicId, storyId, models, pipeline, deadline }: Draft2FactsInput): Promise<Draft2SessionRow> {
   const content = await getStoryContent(topicId, storyId);
   const articleText = content.text?.trim() ?? "";
   if (!articleText) throw new Draft2InputError("The story has no article text yet. Prepare the content in the studio first.");
@@ -85,7 +85,7 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline }: Dra
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       for (let round = 1; round <= DRAFT2_FACTS_MAX_ROUNDS; round++) {
-        if (round > 1 && Date.now() - startedAt > TIME_BUDGET_MS) {
+        if (round > 1 && Date.now() > (deadline ? deadline - 70_000 : startedAt + TIME_BUDGET_MS)) {
           await checkpoint({ status: "needs-review", facts: facts ?? null, evaluation: evaluation ?? null, error: `Stopped before round ${round}: the request's time budget is spent. Run the facts again to continue from the reviewer's suggestions.` });
           return;
         }

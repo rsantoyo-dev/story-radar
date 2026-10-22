@@ -1,0 +1,46 @@
+# Resumes Draft 2 autopilot jobs on the server (2026-10-22): a job's passes
+# chain themselves, and a read of its story gives it a pass; this schedule is
+# the safety net for a chain lost to a deploy or a crash. It reuses the
+# publication worker's URL variable and secret, so nothing new is configured.
+# Until both exist the job exits early without failing.
+name: Draft 2 autopilot worker
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: draft2-autopilot-worker
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Resume waiting autopilot jobs
+        env:
+          APP_URL: ${{ vars.INSTAGRAM_PUBLISH_WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.INSTAGRAM_PUBLISH_WORKER_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$WORKER_SECRET" ]; then
+            echo "::notice::INSTAGRAM_PUBLISH_WORKER_URL (variable) or INSTAGRAM_PUBLISH_WORKER_SECRET (secret) is not set; nothing to do."
+            exit 0
+          fi
+          case "$APP_URL" in
+            https://*) ;;
+            *) echo "::error::INSTAGRAM_PUBLISH_WORKER_URL must start with https://"; exit 1 ;;
+          esac
+          code=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST --max-time 30 \
+            -H "Authorization: Bearer $WORKER_SECRET" \
+            "${APP_URL%/}/api/internal/draft2/resume") || code=000
+          echo "HTTP $code"
+          if [ "$code" = "202" ]; then
+            cat /tmp/body; echo
+          else
+            echo "::error::Worker pass failed with HTTP $code (check the secret, the URL and the deployment logs)."
+            exit 1
+          fi

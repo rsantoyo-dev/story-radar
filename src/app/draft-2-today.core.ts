@@ -1,5 +1,6 @@
 import { DRAFT_2_STEPS, isDraft2Step, type Draft2StepKey } from "./draft-2-canvas.core";
 import type { Draft2SessionSummary } from "./modules/draft2/draft2-session.repository";
+import { AUTOPILOT_STEP_TITLE, type AutopilotJobView } from "./modules/draft2/draft2-autopilot.core";
 
 /** A story in production as Today reads it: the dashboard's row, with where it stands in publishing. */
 export type TodayStory = {
@@ -64,10 +65,19 @@ export const costLabel = (costMicros: number) => costMicros ? `≈US$${(costMicr
  * once, in the group its state puts it in, published-today first by the
  * publication, then by the session's last change, newest first.
  */
-export function todayCards(stories: readonly TodayStory[], sessions: readonly Draft2SessionSummary[], now: Date, timeZone?: string): TodayCard[] {
+export function todayCards(stories: readonly TodayStory[], sessions: readonly Draft2SessionSummary[], now: Date, timeZone?: string, jobs: readonly AutopilotJobView[] = []): TodayCard[] {
   const byStory = new Map(sessions.map((session) => [session.storyId, session]));
+  const jobByStory = new Map(jobs.map((job) => [job.storyId, job]));
   const cards = stories.map((story): TodayCard => {
     const session = byStory.get(story.storyId);
+    // The autopilot on the server (2026-10-22): a job running is the story's state; one that stopped since the session last moved says why.
+    const job = jobByStory.get(story.storyId);
+    if (job?.status === "running") {
+      return { story, session, group: "running", line: `Autopilot on the server: ${job.currentStep ? `${AUTOPILOT_STEP_TITLE[job.currentStep].toLowerCase()} running` : "between steps"}, to the ${AUTOPILOT_STEP_TITLE[job.until].toLowerCase()}`, step: session ? canvasStepOf(session.step) : undefined };
+    }
+    if (job && (job.status === "blocked" || job.status === "failed") && (!session || Date.parse(job.updatedAt) >= Date.parse(session.updatedAt))) {
+      return { story, session, group: "needs-you", line: `Autopilot stopped: ${(job.outcome ?? "").replace(/\s+/g, " ").trim()}`, step: session ? canvasStepOf(session.step) : undefined };
+    }
     const latestPublished = Math.max(0, ...story.published.map((entry) => publishedTime(entry.publishedAt)));
     if (latestPublished && sameDay(latestPublished, now, timeZone)) {
       return { story, session, group: "published-today", line: `Published ${story.published.map((entry) => entry.platform).join(" and ")}${session ? ` · ${costLabel(session.costMicros)}` : ""}`.trim(), step: session ? "publish" : undefined };

@@ -41,3 +41,4 @@ export * from "./creative-text-accounting";
 export * from "./auth";
 export * from "./topic-auto-collection";
 export * from "./draft2-sessions";
+export * from "./draft2-autopilot-jobs";

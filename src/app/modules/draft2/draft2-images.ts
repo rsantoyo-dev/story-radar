@@ -971,7 +971,7 @@ const withoutHistory = ({ previousRuns, ...run }: Draft2Images): Draft2ImagesRun
  * saved, and a continue request picks it up (request ids are kept, so no
  * image is asked for twice). A new run keeps the earlier one, files and all.
  */
-export async function runDraft2Images({ topicId, storyId, sessionId, resume = false }: { topicId: string; storyId: string; sessionId: string; resume?: boolean }): Promise<Draft2SessionRow> {
+export async function runDraft2Images({ topicId, storyId, sessionId, resume = false, deadline }: { topicId: string; storyId: string; sessionId: string; resume?: boolean; /** When the request ends (epoch ms), from a server pass; the route's own limit otherwise. */ deadline?: number }): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
@@ -1006,7 +1006,8 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
   const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
   const controller = new AbortController();
   const started = Date.now();
-  const elapsed = () => Date.now() - started;
+  // Measured from the request's end when a server pass names it, so the same margins hold wherever in the pass the run started.
+  const elapsed = () => deadline ? Date.now() - (deadline - REQUEST_DEADLINE_MS - 20_000) : Date.now() - started;
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       const ctx = await imagesContext({ topicId, storyId, sessionId: session.id, run, target, facts, profile, fal, descriptor, signal: controller.signal, trace });

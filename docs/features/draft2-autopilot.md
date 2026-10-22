@@ -216,3 +216,14 @@ reactions, fix the words by hand or write a step again, then run the
 autopilot to the images." The Saint-Jean fraud carousel had gone on to the
 images with a 68. A run started again goes on from the review as it stands
 (the review is read again only when the chosen versions changed).
+
+## Addendum, 2026-10-22: the autopilot on the server
+
+The same steps and decisions now run as a job on the server, to the step the
+editor names (the caption by default), with the page closed: "Run on the
+server" on the story's overview. The decisions moved out of the canvas into
+`draft2-autopilot.core.ts` (the tab imports them; its own run is unchanged,
+cut at the images); a pass of 270 s runs steps with their deadline, chains the
+next pass through `/api/internal/draft2/resume`, and the worker's cron and a
+read of the story resume a job whose pass was lost. The Review's score never
+stops the server's job. See `docs/features/draft2-server-autopilot.md`.

@@ -105,6 +105,8 @@ export type FunnelStepInput = {
   resume?: boolean;
   /** With resume: give a run that ended unaccepted one extra round (FUNNEL_EXTRA_ROUND), at most FUNNEL_MAX_EXTRA_ROUNDS per run. */
   more?: boolean;
+  /** When the request this run is part of ends (epoch ms): a server pass that runs several steps names it, so the run pauses before it as it would before the route's own limit. */
+  deadline?: number;
 };
 
 const runOf = <R>(session: Draft2SessionRow, column: FunnelColumn) => (session as unknown as Record<FunnelColumn, R | null>)[column] ?? undefined;
@@ -131,7 +133,7 @@ const runOf = <R>(session: Draft2SessionRow, column: FunnelColumn) => (session a
  * rounds, with only the added rounds.
  */
 export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelScore, I extends FunnelIssue, R extends FunnelRun<C, S, I> & { previousRuns?: unknown[] }, Snapshot>(
-  def: FunnelStep<C, S, I, R, Snapshot>, { topicId, storyId, sessionId, resume = false, more = false }: FunnelStepInput,
+  def: FunnelStep<C, S, I, R, Snapshot>, { topicId, storyId, sessionId, resume = false, more = false, deadline }: FunnelStepInput,
 ): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session || session.storyId !== storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
@@ -199,6 +201,10 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const auditContext = { runId: session.id, topicId, storyId };
   const startedAt = Date.now();
+  // The request's end: the route's own limit from this start, or the deadline a server pass gave; the budgets keep their margins before it.
+  const limitAt = deadline ?? startedAt + ROUTE_LIMIT_MS;
+  const budgetAt = limitAt - (ROUTE_LIMIT_MS - TIME_BUDGET_MS);
+  const roundDeadlineAt = limitAt - (ROUTE_LIMIT_MS - ROUND_DEADLINE_MS);
   let lastRoundMs = 0;
   /**
    * What a judgment at an effort is expected to take: this step's last one at
@@ -246,7 +252,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     return efforts[roleKind] ?? (roleKind === "judge" ? entry?.judgeEffort ?? entry?.effort : entry?.effort) ?? draft2RevisionEffort(roleKind, process.env, pipeline);
   };
   /** What is left of the route's time for one call: never more than CALL_TIMEOUT_MS, never less than a minute. */
-  const callTimeoutMs = () => Math.max(MIN_CALL_TIMEOUT_MS, Math.min(CALL_TIMEOUT_MS, ROUTE_LIMIT_MS - (Date.now() - startedAt) - 10_000));
+  const callTimeoutMs = () => Math.max(MIN_CALL_TIMEOUT_MS, Math.min(CALL_TIMEOUT_MS, limitAt - Date.now() - 10_000));
   /**
    * Sol's stable prefix: the step's context and the verified facts at the end
    * of its instructions, the same on every call of the run, so OpenAI's prefix
@@ -320,7 +326,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     const flagged = new Set(mechanical.flatMap((issue) => issue.candidateId ? [issue.candidateId] : []));
     if (!flagged.size || !setup.fix) return undefined;
     const fix: FunnelFixPass = { candidateIds: [...flagged], findingsBefore: mechanical.length, findingsAfter: mechanical.length };
-    if (Date.now() - startedAt + FIX_ESTIMATE_MS + expectedJudgeMs(effortFor(round, "judge")) > ROUTE_LIMIT_MS - 15_000) return { candidates, mechanical, fix: { ...fix, skipped: "no time left in this request" } };
+    if (Date.now() + FIX_ESTIMATE_MS + expectedJudgeMs(effortFor(round, "judge")) > limitAt - 15_000) return { candidates, mechanical, fix: { ...fix, skipped: "no time left in this request" } };
     const begin = Date.now();
     try {
       const request = { ...setup.writer, contents: withLimits(setup.fix(candidates.filter((candidate) => flagged.has(candidate.id)), mechanical)), schema: setup.schemas.writer };
@@ -350,11 +356,11 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       for (let round = firstRound; round <= maxRounds; round++) {
         currentRound = round;
-        const elapsed = Date.now() - startedAt;
+        const now = Date.now();
         // A later round starts only when the request has time for it: not past the budget, not longer than the last round would take again,
         // and with room for its writer and its judgment as this step has measured them (else estimated), so no call is lost to the route's limit.
         const expectedRoundMs = expectedWriterMs(effortFor(round, "writer")) + expectedJudgeMs(effortFor(round, "judge"));
-        if (round > firstRound && (elapsed > TIME_BUDGET_MS || elapsed + lastRoundMs > ROUND_DEADLINE_MS || elapsed + expectedRoundMs > ROUTE_LIMIT_MS - 15_000)) {
+        if (round > firstRound && (now > budgetAt || now + lastRoundMs > roundDeadlineAt || now + expectedRoundMs > limitAt - 15_000)) {
           await pause(round);
           return;
         }
@@ -392,7 +398,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
           run.rounds.push({ round, kind, candidates, mechanical, ...(fixed ? { fix: fixed.fix } : {}), at: new Date().toISOString() });
           run.candidates = candidates;
           await checkpoint();
-          if (Date.now() - startedAt > TIME_BUDGET_MS) {
+          if (Date.now() > budgetAt) {
             await pause(round, true);
             return;
           }
@@ -401,7 +407,7 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         // 2. The judge: the facts, then this round's candidates beside the versions they revise. A judgment that would not fit in
         //    what is left of the route's time (this step's last judgment at that effort, else an estimate) waits for a new request.
         const judgeEffort = effortFor(round, "judge");
-        if (Date.now() - startedAt + expectedJudgeMs(judgeEffort) > ROUTE_LIMIT_MS - 15_000) {
+        if (Date.now() + expectedJudgeMs(judgeEffort) > limitAt - 15_000) {
           await pause(round, true);
           return;
         }

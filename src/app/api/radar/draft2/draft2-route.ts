@@ -4,6 +4,7 @@ import { creativeRouteErrorResponse, noStoreJson } from "@/app/api/radar/creativ
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError } from "@/app/modules/draft2/draft2-facts.types";
 import { draft2Cast } from "@/app/modules/draft2/draft2-models";
 import { latestDraft2Session } from "@/app/modules/draft2/draft2-session.repository";
+import { draft2AutopilotLeaseFree, kickDraft2AutopilotIfDue, latestDraft2AutopilotJob } from "@/app/modules/draft2/draft2-autopilot";
 import { getAnthropicRuntimeConfig } from "@/app/modules/stories/anthropic.config";
 import { SelectedStoryContentNotFoundError } from "@/app/modules/stories/story-content.repository";
 
@@ -19,7 +20,10 @@ export async function latestDraft2SessionResponse(request: Request): Promise<Res
   try {
     const topicId = await requireActiveRequestTopic(request);
     // Beside the session, who plays each part in a run started now: the browser cannot read the environment that names the models.
-    return noStoreJson({ session: (await latestDraft2Session(topicId, storyId)) ?? null, cast: draft2Cast(process.env, getAnthropicRuntimeConfig().model) });
+    // And the story's autopilot job on the server, if any: one waiting with a free lease is given a pass by this read (2026-10-22).
+    const [session, job] = await Promise.all([latestDraft2Session(topicId, storyId), latestDraft2AutopilotJob(topicId, storyId)]);
+    if (job) kickDraft2AutopilotIfDue(job, await draft2AutopilotLeaseFree(job.id), new URL(request.url).origin);
+    return noStoreJson({ session: session ?? null, cast: draft2Cast(process.env, getAnthropicRuntimeConfig().model), job: job ?? null });
   } catch (error) {
     return topicRequestErrorResponse(error) ?? creativeRouteErrorResponse(error, "read the Draft 2 session");
   }
