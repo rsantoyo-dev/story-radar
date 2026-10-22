@@ -46,6 +46,11 @@ export const instagramPublicationPackages = pgTable(
     packageHash: text("package_hash").notNull(),
     mediaType: text("media_type").notNull(),
     caption: text("caption").notNull(),
+    /**
+     * The first comment the account posts under the post once it is up
+     * (2026-10-22), frozen with the caption; null when the post has none.
+     */
+    firstComment: text("first_comment"),
     hashtags: text("hashtags")
       .array()
       .notNull()

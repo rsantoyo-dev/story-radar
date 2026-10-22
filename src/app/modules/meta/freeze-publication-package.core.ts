@@ -53,6 +53,8 @@ export type FrozenPackage = {
   mediaType: PublicationMediaType;
   caption: string;
   hashtags: string[];
+  /** The first comment the account posts under the post once it is up; absent when it has none. */
+  firstComment?: string;
   destination: CandidateDestinationSummary;
   /** PUB-10 delivery channel this package was frozen for. */
   channel: PublicationChannel;
@@ -74,6 +76,7 @@ export type PersistPackage = {
   packageHash: string;
   mediaType: PublicationMediaType;
   caption: string;
+  firstComment: string | null;
   hashtags: string[];
   igUserId: string | null;
   igUsername: string | null;
@@ -125,6 +128,8 @@ export type FreezeDependencies = {
     pageId: string | null;
     scriptSnapshot: unknown;
     policySnapshot: unknown;
+    /** The first comment approved with the set; frozen with the caption. */
+    firstComment?: string;
   }>;
   findExisting: (
     draftId: string,
@@ -257,6 +262,7 @@ export async function runFreezePublicationPackage(
     igUserId: candidate.destination.igUserId,
     connectionVersion: context.connectionVersion,
     ...(context.channel !== "instagram-direct" ? { channel: context.channel, pageId: context.pageId } : {}),
+    ...(context.firstComment ? { firstComment: context.firstComment } : {}),
   });
 
   // Renewing never changes what would be posted: a job's idempotency key is
@@ -309,6 +315,7 @@ export async function runFreezePublicationPackage(
         packageHash,
         mediaType,
         caption: candidate.caption,
+        firstComment: context.firstComment ?? null,
         hashtags: [...candidate.hashtags],
         igUserId: candidate.destination.igUserId,
         igUsername: candidate.destination.igUsername,
@@ -342,6 +349,7 @@ export async function runFreezePublicationPackage(
     mediaType,
     caption: candidate.caption,
     hashtags: [...candidate.hashtags],
+    ...(context.firstComment ? { firstComment: context.firstComment } : {}),
     destination: candidate.destination,
     channel: context.channel,
     publishingAccessPending: pendingPublishingAccess,

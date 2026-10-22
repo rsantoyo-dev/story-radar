@@ -10,6 +10,7 @@ import {
   publishScheduledNow,
   releaseUncertainPublicationJob,
   requestPublishNow,
+  retryFirstComment,
 } from "@/app/modules/meta/publish-publication-package";
 import { parsePublicationChannel } from "@/app/modules/meta/publication-channel";
 import {
@@ -88,7 +89,7 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-/** An editor checked the platform (the uncertain order did not post), or cancels or sends now an order still waiting for its time. */
+/** An editor checked the platform (the uncertain order did not post), cancels or sends now an order still waiting for its time, or tries a first comment that was not posted again. */
 export async function PATCH(request: Request, context: Context) {
   const unauthorized = await authorizeRadarCollector(request);
   if (unauthorized) return unauthorized;
@@ -100,8 +101,8 @@ export async function PATCH(request: Request, context: Context) {
     if (typeof body.jobId !== "string" || !UUID_PATTERN.test(body.jobId)) {
       return noStoreJson({ error: "jobId must be a valid UUID" }, 400);
     }
-    if (body.action !== "confirm-not-published" && body.action !== "cancel-schedule" && body.action !== "publish-now") {
-      return noStoreJson({ error: "action must be confirm-not-published, cancel-schedule or publish-now" }, 400);
+    if (body.action !== "confirm-not-published" && body.action !== "cancel-schedule" && body.action !== "publish-now" && body.action !== "retry-comment") {
+      return noStoreJson({ error: "action must be confirm-not-published, cancel-schedule, publish-now or retry-comment" }, 400);
     }
     const topicId = await requireActiveRequestTopic(request);
     if (body.action === "cancel-schedule") {
@@ -112,6 +113,11 @@ export async function PATCH(request: Request, context: Context) {
     if (body.action === "publish-now") {
       const job = await publishScheduledNow(topicId, draftId, body.jobId);
       recordAuditEventLater({ action: "publication.schedule.published_now", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
+      return noStoreJson({ job });
+    }
+    if (body.action === "retry-comment") {
+      const job = await retryFirstComment(topicId, draftId, body.jobId);
+      recordAuditEventLater({ action: "publication.comment.retried", entityType: "publication_job", entityId: body.jobId, topicId, details: { draftId } });
       return noStoreJson({ job });
     }
     const job = await releaseUncertainPublicationJob(topicId, draftId, body.jobId);

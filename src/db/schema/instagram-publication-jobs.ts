@@ -90,6 +90,18 @@ export const instagramPublicationJobs = pgTable(
      * Null for an order sent at once.
      */
     publishAt: timestamp("publish_at", { withTimezone: true, mode: "date" }),
+    /**
+     * The package's first comment, posted once the post is published
+     * (2026-10-22): null when the package has none; `pending` until it is
+     * sent, `posting` while a send's outcome is not known (the next attempt
+     * looks for it on the post before sending again), then `posted` with its
+     * id, or `failed` with its sanitized reason. It never touches the post.
+     */
+    commentStatus: text("comment_status"),
+    commentId: text("comment_id"),
+    commentError: text("comment_error"),
+    commentAttempts: integer("comment_attempts").default(0).notNull(),
+    commentedAt: timestamp("commented_at", { withTimezone: true, mode: "date" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -138,6 +150,13 @@ export const instagramPublicationJobs = pgTable(
       "instagram_publication_jobs_channel_check",
       sql`${table.channel} IN ('instagram-direct', 'instagram-page', 'facebook-page')
         AND (${table.channel} = 'instagram-direct' OR ${table.pageId} IS NOT NULL)`,
+    ),
+    check(
+      "instagram_publication_jobs_comment_check",
+      sql`(${table.commentStatus} IS NULL OR ${table.commentStatus} IN ('pending', 'posting', 'posted', 'failed'))
+        AND (${table.commentStatus} IS DISTINCT FROM 'posted' OR ${table.commentId} IS NOT NULL)
+        AND (${table.commentStatus} IS DISTINCT FROM 'failed' OR ${table.commentError} IS NOT NULL)
+        AND ${table.commentAttempts} >= 0`,
     ),
     check(
       "instagram_publication_jobs_schedule_check",

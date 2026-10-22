@@ -481,3 +481,37 @@ export async function fetchInstagramMediaPermalink(
     timestamp: typeof payload.timestamp === "string" ? payload.timestamp : undefined,
   };
 }
+
+// --- First comment (2026-10-22) ---------------------------------------------
+
+/** The comparison two comment texts get: Meta may tidy spaces and line breaks. */
+const commentKey = (text: string) => text.replace(/\s+/gu, " ").trim();
+
+/** Posts a comment as the account on its own media. Returns the comment's id. */
+export async function createInstagramComment(
+  mediaId: string,
+  accessToken: string,
+  message: string,
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
+): Promise<string> {
+  if (!IG_MEDIA_ID.test(mediaId)) throw new MetaGraphApiError("Invalid Instagram media id", 400);
+  const payload = await instagramGraphPost<{ id?: unknown }>(`${mediaId}/comments`, accessToken, { message }, host);
+  return requireCreationId(payload, "comment");
+}
+
+/**
+ * The id of a comment with exactly this text on the media, if there is one:
+ * an earlier send whose answer was lost. Right after the post, the first page
+ * holds it.
+ */
+export async function findInstagramComment(
+  mediaId: string,
+  accessToken: string,
+  message: string,
+  host: InstagramGraphHost = DEFAULT_INSTAGRAM_GRAPH_HOST,
+): Promise<string | undefined> {
+  if (!IG_MEDIA_ID.test(mediaId)) throw new MetaGraphApiError("Invalid Instagram media id", 400);
+  const payload = await instagramGraphGet<{ data?: { id?: unknown; text?: unknown }[] }>(`${mediaId}/comments`, accessToken, "id,text", host);
+  const found = (payload.data ?? []).find((comment) => typeof comment.text === "string" && commentKey(comment.text) === commentKey(message));
+  return typeof found?.id === "string" ? found.id : undefined;
+}

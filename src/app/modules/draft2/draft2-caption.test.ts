@@ -58,8 +58,9 @@ const profile = { name: "Salut Longueuil", language: "French", region: "Longueui
 
 const TAGS = ["Longueuil", "VieuxLongueuil", "Bibliotheque", "SortieFamille", "Samedi"];
 const OPENINGS = ["📚 The Vieux-Longueuil library is back on Saturday.", "Saturday morning has a new plan in Vieux-Longueuil.", "Kids under 12 get in free this Saturday."];
+const COMMENT = "The library is back on Saturday, and it may be the best free plan of the weekend. Which book will your kids pick first?";
 const caption = (id: string, opening: string, extra: Partial<Draft2CaptionCandidate> = {}): Draft2CaptionCandidate => ({
-  id, angle: `Way in ${id}`, text: `${opening}\n\nDoors open at 10 a.m. with @biblio.longueuil.\nFree for children under 12.\n\nSave this for Saturday.`, hashtags: TAGS, factIds: ["f1", "f2"], ...extra,
+  id, angle: `Way in ${id}`, text: `${opening}\n\nDoors open at 10 a.m. with @biblio.longueuil.\nFree for children under 12.\n\nSave this for Saturday.`, hashtags: TAGS, factIds: ["f1", "f2"], comment: COMMENT, ...extra,
 });
 type WriterContents = { task: string; candidatesWanted?: number; captions?: { id: string }[]; develop?: { id: string }[] };
 type JudgeContents = { round: number; candidates: { id: string }[]; proposalsWanted?: number };
@@ -69,7 +70,7 @@ const writer = (contents: WriterContents) => contents.task === "revise"
     ...(contents.develop ?? []).map((proposal) => caption(proposal.id, "An edit of Sol's opening for Saturday.")),
   ] }
   : { candidates: OPENINGS.slice(0, contents.candidatesWanted).map((opening, index) => caption(`c${index + 1}`, opening)) };
-const score = (candidateId: string, overall: number): Draft2CaptionScore => ({ candidateId, hook: overall, scan: overall, grounding: overall, voice: overall, action: overall, hashtags: overall, fit: overall, overall, note: "Why." });
+const score = (candidateId: string, overall: number): Draft2CaptionScore => ({ candidateId, hook: overall, scan: overall, grounding: overall, voice: overall, action: overall, hashtags: overall, fit: overall, conversation: overall, overall, note: "Why." });
 const judge = (verdict: "accept" | "revise", winnerId: string, overall: Record<string, number>) => (contents: JudgeContents) => ({
   verdict, winnerId, summary: `${verdict} ${winnerId}.`, issues: [], suggestions: [],
   scores: contents.candidates.map((candidate) => score(candidate.id, overall[candidate.id] ?? 70)),
@@ -150,7 +151,7 @@ test("Claude writes three captions for the finished carousel and Sol judges them
     assert.ok(String(call.input.instructions).includes("- Emojis: at most 3 in the whole caption."));
     assert.ok(String(call.input.instructions).includes("the same single action, stated once (Save this for Saturday.)"));
   }
-  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "3", fairness: "2", reader: "3" }], ["caption", "draft2_caption_review", { captions: "3", fairness: "2", reader: "3" }]]));
+  assert.equal(json(session.trace.map((entry) => [entry.step, entry.operation, entry.skillVersions])), json([["caption", "draft2_caption", { captions: "4", fairness: "2", reader: "3" }], ["caption", "draft2_caption_review", { captions: "4", fairness: "2", reader: "3" }]]));
   const run = session.caption!;
   assert.equal(json([session.step, session.status, run.status, run.winnerId, run.imagesRunId, run.mentionsVersion, run.credits, run.rules]),
     json(["caption", "ready", "ready", "c2", "run-1", 4, [], { emojis: 3, ctaStyle: "One warm, concrete step", cta: "Save this for Saturday.", grave: false }]));

@@ -27,7 +27,7 @@ import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } fr
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
 import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, cutSections, imageCleared, standingScene, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
-import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
+import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, COMMENT_MAX_WORDS, captionPostText, shownComment, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
 import {
@@ -273,7 +273,7 @@ const IMAGES_STATUS: Record<Draft2Images["status"], { label: string; tone: Statu
   running: { label: "Generating", tone: "info" }, paused: { label: "Paused", tone: "warning" }, ready: { label: "Ready", tone: "success" },
   "needs-review": { label: "Needs review", tone: "warning" }, failed: { label: "Failed", tone: "error" },
 };
-const CAPTION_CRITERION_LABEL: Record<Draft2CaptionCriterion, string> = { hook: "Hook", scan: "Scan", grounding: "Grounding", voice: "Voice", action: "Action", hashtags: "Hashtags", fit: "Fit" };
+const CAPTION_CRITERION_LABEL: Record<Draft2CaptionCriterion, string> = { hook: "Hook", scan: "Scan", grounding: "Grounding", voice: "Voice", action: "Action", hashtags: "Hashtags", fit: "Fit", conversation: "Conversation" };
 const MENTION_STATUS: Record<Draft2MentionStatus, { label: string; tone: StatusTone }> = {
   verified: { label: "On Instagram", tone: "info" }, confirmed: { label: "Tagged", tone: "success" }, rejected: { label: "Not them", tone: "neutral" },
   "not-found": { label: "Not found", tone: "neutral" }, unavailable: { label: "Not checked", tone: "warning" },
@@ -918,8 +918,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }
 
   /** Shows the photo credits after the caption, or leaves them out at the editor's responsibility: the post's text changes; no provider call. */
-  // Whether the post shows the photo credits, or the line naming where the story was reported, after the caption.
-  async function showCaptionCredits(shown: boolean, part: "credits" | "source" = "credits") {
+  // Whether the post shows the photo credits, or the line naming where the story was reported, after the caption, or posts its first comment.
+  async function showCaptionCredits(shown: boolean, part: "credits" | "source" | "comment" = "credits") {
     if (!session || choosing || running) return;
     setChoosing({ step: "caption", id: part }); setChoiceError(undefined);
     try {
@@ -1499,7 +1499,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {running === "caption" ? "Writing and judging…" : caption ? "Write the caption again" : "Write the caption"}
         </Button>
       </>,
-      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end. The program adds the source (where the story was reported) and the photo credits after the text, unless you leave them out. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
+      how: <p>The post’s text for the finished carousel, in the publication’s voice: an opening line that stops the reader, short lines with blank lines between them, the emojis the brand allows, the closing’s one call to action, the accounts you tag and 5 to 8 hashtags at the end, and the first comment the account posts under it once it is up (a light recap, the publication’s take and one short question, under 100 words; none on a grave story). The program adds the source (where the story was reported) and the photo credits after the text, unless you leave them out. {today.caption.writer} writes three captions; {today.caption.judge} scores them and proposes one of its own; {today.caption.writer} revises the best and edits {today.caption.judge}’s, which also competes as {today.caption.judge} wrote it, for {today.caption.judge}’s pick. Accepted at 95/100 with no criterion below 85.</p>,
       body: <>
         <section className={styles.screenSection} aria-label="Accounts to tag">
           <SectionHeader level={2} title="Accounts to tag" description="Claude proposes the Instagram accounts of the story’s people, places and organizations; Instagram says which exist and what they are called; only the accounts you tag reach the caption. On Facebook an @username stays plain text." actions={
@@ -1532,6 +1532,10 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           {caption?.source && running !== "caption" ? <div>
             <label className={styles.factMeta}><input type="checkbox" checked={!caption.sourceHidden} disabled={running !== undefined || choosing !== undefined || caption.status === "running"} onChange={(event) => { void showCaptionCredits(event.target.checked, "source"); }} /> Show the source after the caption ({caption.source})</label>
             {caption.sourceHidden ? <p className={styles.factMeta}>Left out of this post: the story was reported by {caption.sources?.join(", ") ?? "another outlet"}, and naming it is what keeps the post fair to its reporting.</p> : null}
+          </div> : null}
+          {caption && chosenCandidate(caption)?.comment && running !== "caption" ? <div>
+            <label className={styles.factMeta}><input type="checkbox" checked={!caption.commentHidden} disabled={running !== undefined || choosing !== undefined || caption.status === "running"} onChange={(event) => { void showCaptionCredits(event.target.checked, "comment"); }} /> Post the first comment under the post once it is published</label>
+            {caption.commentHidden ? <p className={styles.factMeta}>No first comment on this post: the conversation starts with the readers.</p> : null}
           </div> : null}
           {caption && running !== "caption" ? <FunnelRunView
             run={caption}
@@ -1742,6 +1746,7 @@ const deckFields = (candidate: Draft2DeckCandidate): HandEditField[] => candidat
 const captionFields = (candidate: Draft2CaptionCandidate): HandEditField[] => [
   { slide: "post", field: "text", label: "Caption", value: candidate.text, multiline: true },
   { slide: "post", field: "hashtags", label: "Hashtags", value: candidate.hashtags.map((tag) => `#${tag}`).join(" ") },
+  { slide: "post", field: "comment", label: `First comment (empty posts none; at most ${COMMENT_MAX_WORDS} words)`, value: candidate.comment ?? "", multiline: true },
 ];
 const visualFields = (candidate: Draft2VisualCandidate, carousel: readonly { slide: string; label: string }[]): HandEditField[] => candidate.slides.map((slide) => ({
   slide: slide.slide, field: "direction", label: `${carousel.find((entry) => entry.slide === slide.slide)?.label ?? slide.slide} · image direction`, value: slide.direction, multiline: true,
@@ -1850,9 +1855,9 @@ function captionDisplayFor(caption: Draft2Caption | undefined): FunnelDisplay<Dr
     plural: "captions",
     gate: CAPTION_GATE,
     labels: CAPTION_CRITERION_LABEL,
-    lines: (candidate) => ({ title: opening(candidate), details: [`${[...candidate.text].length} characters · ${candidate.hashtags.map((tag) => `#${tag}`).join(" ")}`] }),
+    lines: (candidate) => ({ title: opening(candidate), details: [`${[...candidate.text].length} characters · ${candidate.hashtags.map((tag) => `#${tag}`).join(" ")}`, ...(candidate.comment ? [`First comment: ${candidate.comment}`] : [])] }),
     proposal: opening,
-    cards: (candidate) => <CaptionPost text={captionPostText({ text: candidate.text, source, credits, hashtags: candidate.hashtags })} factIds={candidate.factIds} />,
+    cards: (candidate) => <CaptionPost text={captionPostText({ text: candidate.text, source, credits, hashtags: candidate.hashtags })} factIds={candidate.factIds} comment={shownComment(caption, candidate)} />,
   };
 }
 
@@ -2459,11 +2464,15 @@ function MentionItem({ account, entityName, saving, locked, onDecide }: {
   </li>;
 }
 
-/** The post as Facebook and Instagram will show it: its line breaks and blank lines kept, then the credits and the hashtags. */
-function CaptionPost({ text, factIds }: { text: string; factIds: readonly string[] }) {
+/** The post as Facebook and Instagram will show it: its line breaks and blank lines kept, then the credits and the hashtags; below it, the first comment the account posts. */
+function CaptionPost({ text, factIds, comment }: { text: string; factIds: readonly string[]; comment?: string }) {
   return <div className={styles.captionPost}>
     <p className={styles.captionText}>{text}</p>
     <p className={styles.openingFacts}>{[...text].length.toLocaleString("en-CA")} of {CAPTION_MAX_CHARACTERS.toLocaleString("en-CA")} characters · Facts · {factIds.join(", ")}</p>
+    {comment ? <>
+      <p className={styles.factMeta}>First comment, posted by the account once the post is up</p>
+      <p className={styles.captionText}>{comment}</p>
+    </> : null}
   </div>;
 }
 
@@ -2478,7 +2487,7 @@ function PublishPreview({ target, approved, acknowledged, locked, onAcknowledge 
   const one = target.issues.length === 1;
   return <div className={styles.openingGroup}>
     <p className={styles.factMeta}>{target.slides.length} images, in order: {target.slides.map((slide) => `${slide.label} v${slide.version}`).join(" · ")}.</p>
-    <CaptionPost text={targetPostText(target)} factIds={target.caption.factIds} />
+    <CaptionPost text={targetPostText(target)} factIds={target.caption.factIds} comment={target.comment} />
     {target.issues.length ? <InlineNotice tone={approved ? "info" : "warning"} title={approved ? `Approved as ${one ? "it is" : "they are"}` : `Look at ${one ? "this image" : "these images"} before publishing`}>
       <ul className={styles.issueList}>{target.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
       {approved ? null : <label className={styles.factMeta}><input type="checkbox" checked={acknowledged} disabled={locked} onChange={(event) => onAcknowledge(event.target.checked)} /> I looked at {one ? "it" : "them"}: publish {one ? "it" : "them"} as {one ? "it is" : "they are"}</label>}

@@ -1,7 +1,7 @@
 import { authorizeRadarCollector } from "@/app/api/radar/radar-api-auth";
 import { requireActiveRequestTopic } from "@/app/api/radar/radar-topic";
 import { noStoreJson } from "@/app/api/radar/creative-route-error";
-import { recordCaptionChoice, recordCaptionCredits, recordCaptionSource, runDraft2Caption } from "@/app/modules/draft2/draft2-caption";
+import { recordCaptionChoice, recordCaptionComment, recordCaptionCredits, recordCaptionSource, runDraft2Caption } from "@/app/modules/draft2/draft2-caption";
 import { DRAFT2_UUID_PATTERN, draft2ErrorResponse } from "../draft2-route";
 
 export const runtime = "nodejs";
@@ -33,13 +33,14 @@ export async function POST(request: Request) {
 /**
  * Records the editor's choice among the run's captions (`candidateId`),
  * whether the post shows the photo credits (`credits: "shown" | "hidden"`),
- * or whether it shows the source line (`source: "shown" | "hidden"`); no
+ * whether it shows the source line (`source: "shown" | "hidden"`), or
+ * whether its first comment is posted (`comment: "shown" | "hidden"`); no
  * provider call.
  */
 export async function PATCH(request: Request) {
   const denied = await authorizeRadarCollector(request);
   if (denied) return denied;
-  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown; credits?: unknown; source?: unknown } | null;
+  const body = await request.json().catch(() => null) as { sessionId?: unknown; candidateId?: unknown; credits?: unknown; source?: unknown; comment?: unknown } | null;
   const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
   if (!DRAFT2_UUID_PATTERN.test(sessionId)) return noStoreJson({ error: "sessionId must be a valid UUID" }, 400);
   if (body?.credits !== undefined) {
@@ -58,6 +59,15 @@ export async function PATCH(request: Request) {
       return noStoreJson({ session: await recordCaptionSource({ topicId, sessionId, shown: body.source === "shown" }) });
     } catch (error) {
       return draft2ErrorResponse(error, "record whether the post shows its source");
+    }
+  }
+  if (body?.comment !== undefined) {
+    if (body.comment !== "shown" && body.comment !== "hidden") return noStoreJson({ error: "comment must be \"shown\" or \"hidden\"" }, 400);
+    try {
+      const topicId = await requireActiveRequestTopic(request);
+      return noStoreJson({ session: await recordCaptionComment({ topicId, sessionId, shown: body.comment === "shown" }) });
+    } catch (error) {
+      return draft2ErrorResponse(error, "record whether the post has a first comment");
     }
   }
   const candidateId = typeof body?.candidateId === "string" ? body.candidateId : "";

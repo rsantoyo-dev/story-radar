@@ -14,6 +14,7 @@ import { findCreativeAssetBatchById } from "../stories/creative-assets.repositor
 import { DOCUMENTARY_PROVIDER } from "../stories/creative-documentary";
 import { DRAFT2_PROVIDER } from "../draft2/draft2-publication.types";
 import { readDraft2PublicationImage } from "../draft2/draft2-publication";
+import { draft2PublicationComment } from "../draft2/draft2-session.repository";
 import { documentaryImage } from "../stories/manage-creative-documentary";
 import { downloadApprovedCreativeImage } from "../stories/manage-creative-assets";
 import {
@@ -73,7 +74,10 @@ export async function freezePublicationPackage(
       if (!batch || batch.draftId !== draft.id) {
         throw new CreativeContentNotFoundError("Image batch not found for this draft");
       }
+      // A Draft 2 copy carries the first comment approved with it.
+      const firstComment = batch.provider === DRAFT2_PROVIDER ? await draft2PublicationComment(topicId, draft.id) : undefined;
       return {
+        ...(firstComment ? { firstComment } : {}),
         storyId: draft.storyId,
         provider: batch.provider,
         connectionVersion: destination.connectionVersion,
@@ -320,6 +324,7 @@ function mapFrozenPackage(
     mediaType: row.mediaType as PublicationMediaType,
     caption: row.caption,
     hashtags: row.hashtags ?? [],
+    ...(row.firstComment ? { firstComment: row.firstComment } : {}),
     destination: {
       igUserId: row.igUserId,
       igUsername: row.igUsername,

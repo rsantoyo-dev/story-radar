@@ -107,6 +107,18 @@ export async function recentDraft2CoverRows(topicId: string, exceptSessionId: st
 }
 
 /** One session, only within the topic the request may use. */
+/**
+ * The first comment approved with a Draft 2 publication copy, found by the v1
+ * draft it was copied into: a copy never changes (a new comment is a new
+ * approval and a new copy), so the draft names its comment.
+ */
+export async function draft2PublicationComment(topicId: string, draftId: string): Promise<string | undefined> {
+  const [row] = await db.select({ publication: draft2Sessions.publication }).from(draft2Sessions)
+    .where(and(eq(draft2Sessions.topicId, topicId), sql`${draft2Sessions.publication}->>'draftId' = ${draftId}`))
+    .limit(1);
+  return row?.publication?.draftId === draftId ? row.publication.firstComment?.trim() || undefined : undefined;
+}
+
 export async function getDraft2Session(topicId: string, id: string): Promise<Draft2SessionRow | undefined> {
   const [row] = await db.select().from(draft2Sessions)
     .where(and(eq(draft2Sessions.id, id), eq(draft2Sessions.topicId, topicId)))

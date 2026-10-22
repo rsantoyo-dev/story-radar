@@ -8,8 +8,20 @@ import { scheduleInputBounds, scheduleLabel } from "./run-publish-schedule.core"
 import { Button } from "./ui/primitives";
 import styles from "./radar-dashboard.generated.module.css";
 
-type FrozenPackage = { id: string; caption: string; hashtags: string[]; slides: unknown[] };
-type JobView = { id: string; status: string; permalink?: string | null; lastError?: string | null; canRetry?: boolean; publishAt?: string | null };
+type FrozenPackage = { id: string; caption: string; hashtags: string[]; slides: unknown[]; firstComment?: string };
+type CommentView = { status: "pending" | "posting" | "posted" | "failed"; error: string | null; postedAt: string | null };
+type JobView = { id: string; status: string; permalink?: string | null; lastError?: string | null; canRetry?: boolean; publishAt?: string | null; comment?: CommentView | null };
+
+/** A published post whose first comment is still being posted: the page keeps following it. */
+const commentInFlight = (job: JobView | undefined) => job?.status === "published" && (job.comment?.status === "pending" || job.comment?.status === "posting");
+
+/** The first comment's state under a published post, in a few words. */
+function commentLine(comment: CommentView | null | undefined): string {
+  if (!comment) return "";
+  if (comment.status === "posted") return " · First comment posted";
+  if (comment.status === "failed") return ` · First comment not posted: ${comment.error ?? "no reason was recorded."}`;
+  return " · Posting the first comment…";
+}
 type Outcome = { channel: PublicationChannel; job?: JobView; error?: string };
 
 const TERMINAL = new Set(["published", "failed", "suspended"]);
@@ -144,8 +156,22 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
     } finally { setBusy(false); }
   }
 
-  // Follow each order until it is published, failed or suspended; the page drives it while open. A scheduled order is read once a minute.
-  const pending = outcomes.filter((o) => o.job && !TERMINAL.has(o.job.status) && o.job.status !== "scheduled").map((o) => `${o.channel}:${o.job!.id}`).join(",");
+  /** Tries a first comment that was not posted again; nothing else about the post changes. */
+  async function retryComment(channel: PublicationChannel, job: JobView) {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(url("publication-job", channel), { method: "PATCH", headers, body: JSON.stringify({ jobId: job.id, action: "retry-comment" }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "The first comment could not be tried again");
+      const next = body.job as JobView;
+      setOutcomes((current) => current.some((entry) => entry.channel === channel) ? current.map((entry) => entry.channel === channel ? { ...entry, job: next } : entry) : [...current, { channel, job: next }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The first comment could not be tried again");
+    } finally { setBusy(false); }
+  }
+
+  // Follow each order until it is published, failed or suspended, and a published post until its first comment is up; the page drives it while open. A scheduled order is read once a minute.
+  const pending = outcomes.filter((o) => o.job && ((!TERMINAL.has(o.job.status) && o.job.status !== "scheduled") || commentInFlight(o.job))).map((o) => `${o.channel}:${o.job!.id}`).join(",");
   const waiting = outcomes.filter((o) => o.job?.status === "scheduled").map((o) => `${o.channel}:${o.job!.id}`).join(",");
   useEffect(() => {
     if (!waiting) return;
@@ -170,7 +196,7 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
     let disposed = false;
     const timer = setInterval(async () => {
       const next = await Promise.all(outcomes.map(async (outcome) => {
-        if (!outcome.job || TERMINAL.has(outcome.job.status)) return outcome;
+        if (!outcome.job || (TERMINAL.has(outcome.job.status) && !commentInFlight(outcome.job))) return outcome;
         try {
           const response = await fetch(url("publication-job", outcome.channel, `&jobId=${encodeURIComponent(outcome.job.id)}`), { headers, cache: "no-store" });
           const body = await response.json();
@@ -187,7 +213,8 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
   if (channelsError) return <p role="alert">{channelsError}</p>;
   if (!options) return <p><small>Checking connected channels…</small></p>;
   if (!options.length) return <p><small>Connect the topic&rsquo;s Facebook Page or Instagram in Channels to publish from here.</small></p>;
-  const working = busy || Boolean(pending);
+  // A first comment still being posted does not hold the buttons: the post itself is up.
+  const working = busy || outcomes.some((o) => o.job && !TERMINAL.has(o.job.status) && o.job.status !== "scheduled");
   const label = (option: ChannelOption) => `${PUBLICATION_CHANNEL_LABELS[option.channel]}${option.accountHint ? ` (${option.accountHint})` : ""}`;
   // A channel with a post already scheduled offers no second send: change or cancel the scheduled one.
   const scheduledChannels = new Set(outcomes.filter((o) => o.job?.status === "scheduled").map((o) => o.channel));
@@ -197,7 +224,8 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
   return <section className={styles.runPublish} aria-label="Publish">
     <h3>Publish</h3>
     {Object.keys(published).length ? <ul className={styles.runPublishResults}>{(Object.entries(published) as [PublicationChannel, JobView][]).map(([channel, job]) => <li key={channel} data-status="published">
-      <strong>{PUBLICATION_CHANNEL_LABELS[channel]}</strong> Published{job.permalink ? <> · <a href={job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}
+      <strong>{PUBLICATION_CHANNEL_LABELS[channel]}</strong> Published{job.permalink ? <> · <a href={job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}{outcomes.some((o) => o.job?.id === job.id) ? null : commentLine(job.comment)}
+      {job.comment?.status === "failed" && !outcomes.some((o) => o.job?.id === job.id) ? <>{" "}<Button size="compact" variant="quiet" disabled={disabled || busy} onClick={() => void retryComment(channel, job)}>Try the comment again</Button></> : null}
     </li>)}</ul> : null}
     {preparing ? <div className={styles.runPublishConfirm} role="status" aria-live="polite">
       <strong>Preparing the exact post for {preparing.label}{preparing.total > 1 ? ` (${preparing.index} of ${preparing.total})` : ""}…</strong>
@@ -213,6 +241,7 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
       <strong>{scheduling ? "Schedule" : "Publish"} this exact post {scheduling ? "" : "now "}to {prepared.map((p) => label(p.option)).join(" and ")}?</strong>
       <p>{prepared[0].pkg.slides.length} {prepared[0].pkg.slides.length === 1 ? "image" : "images"} · {prepared[0].pkg.caption.length > 280 ? `${prepared[0].pkg.caption.slice(0, 280)}…` : prepared[0].pkg.caption}</p>
       {prepared[0].pkg.hashtags.length ? <p><small>{prepared[0].pkg.hashtags.join(" ")}</small></p> : null}
+      {prepared[0].pkg.firstComment ? <p><small>First comment, posted once the post is up: {prepared[0].pkg.firstComment}</small></p> : null}
       <div role="radiogroup" aria-label="When to publish" className={styles.dailyPlannerActions}>
         <label><input type="radio" name="publish-when" checked={!scheduling} disabled={busy} onChange={() => setScheduling(false)} /> Publish now</label>
         <label><input type="radio" name="publish-when" checked={scheduling} disabled={busy} onChange={() => { setScheduling(true); setScheduleAt((current) => current || bounds.suggested); }} /> Schedule for later</label>
@@ -233,7 +262,8 @@ export function RunPublishActions({ topicId, draftId, batchId, secret, disabled 
         : outcome.job?.status === "scheduled" ? <>Scheduled for {outcome.job.publishAt ? scheduleLabel(outcome.job.publishAt) : "later"}{" "}
           <Button size="compact" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "publish-now")}>Publish now</Button>{" "}
           <Button size="compact" variant="quiet" disabled={disabled || busy} onClick={() => void changeSchedule(outcome, "cancel-schedule")}>Cancel the scheduled post</Button></>
-        : outcome.job?.status === "published" ? <>Published{outcome.job.permalink ? <> · <a href={outcome.job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}</>
+        : outcome.job?.status === "published" ? <>Published{outcome.job.permalink ? <> · <a href={outcome.job.permalink} target="_blank" rel="noreferrer">View post ↗</a></> : null}{commentLine(outcome.job.comment)}
+          {outcome.job.comment?.status === "failed" ? <>{" "}<Button size="compact" variant="quiet" disabled={disabled || busy} onClick={() => void retryComment(outcome.channel, outcome.job!)}>Try the comment again</Button></> : null}</>
         : TERMINAL.has(outcome.job?.status ?? "") ? `${outcome.job?.status === "suspended" ? "Suspended" : "Failed"}: ${outcome.job?.lastError ?? "no reason was recorded."}${outcome.job?.canRetry ? " Nothing was posted: publish it again to retry it." : ""}`
         : "Publishing… keep this page open."}
     </li>)}</ul> : null}

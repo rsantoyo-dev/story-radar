@@ -13,7 +13,8 @@ const facts: Draft2Fact[] = [
 const RULES: Draft2CaptionRules = { emojis: 2, ctaStyle: "Warm, one clear step", cta: "Save this for Saturday.", grave: false };
 const TEXT = "📚 The Vieux-Longueuil library opens its doors again on Saturday.\n\nDoors open at 10 a.m.\nFree for children under 12.\n\nSave this for Saturday.";
 const TAGS = ["Longueuil", "VieuxLongueuil", "Bibliotheque", "FamilyOuting", "Rentree"];
-const caption = (id: string, extra: Partial<Draft2CaptionCandidate> = {}): Draft2CaptionCandidate => ({ id, angle: "Saturday, free for kids", text: TEXT, hashtags: TAGS, factIds: ["f1", "f2"], ...extra });
+const COMMENT = "The library is back on Saturday, and it may be the best free plan of the weekend. Which book will your kids pick first?";
+const caption = (id: string, extra: Partial<Draft2CaptionCandidate> = {}): Draft2CaptionCandidate => ({ id, angle: "Saturday, free for kids", text: TEXT, hashtags: TAGS, factIds: ["f1", "f2"], comment: COMMENT, ...extra });
 const codes = (candidates: Draft2CaptionCandidate[], options: Partial<{ credits: string[]; mentions: { handle: string }[]; rules: Draft2CaptionRules }> = {}) =>
   mechanicalCaptionIssues(candidates, facts, { credits: [], mentions: [], rules: RULES, ...options }).map((issue) => `${issue.candidateId}:${issue.code}`);
 
@@ -86,12 +87,30 @@ test("two captions that open alike: the second is a duplicate, unless both are t
 });
 
 test("the rules each model reads: the emoji allowance, the closing's call to action in the publication's style, none on a grave story", () => {
-  assert.equal(captionRulesBrief(RULES), "# The post\n- Emojis: at most 2 in the whole caption.\n- The call to action: the closing's, the same single action, stated once (Save this for Saturday.).\n- The publication's call-to-action style (its voice; the action is the closing's): Warm, one clear step");
-  assert.equal(captionRulesBrief({ emojis: 0, ctaStyle: " ", cta: "", grave: true }), "# The post\n- Emojis: none.\n- The story is grave: no call to action.");
+  assert.equal(captionRulesBrief(RULES), "# The post\n- Emojis: at most 2 in the whole caption.\n- The call to action: the closing's, the same single action, stated once (Save this for Saturday.).\n- The first comment: at most 95 words, ending with one short question.\n- The publication's call-to-action style (its voice; the action is the closing's): Warm, one clear step");
+  assert.equal(captionRulesBrief({ emojis: 0, ctaStyle: " ", cta: "", grave: true }), "# The post\n- Emojis: none.\n- The story is grave: no call to action.\n- The first comment: none (comment is empty).");
 });
 
 test("the caption never uses an abbreviation the facts had to spell out", () => {
   const explaining: Draft2Fact[] = [...facts, { id: "f3", claim: "La Bibliothèque du Vieux-Longueuil (BVL) rouvre samedi.", evidence: "", kind: "event", status: "established", importance: 50 }];
   const text = TEXT.replace("The Vieux-Longueuil library", "The BVL");
   assert.deepEqual(mechanicalCaptionIssues([caption("c1", { text })], explaining, { credits: [], mentions: [], rules: RULES }).map((issue) => `${issue.candidateId}:${issue.code}`), ["c1:ABBREVIATION"]);
+});
+
+test("the first comment: parsed with the caption, one short question under 100 words, no tags, the caption's rules; none on a grave story", () => {
+  const [parsed] = parseCaptionCandidates(JSON.stringify({ candidates: [{ id: "c1", text: "One", hashtags: ["Longueuil"], factIds: ["f1"], comment: "  Back on Saturday.   Which shelf first?  ", angle: "Saturday" }] }));
+  assert.equal(parsed.comment, "Back on Saturday. Which shelf first?");
+  const [none] = parseCaptionCandidates(JSON.stringify({ candidates: [{ id: "c1", text: "One", hashtags: ["Longueuil"], factIds: ["f1"], comment: " ", angle: "Saturday" }] }));
+  assert.equal("comment" in none, false, "an empty comment is none");
+  assert.deepEqual(codes([caption("c1", { comment: undefined })]), ["c1:COMMENT_MISSING"]);
+  assert.deepEqual(codes([caption("c1", { comment: undefined })], { rules: { ...RULES, grave: true } }), [], "a grave story opens no conversation");
+  assert.deepEqual(codes([caption("c1")], { rules: { ...RULES, grave: true } }), ["c1:COMMENT_ON_GRAVE"]);
+  assert.deepEqual(codes([caption("c1", { comment: `${"word ".repeat(96)}?` })]), ["c1:COMMENT_TOO_LONG"]);
+  assert.deepEqual(codes([caption("c1", { comment: "The library is back on Saturday." })]), ["c1:COMMENT_NO_QUESTION"]);
+  assert.deepEqual(codes([caption("c1", { comment: "Back Saturday with @biblio.longueuil. Which book first?" })]), ["c1:COMMENT_TAGS"]);
+  assert.deepEqual(codes([caption("c1", { comment: "Back Saturday #Longueuil. Which book first?" })]), ["c1:COMMENT_TAGS"]);
+  assert.deepEqual(codes([caption("c1", { comment: "Details at https://biblio.longueuil.ca. Which book first?" })]), ["c1:COMMENT_TAGS"]);
+  assert.deepEqual(codes([caption("c1", { comment: "Doors open at 11 a.m. Which book first?" })]), ["c1:UNSUPPORTED_NUMBER"], "its numbers are the cited facts'");
+  assert.deepEqual(codes([caption("c1", { comment: "Back Saturday 📚📚📚. Which book first?" })]), ["c1:TOO_MANY_EMOJIS"]);
+  assert.equal(sameCaption(caption("c1"), caption("c2", { comment: "Another take. Which book first?" })), false, "a different first comment is a different caption");
 });

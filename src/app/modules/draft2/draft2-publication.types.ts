@@ -1,7 +1,7 @@
 import { Draft2InputError } from "./draft2-facts.types";
 import { funnelVersions } from "./draft2-funnel";
 import { imageCleared, shownAttempt, slideSettled, type Draft2Images, type Draft2SlideImage } from "./draft2-images.types";
-import { captionPostText, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
+import { captionPostText, shownComment, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate } from "./draft2-caption.types";
 import { confirmedMentions, sameMentions, type Draft2Mentions } from "./draft2-mentions.types";
 
 /**
@@ -33,6 +33,8 @@ export type Draft2Publication = {
   slides: Draft2PublishedSlide[];
   /** The text v1 posts: the caption, its credits and its hashtags. */
   postText: string;
+  /** The first comment the account posts under the post once it is up; absent when the post has none. */
+  firstComment?: string;
   approvedAt: string;
   /** The review issues the editor saw and published anyway. */
   acknowledgedIssues: string[];
@@ -47,6 +49,8 @@ export type Draft2PublicationTarget = {
   /** The line that credits where the story was reported, when the post shows it. */
   source?: string;
   credits: string[];
+  /** The first comment posted under the post, unless the caption has none or the editor turned it off. */
+  comment?: string;
   /** Slides whose shown image did not pass Sol's review, in a line each. */
   issues: string[];
   imagesRunId: string;
@@ -82,7 +86,8 @@ export function publicationTarget(session: { images?: Draft2Images | null; capti
   });
   return {
     slides: shown.map(({ slide, attempt }) => ({ slide: slide.slide, label: slide.label, order: slide.order, version: attempt!.version, sha256: attempt!.sha256!, image: slide })),
-    caption: chosen.candidate, ...(shownSource(caption) ? { source: shownSource(caption) } : {}), credits: shownCredits(caption), issues, imagesRunId: images.runId,
+    caption: chosen.candidate, ...(shownSource(caption) ? { source: shownSource(caption) } : {}), credits: shownCredits(caption),
+    ...(shownComment(caption, chosen.candidate) ? { comment: shownComment(caption, chosen.candidate) } : {}), issues, imagesRunId: images.runId,
   };
 }
 
@@ -92,11 +97,12 @@ export const targetPostText = (target: Pick<Draft2PublicationTarget, "caption" |
 
 /**
  * Whether the approved copy is still the carousel as it stands: the same
- * images run, each slide on the same image, and the same post text. A
+ * images run, each slide on the same image, the same post text and the same
+ * first comment. A
  * caption's ids start again in every run, so the text is compared, not the id.
  */
-export function publicationCurrent(publication: Pick<Draft2Publication, "imagesRunId" | "slides" | "postText"> | null | undefined, target: Draft2PublicationTarget | undefined): boolean {
+export function publicationCurrent(publication: Pick<Draft2Publication, "imagesRunId" | "slides" | "postText" | "firstComment"> | null | undefined, target: Draft2PublicationTarget | undefined): boolean {
   if (!publication || !target || publication.imagesRunId !== target.imagesRunId || publication.slides.length !== target.slides.length) return false;
   return publication.slides.every((slide, index) => slide.slide === target.slides[index].slide && slide.version === target.slides[index].version && slide.sha256 === target.slides[index].sha256)
-    && publication.postText === targetPostText(target);
+    && publication.postText === targetPostText(target) && (publication.firstComment ?? "") === (target.comment ?? "");
 }

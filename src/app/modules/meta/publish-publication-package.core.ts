@@ -16,6 +16,7 @@
 import { classifyMetaGraphError, metaErrorDetail } from "./meta-verification";
 import { MetaGraphApiError } from "./meta-token-response";
 import { destinationAccountId, type PublicationChannel } from "./publication-channel";
+import { firstCommentView, type FirstCommentView } from "./publication-first-comment.core";
 import {
   publishingAccessIsCurrent,
   type PublishingAccess,
@@ -86,6 +87,10 @@ export type PublicationJobRow = {
   finishedAt: Date | null;
   /** When a scheduled order publishes; null for an order sent at once. */
   publishAt?: Date | null;
+  /** The first comment's state (publication-first-comment.core.ts); null when the package has none. */
+  commentStatus?: string | null;
+  commentError?: string | null;
+  commentedAt?: Date | null;
 };
 
 export type PublicationJobPatch = Partial<{
@@ -139,6 +144,8 @@ export type PublicationJobView = {
   finishedAt: string | null;
   /** When a scheduled order publishes (ISO); null for an order sent at once. */
   publishAt: string | null;
+  /** The first comment under the post, once it is published; null when the package has none. */
+  comment?: FirstCommentView | null;
 };
 
 export type PublishJobDependencies = {
@@ -208,6 +215,7 @@ export function toPublicationJobView(row: PublicationJobRow, maxAttempts = MAX_A
     startedAt: row.startedAt ? row.startedAt.toISOString() : null,
     finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
     publishAt: row.publishAt ? row.publishAt.toISOString() : null,
+    comment: firstCommentView(row),
   };
 }
 

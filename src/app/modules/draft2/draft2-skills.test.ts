@@ -8,7 +8,7 @@ import { VISUAL_ROLES, VISUALS_SKILL } from "./skills/visuals";
 import { VISUAL_ACCEPT_SCORE, VISUAL_CRITERIA, VISUAL_CRITERION_FLOOR, VISUAL_DIRECTION_MAX_CHARACTERS, VISUAL_MAX_CHARACTERS_PER_SLIDE, VISUAL_MAX_RECURRING_FOCUS, VISUAL_NEEDS, VISUAL_RECURRING, VISUAL_SHOTS } from "./draft2-visual.types";
 import { IMAGE_ROLES, IMAGES_SKILL } from "./skills/images";
 import { CAPTION_ROLES, CAPTIONS_SKILL } from "./skills/captions";
-import { CAPTION_ACCEPT_SCORE, CAPTION_CANDIDATES, CAPTION_CRITERIA, CAPTION_CRITERION_FLOOR, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS } from "./draft2-caption.types";
+import { COMMENT_MAX_WORDS, CAPTION_ACCEPT_SCORE, CAPTION_CANDIDATES, CAPTION_CRITERIA, CAPTION_CRITERION_FLOOR, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS } from "./draft2-caption.types";
 import {
   DECK_ACCEPT_SCORE, DECK_ARC_MAX_SLIDES, DECK_ARC_MIN_SLIDES, DECK_BODY_MAX_WORDS, DECK_CRITERIA, DECK_CRITERION_FLOOR, DECK_HEADLINE_MAX_WORDS, DECK_ITEM_SENTENCE_MAX_WORDS,
   DECK_PRACTICAL_MAX_WORDS,
@@ -41,7 +41,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(composeInstructions("visual-writer", [skill], "# Brand").instructions, `${VISUAL_ROLES["visual-writer"]}\n\n${VISUAL_WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "the visual writer reads its own standard: it writes no headline to count and cites no fact");
   assert.match(VISUAL_WRITER_STANDARD, /every direction under 700 characters[^]*a corner or a band kept free for the logo is fine/);
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@11", "levers@1", "fairness@2", "reader@3", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@16", "images@6", "captions@3"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@11", "levers@1", "fairness@2", "reader@3", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@16", "images@6", "captions@4"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -219,7 +219,9 @@ test("the captions rubric keeps the caption's numbers, and tags every account th
   assert.match(CAPTIONS_SKILL.text, /Never write a photo credit, a source line or a hashtag in the text/);
   assert.match(CAPTION_ROLES["caption-writer"], new RegExp(`ids c1…c${CAPTION_CANDIDATES}`));
   assert.match(CAPTION_ROLES["caption-writer"], /"text" keeps its line breaks/);
+  assert.match(CAPTIONS_SKILL.text, new RegExp(`in at most ${COMMENT_MAX_WORDS} words`), "the first comment's limit is the program's");
+  assert.match(CAPTION_ROLES["caption-writer"], /"comment" is the first comment/);
   assert.match(CAPTION_ROLES["mention-finder"], /Never invent a username to fill the list/);
-  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "3" });
+  assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "4" });
   assert.deepEqual(composeInstructions("mention-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
 });

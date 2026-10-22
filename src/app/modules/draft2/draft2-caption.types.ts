@@ -4,7 +4,7 @@ import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
-  funnelRefineRequest, funnelText, headlineKey, numbersIn, statedNumbers,
+  funnelRefineRequest, funnelText, funnelWordCount, headlineKey, numbersIn, statedNumbers,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
@@ -22,6 +22,12 @@ import type { Draft2CarouselSlide } from "./draft2-visual.types";
  * photo credits and the hashtags after the text. Everything here is pure:
  * contracts, schemas, parsing, the mechanical checks, the requests and the
  * text v1 posts.
+ *
+ * The first comment (2026-10-22): each caption comes with the comment the
+ * publication's account posts under the post once it is up, the first
+ * interaction: a light recap, the publication's take and one short question
+ * that opens the conversation, under 100 words ("una opinión con pregunta,
+ * un ligero resumen"). None on a grave story.
  */
 export const CAPTION_CANDIDATES = 3;
 export const CAPTION_PLAN: readonly FunnelPlanRound[] = [
@@ -45,13 +51,17 @@ export const CAPTION_MIN_HASHTAGS = 5;
 export const CAPTION_MAX_HASHTAGS = 8;
 /** A caption longer than this reads as one block without a blank line. */
 export const CAPTION_SPACING_THRESHOLD = 240;
+/** The first comment's length: a light recap, a take and a question, "a little under 100 words". */
+export const COMMENT_MAX_WORDS = 95;
 
-export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action", "hashtags", "fit"] as const;
+/** "conversation" scores the first comment; a score stored before it passes on the criterion it predates. */
+export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action", "hashtags", "fit", "conversation"] as const;
 export const CAPTION_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION", "MENTION_MISSING",
   "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
+  "COMMENT_MISSING", "COMMENT_ON_GRAVE", "COMMENT_TOO_LONG", "COMMENT_NO_QUESTION", "COMMENT_TAGS",
 ] as const;
-export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "OTHER"] as const;
+export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "WEAK_QUESTION", "OTHER"] as const;
 export const CAPTION_ISSUE_CODES = [...CAPTION_MECHANICAL_CODES, ...CAPTION_JUDGE_CODES] as const;
 export const CAPTION_GATE: FunnelGate = { criteria: CAPTION_CRITERIA, accept: CAPTION_ACCEPT_SCORE, floor: CAPTION_CRITERION_FLOOR };
 
@@ -64,9 +74,11 @@ export type Draft2CaptionCandidate = FunnelCandidate & {
   /** Without the #, as written in the post. */
   hashtags: string[];
   factIds: string[];
+  /** The first comment the publication's account posts under the post; absent on a caption written before it, and on a grave story. */
+  comment?: string;
 };
 export type Draft2CaptionIssue = FunnelIssue & { code: Draft2CaptionIssueCode };
-export type Draft2CaptionScore = FunnelScore & { hook: number; scan: number; grounding: number; voice: number; action: number; hashtags: number; fit: number };
+export type Draft2CaptionScore = FunnelScore & { hook: number; scan: number; grounding: number; voice: number; action: number; hashtags: number; fit: number; conversation?: number };
 export type Draft2CaptionEvaluation = FunnelEvaluation<Draft2CaptionCandidate, Draft2CaptionScore, Draft2CaptionIssue>;
 export type Draft2CaptionRound = FunnelRound<Draft2CaptionCandidate, Draft2CaptionScore, Draft2CaptionIssue>;
 export type Draft2CaptionVersion = FunnelVersion<Draft2CaptionCandidate, Draft2CaptionScore, Draft2CaptionIssue>;
@@ -92,6 +104,8 @@ export type Draft2Caption = FunnelRun<Draft2CaptionCandidate, Draft2CaptionScore
   source?: string;
   /** The editor left the source out of the post. It stays with the next run. */
   sourceHidden?: true;
+  /** The editor posts no first comment under this post. It stays with the next run. */
+  commentHidden?: true;
   rules?: Draft2CaptionRules;
   previousRuns?: Draft2CaptionRun[];
 };
@@ -104,9 +118,10 @@ const captionItem = {
     text: { type: "string" },
     hashtags: { type: "array", minItems: 1, maxItems: 12, items: { type: "string" } },
     factIds: { type: "array", maxItems: 20, items: { type: "string" } },
+    comment: { type: "string" },
     angle: { type: "string" },
   },
-  required: ["id", "text", "hashtags", "factIds", "angle"],
+  required: ["id", "text", "hashtags", "factIds", "comment", "angle"],
   additionalProperties: false,
 };
 
@@ -141,7 +156,8 @@ function captionFrom(raw: unknown, fallbackId: string): Draft2CaptionCandidate |
   const hashtags = Array.isArray(item.hashtags) ? item.hashtags.filter((tag): tag is string => typeof tag === "string").map(normalHashtag).filter(Boolean).slice(0, 12) : undefined;
   const factIds = funnelFactIds(item.factIds);
   if (!text || text.length > CAPTION_MAX_CHARACTERS * 2 || !hashtags || !factIds) return undefined;
-  return { id: funnelText(item.id, 24) ?? fallbackId, text, hashtags, factIds, angle: funnelText(item.angle, 400) ?? "" };
+  const comment = typeof item.comment === "string" ? captionText(item.comment).slice(0, 2_000) : "";
+  return { id: funnelText(item.id, 24) ?? fallbackId, text, hashtags, factIds, ...(comment ? { comment } : {}), angle: funnelText(item.angle, 400) ?? "" };
 }
 
 /** The writer's answer as captions; anything malformed is a response error, never persisted. */
@@ -158,6 +174,9 @@ export function parseCaptionEvaluation(answer: string, candidateIds: readonly st
 export const shownCredits = (caption: Pick<Draft2Caption, "credits" | "creditsHidden"> | null | undefined): string[] => caption?.creditsHidden ? [] : caption?.credits ?? [];
 /** The source line the post shows, unless the editor left it out. */
 export const shownSource = (caption: Pick<Draft2Caption, "source" | "sourceHidden"> | null | undefined): string | undefined => caption?.sourceHidden ? undefined : caption?.source;
+/** The first comment a caption posts, unless the editor turned it off for this post. */
+export const shownComment = (caption: Pick<Draft2Caption, "commentHidden"> | null | undefined, candidate: Pick<Draft2CaptionCandidate, "comment"> | undefined): string | undefined =>
+  caption?.commentHidden || !candidate?.comment?.trim() ? undefined : candidate.comment.trim();
 
 /** The most sources a post credits; a story merged from more names its first ones. */
 export const CAPTION_MAX_SOURCES = 3;
@@ -216,6 +235,8 @@ export function captionPostText({ text, source, credits, hashtags }: { text: str
 }
 
 const EMOJI = /\p{Extended_Pictographic}/gu;
+/** What a first comment never carries: a hashtag, an @handle (it would notify the account) or a web address. */
+const COMMENT_TAG = /(?:^|[\s(])[#@][\p{L}\p{N}_.]|\bhttps?:\/\/|\bwww\./u;
 const MENTION = /(?:^|[^\p{L}\p{N}_.])@([A-Za-z0-9._]{1,30})/gu;
 const HASHTAG_IN_TEXT = /(?:^|\s)#[\p{L}\p{N}_]+/u;
 /** The caption talks about the carousel instead of the story, in the publications' languages. */
@@ -272,6 +293,7 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     if (address.length && reader) add("WRONG_ADDRESS", addressFinding(address, reader));
     const abbreviations = abbreviationBreaches(candidate.text, explained);
     if (abbreviations.length) add("ABBREVIATION", abbreviationFinding(abbreviations, explained));
+    commentIssues(candidate, { add, stated, rules, reader, explained });
     const key = headlineKey(candidate.text.split("\n")[0] ?? "");
     const earlier = keys.get(key);
     if (earlier && !(candidate.proposalOf && earlier.proposalOf === candidate.proposalOf)) add("DUPLICATE_CANDIDATE", `The caption opens like ${earlier.id}.`);
@@ -280,9 +302,39 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
   return issues;
 }
 
-/** Whether two captions say the same thing: the same text, hashtags and facts. */
+/**
+ * The first comment's findings: one on every story but a grave one (none
+ * there), under COMMENT_MAX_WORDS, with a question, no hashtag, @handle or
+ * link, and the caption's rules on emojis, numbers, address and
+ * abbreviations (its reader has the caption above it).
+ */
+function commentIssues(candidate: Draft2CaptionCandidate, { add, stated, rules, reader, explained }: {
+  add: (code: Draft2CaptionIssueCode, detail: string) => void; stated: Set<string>; rules: Draft2CaptionRules; reader?: Draft2Reader; explained: ReturnType<typeof explainedAbbreviations>;
+}): void {
+  const comment = candidate.comment?.trim() ?? "";
+  if (rules.grave) {
+    if (comment) add("COMMENT_ON_GRAVE", "The story is grave: the post opens no conversation, so the first comment stays empty.");
+    return;
+  }
+  if (!comment) { add("COMMENT_MISSING", "The caption has no first comment: a light recap, the publication's take and one short question that opens the conversation."); return; }
+  const words = funnelWordCount(comment);
+  if (words > COMMENT_MAX_WORDS) add("COMMENT_TOO_LONG", `The first comment has ${words} words; it takes ${COMMENT_MAX_WORDS} at most.`);
+  if (!/[?？]/u.test(comment)) add("COMMENT_NO_QUESTION", "The first comment asks no question: end it with one short question the reader can answer.");
+  if (COMMENT_TAG.test(comment)) add("COMMENT_TAGS", "The first comment carries no hashtag, no @handle and no link: the caption tags and credits.");
+  const emojis = comment.match(EMOJI)?.length ?? 0;
+  if (emojis > rules.emojis) add("TOO_MANY_EMOJIS", rules.emojis ? `The first comment uses ${emojis} emojis; the publication allows ${rules.emojis}.` : "The first comment uses an emoji; the publication allows none.");
+  const unsupported = [...new Set(numbersIn(comment).filter((number) => !stated.has(number.digits)).map((number) => number.written))];
+  if (unsupported.length) add("UNSUPPORTED_NUMBER", `In the first comment, ${unsupported.join(", ")} ${unsupported.length === 1 ? "is" : "are"} not stated by the facts this caption cites.`);
+  const address = addressBreaches(comment, reader);
+  if (address.length && reader) add("WRONG_ADDRESS", `In the first comment: ${addressFinding(address, reader)}`);
+  const abbreviations = abbreviationBreaches(comment, explained, candidate.text);
+  if (abbreviations.length) add("ABBREVIATION", `In the first comment: ${abbreviationFinding(abbreviations, explained)}`);
+}
+
+/** Whether two captions say the same thing: the same text, hashtags, facts and first comment. */
 export const sameCaption = (a: Draft2CaptionCandidate, b: Draft2CaptionCandidate) =>
-  comparableText(a.text) === comparableText(b.text) && a.hashtags.map((tag) => tag.toLowerCase()).join() === b.hashtags.map((tag) => tag.toLowerCase()).join() && a.factIds.join() === b.factIds.join();
+  comparableText(a.text) === comparableText(b.text) && a.hashtags.map((tag) => tag.toLowerCase()).join() === b.hashtags.map((tag) => tag.toLowerCase()).join() && a.factIds.join() === b.factIds.join()
+  && comparableText(a.comment ?? "") === comparableText(b.comment ?? "");
 
 export const CAPTION_REVISION_INSTRUCTION = "Revise each caption in captions and return exactly one candidate per caption, with the same id. Keep its opening line, its voice and every claim already approved; fix what its issues name in as few words as possible, keeping its line breaks. Never make it longer, denser or more generic to gain precision. When earlierAttempts lists a revision that scored lower, do not repeat what made it worse.";
 export const CAPTION_DEVELOP_INSTRUCTION = "Edit the caption in develop and return it with its id. Keep its opening line and voice unless a fact or a program rule requires a change; change only what must change, in as few words as possible. A caption that is already right comes back unchanged. It also competes as written, so an edit only helps when it is better.";
@@ -321,6 +373,7 @@ export function captionRulesBrief(rules: Draft2CaptionRules): string {
     "# The post",
     rules.emojis > 0 ? `- Emojis: at most ${rules.emojis} in the whole caption.` : "- Emojis: none.",
     rules.grave ? "- The story is grave: no call to action." : `- The call to action: the closing's, the same single action, stated once (${rules.cta || "the closing has none"}).`,
+    rules.grave ? "- The first comment: none (comment is empty)." : `- The first comment: at most ${COMMENT_MAX_WORDS} words, ending with one short question.`,
     style ? `- The publication's call-to-action style (its voice; the action is the closing's): ${style}` : "",
   ].filter(Boolean).join("\n");
 }

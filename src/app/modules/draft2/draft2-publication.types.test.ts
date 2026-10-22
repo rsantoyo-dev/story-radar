@@ -86,3 +86,21 @@ test("the approved copy is current while the images, each slide's version and th
   assert.ok(!publicationCurrent({ ...publication, slides: publication.slides.map((entry, index) => index === 1 ? { ...entry, sha256: "x" } : entry) }, target));
   assert.ok(!publicationCurrent(publication, publicationTarget({ ...SESSION, caption: { ...CAPTION, editorChoiceId: "c1" } })), "another caption, though a new run may reuse its id");
 });
+
+test("the first comment is approved with the post: the chosen caption's, unless the editor turned it off, and a changed comment is a new approval", () => {
+  const commented = { ...CAPTION, rounds: [{ ...CAPTION.rounds[0], candidates: [candidate("c1", "One.\n\nSave it."), { ...candidate("c2", "Two.\n\nSave it."), comment: "Back Saturday. Which book first?" }] }] } as Draft2Caption;
+  const target = publicationTarget({ ...SESSION, caption: commented });
+  assert.equal(target.comment, "Back Saturday. Which book first?");
+  assert.equal(publicationTarget({ ...SESSION, caption: { ...commented, commentHidden: true } }).comment, undefined, "turned off for this post");
+  assert.equal(publicationTarget(SESSION).comment, undefined, "a caption written before comments has none");
+  const approved: Draft2Publication = {
+    draftId: "d1", batchId: "b1", snapshotHash: "h", imagesRunId: "run-1", captionId: "c2", approvedAt: "t", acknowledgedIssues: [], firstComment: target.comment,
+    slides: target.slides.map(({ slide: id, label, order, version, sha256 }) => ({ slide: id, label, order, version, sha256 })), postText: targetPostText(target),
+  };
+  assert.equal(publicationCurrent(approved, target), true);
+  assert.equal(publicationCurrent(approved, { ...target, comment: "Another. Which shelf?" }), false);
+  assert.equal(publicationCurrent(approved, { ...target, comment: undefined }), false, "turning it off asks for a new approval");
+  const { firstComment: _none, ...before } = approved;
+  void _none;
+  assert.equal(publicationCurrent(before, { ...target, comment: undefined }), true, "an approval without a comment stays current");
+});

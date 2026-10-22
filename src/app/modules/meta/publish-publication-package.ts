@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { after } from "next/server";
-import { and, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -33,13 +33,23 @@ import { preservePublishedPackage } from "../stories/storage-maintenance";
 
 import { getPublicationCandidate } from "./get-publication-candidate";
 import {
+  createPageComment,
   fetchPagePostPermalink,
+  findPageComment,
   publishPagePhotoPost,
   uploadUnpublishedPagePhoto,
 } from "./meta-facebook-graph-client";
 import {
+  CommentAccountChangedError,
+  runFirstComment,
+  type CommentStatus,
+  type FirstCommentPatch,
+} from "./publication-first-comment.core";
+import {
   createInstagramCarouselContainer,
+  createInstagramComment,
   createInstagramMediaContainer,
+  findInstagramComment,
   fetchInstagramMediaPermalink,
   getInstagramContainerStatus,
   GRAPH_API_VERSION,
@@ -143,6 +153,11 @@ function runnableJob() {
 function leaseAvailable() {
   return or(isNull(instagramPublicationJobs.leaseUntil), lt(instagramPublicationJobs.leaseUntil, new Date()));
 }
+/** A published order whose first comment is still to be posted or confirmed. */
+function commentDueJob() {
+  return and(eq(instagramPublicationJobs.status, "published"), isNotNull(instagramPublicationJobs.publishedMediaId),
+    inArray(instagramPublicationJobs.commentStatus, ["pending", "posting"]));
+}
 
 function deliveryBaseUrl(): string {
   const url = process.env.RADAR_APP_URL?.trim().replace(/\/+$/u, "");
@@ -205,6 +220,9 @@ function mapJobRow(row: JobDbRow): PublicationJobRow {
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
     publishAt: row.publishAt,
+    commentStatus: row.commentStatus,
+    commentError: row.commentError,
+    commentedAt: row.commentedAt,
   };
 }
 
@@ -306,7 +324,8 @@ export async function requestPublishNow(
     // A retry publishes now, or waits for a new time like any scheduled order (its delivery window starts when it is promoted).
     const [retried] = await db.update(instagramPublicationJobs)
       .set({ ...patchToColumns(patch), packageId: pkg.id, batchId: pkg.batchId,
-        ...(publishAt ? { status: "scheduled" as const, publishAt, startedAt: null } : { startedAt: new Date() }), leaseOwner: null, leaseUntil: null })
+        ...(publishAt ? { status: "scheduled" as const, publishAt, startedAt: null } : { startedAt: new Date() }), leaseOwner: null, leaseUntil: null,
+        ...(existing.commentStatus === "posted" ? {} : { commentStatus: pkg.firstComment ? "pending" : null, commentError: null, commentAttempts: 0 }) })
       .where(and(eq(instagramPublicationJobs.id, existing.id), eq(instagramPublicationJobs.status, existing.status),
         eq(instagramPublicationJobs.attempts, existing.attempts)))
       .returning();
@@ -329,6 +348,8 @@ export async function requestPublishNow(
       status: publishAt ? "scheduled" : "queued",
       startedAt: publishAt ? null : now,
       publishAt: publishAt ?? null,
+      // Posted under the post once it is published.
+      commentStatus: pkg.firstComment ? "pending" : null,
       mediaType: pkg.mediaType,
       igUserId: destination.igUserId,
       channel,
@@ -540,6 +561,9 @@ export async function advancePublicationJob(jobId: string, { budgetMs = 0, waitM
       // storage maintenance retries if this copy fails.
       await preservePublishedPackage(job.packageId).catch(() =>
         console.error(`Published files of package ${job.packageId} were not preserved yet; maintenance will retry.`));
+      // The first comment, under this lease, as soon as the post is up.
+      await postFirstComment(jobId, owner).catch(() =>
+        console.error(`The first comment of publication job ${jobId} was not posted yet; the worker will resume it.`));
     }
   } catch {
     // Provider/DB exceptions may contain credentials. Keep only the operational job id.
@@ -558,8 +582,91 @@ export async function resumePublicationJobs(pass: PublicationWorkerPass = { budg
   const rows = await db.select({ id: instagramPublicationJobs.id }).from(instagramPublicationJobs)
     .where(and(runnableJob(), leaseAvailable())).orderBy(instagramPublicationJobs.updatedAt).limit(4);
   const outcomes = await Promise.allSettled(rows.map(row => advancePublicationJob(row.id, pass)));
-  if (outcomes.some(outcome => outcome.status === "rejected")) throw new Error("Publication worker step failed");
+  // Then the first comments still due under published posts (a send whose answer was lost, a pass that ended first).
+  const comments = await db.select({ id: instagramPublicationJobs.id }).from(instagramPublicationJobs)
+    .where(and(commentDueJob(), leaseAvailable())).orderBy(instagramPublicationJobs.updatedAt).limit(4);
+  const commented = await Promise.allSettled(comments.map(row => advanceFirstComment(row.id)));
+  if ([...outcomes, ...commented].some(outcome => outcome.status === "rejected")) throw new Error("Publication worker step failed");
   return { selected: rows.length };
+}
+
+/**
+ * One step of a published order's first comment (publication-first-comment
+ * .core.ts) under the caller's lease: it goes to the account the post went
+ * to, whatever its connection's version (a reconnect that grants the comment
+ * permission keeps the account), and never touches the post.
+ */
+async function postFirstComment(jobId: string, owner: string): Promise<void> {
+  const job = await loadJobRow(jobId);
+  if (job.status !== "published" || !job.publishedMediaId || (job.commentStatus !== "pending" && job.commentStatus !== "posting")) return;
+  const [pkg] = await db.select({ firstComment: instagramPublicationPackages.firstComment }).from(instagramPublicationPackages)
+    .where(eq(instagramPublicationPackages.id, job.packageId)).limit(1);
+  const channel = parsePublicationChannel(job.channel) ?? DEFAULT_PUBLICATION_CHANNEL;
+  const host = instagramGraphHostFor(channel);
+  const accountId = destinationAccountId({ channel, pageId: job.pageId, igUserId: job.igUserId });
+  const credentials = async () => {
+    const token = await getChannelSendCredentials(job.topicId, channel);
+    if (!token || !accountId || token.accountId !== accountId) throw new CommentAccountChangedError();
+    return token;
+  };
+  await runFirstComment({
+    loadJob: async () => {
+      const row = await loadJobRow(jobId);
+      return { commentStatus: row.status === "published" ? row.commentStatus as CommentStatus | null : null, commentAttempts: row.commentAttempts, publishedMediaId: row.publishedMediaId };
+    },
+    comment: pkg?.firstComment ?? undefined,
+    channel,
+    platformLabel: publicationPlatformLabel(channel),
+    findPosted: async (mediaId, text) => {
+      const token = await credentials();
+      return channel === "facebook-page" ? findPageComment(mediaId, token.accountId, token.accessToken, text) : findInstagramComment(mediaId, token.accessToken, text, host);
+    },
+    post: async (mediaId, text) => {
+      const token = await credentials();
+      return channel === "facebook-page" ? createPageComment(mediaId, token.accessToken, text) : createInstagramComment(mediaId, token.accessToken, text, host);
+    },
+    transition: async (from: CommentStatus, patch: FirstCommentPatch) => {
+      const [updated] = await db.update(instagramPublicationJobs)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(instagramPublicationJobs.id, jobId), eq(instagramPublicationJobs.status, "published"), eq(instagramPublicationJobs.commentStatus, from),
+          eq(instagramPublicationJobs.leaseOwner, owner), gt(instagramPublicationJobs.leaseUntil, new Date())))
+        .returning({ id: instagramPublicationJobs.id });
+      return Boolean(updated);
+    },
+    now: () => new Date(),
+  });
+}
+
+/** Claims a published order whose first comment is due and takes one step of it. */
+export async function advanceFirstComment(jobId: string): Promise<void> {
+  const owner = randomUUID();
+  const [claimed] = await db.update(instagramPublicationJobs)
+    .set({ leaseOwner: owner, leaseUntil: new Date(Date.now() + LEASE_MS), updatedAt: new Date() })
+    .where(and(eq(instagramPublicationJobs.id, jobId), commentDueJob(), leaseAvailable()))
+    .returning({ id: instagramPublicationJobs.id });
+  if (!claimed) return;
+  try {
+    await postFirstComment(jobId, owner);
+  } catch {
+    // Provider/DB exceptions may contain credentials. Keep only the operational job id.
+    console.error(`The first comment of publication job ${jobId} was not posted yet; the worker will resume it.`);
+  } finally {
+    await db.update(instagramPublicationJobs)
+      .set({ leaseOwner: null, leaseUntil: new Date(Date.now() + STEP_INTERVAL_MS), updatedAt: new Date() })
+      .where(and(eq(instagramPublicationJobs.id, jobId), eq(instagramPublicationJobs.leaseOwner, owner)));
+  }
+}
+
+/** The editor tries a failed first comment again: it is pending once more and its sends start over. */
+export async function retryFirstComment(topicId: string, draftId: string, jobId: string): Promise<PublicationJobView> {
+  const [retried] = await db.update(instagramPublicationJobs)
+    .set({ commentStatus: "pending", commentError: null, commentAttempts: 0, updatedAt: new Date() })
+    .where(and(eq(instagramPublicationJobs.id, jobId), eq(instagramPublicationJobs.topicId, topicId), eq(instagramPublicationJobs.draftId, draftId),
+      eq(instagramPublicationJobs.status, "published"), eq(instagramPublicationJobs.commentStatus, "failed")))
+    .returning();
+  if (!retried) throw new PublicationJobConflictError("Only a first comment that was not posted can be tried again.");
+  after(() => advanceFirstComment(retried.id));
+  return toPublicationJobView(mapJobRow(retried), maxAttempts());
 }
 
 async function buildDependencies(
@@ -789,6 +896,9 @@ function reconcileOnRead(rows: JobDbRow[]): void {
       !isTerminalPublicationJobStatus(row.status as PublicationJobStatus) &&
       (!row.leaseUntil || row.leaseUntil.getTime() < now);
     if (stale) after(() => advancePublicationJob(row.id));
+    // A published post's first comment still due is posted from the read too, without waiting for the worker.
+    const commentDue = row.status === "published" && row.publishedMediaId && (row.commentStatus === "pending" || row.commentStatus === "posting");
+    if (commentDue && (!row.leaseUntil || row.leaseUntil.getTime() < now)) after(() => advanceFirstComment(row.id));
   }
 }
 

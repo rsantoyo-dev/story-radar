@@ -37,6 +37,8 @@ type CaptionSnapshot = {
   sources: string[];
   /** The editor's choice to leave the source out, carried to the next run. */
   sourceHidden?: true;
+  /** The editor's choice to post no first comment, carried to the next run. */
+  commentHidden?: true;
 };
 
 /**
@@ -99,6 +101,7 @@ async function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption |
     return {
       imagesRunId, carousel, focus, mentions, mentionsVersion: stopped.mentionsVersion ?? 0, credits, sources: stopped.sources ?? [],
       ...(stopped.creditsHidden ? { creditsHidden: true as const } : {}), ...(stopped.sourceHidden ? { sourceHidden: true as const } : {}),
+      ...(stopped.commentHidden ? { commentHidden: true as const } : {}),
     };
   }
   if (!images || images.status === "running" || images.status === "paused" || !images.slides.every(slideSettled)) throw new Draft2InputError("The caption accompanies the finished carousel. Finish the images first.");
@@ -113,6 +116,7 @@ async function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption |
     sources: captionSourceHosts(await storySourceCredits(session.storyId)),
     ...(session.caption?.creditsHidden ? { creditsHidden: true as const } : {}),
     ...(session.caption?.sourceHidden ? { sourceHidden: true as const } : {}),
+    ...(session.caption?.commentHidden ? { commentHidden: true as const } : {}),
   };
 }
 
@@ -210,6 +214,25 @@ export async function recordCaptionSource({ topicId, sessionId, shown }: { topic
   const { sourceHidden, ...rest } = caption;
   void sourceHidden;
   const updated = await updateDraft2Session(session.id, { caption: shown ? rest : { ...rest, sourceHidden: true } });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
+/**
+ * The editor posts the chosen caption's first comment under the post, or
+ * turns it off for this post. No provider call; what is published changes,
+ * so an approval made before no longer matches it.
+ */
+export async function recordCaptionComment({ topicId, sessionId, shown }: { topicId: string; sessionId: string; shown: boolean }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  const caption = session.caption;
+  if (!caption) throw new Draft2InputError("Write the caption first.");
+  if (caption.status === "running") throw new Draft2BusyError("The caption is being written; turn the first comment on or off when it finishes.");
+  if (!caption.commentHidden === shown) return session;
+  const { commentHidden, ...rest } = caption;
+  void commentHidden;
+  const updated = await updateDraft2Session(session.id, { caption: shown ? rest : { ...rest, commentHidden: true } });
   if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
   return updated;
 }

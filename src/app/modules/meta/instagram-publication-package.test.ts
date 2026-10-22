@@ -76,6 +76,11 @@ test("computePackageHash is stable and order- and content-sensitive", () => {
   );
   assert.notEqual(computePackageHash(base), computePackageHash({ ...base, caption: "Edited" }));
   assert.notEqual(computePackageHash(base), computePackageHash({ ...base, connectionVersion: "c2" }));
+  // 2026-10-22: the first comment is part of what is approved; a package without one keeps the hash it always had.
+  assert.equal(computePackageHash({ ...base, firstComment: undefined }), computePackageHash(base));
+  assert.equal(computePackageHash({ ...base, firstComment: "" }), computePackageHash(base));
+  assert.notEqual(computePackageHash({ ...base, firstComment: "Which book first?" }), computePackageHash(base));
+  assert.notEqual(computePackageHash({ ...base, firstComment: "Which book first?" }), computePackageHash({ ...base, firstComment: "Which shelf first?" }));
 });
 
 test("newDeliveryToken is URL-safe and unguessable-length", () => {

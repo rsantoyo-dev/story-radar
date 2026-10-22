@@ -17,8 +17,11 @@ import { facebookRouteError, topicFromContext, type TopicRouteContext } from "..
  * Used only when no Login Configuration id is set; a config_id defines the
  * permissions instead. business_management is required to reach a Page the
  * user administers through a business portfolio rather than a direct role.
+ * pages_manage_engagement and instagram_manage_comments let the account post
+ * the first comment under its own posts (2026-10-22); a configuration id must
+ * list them too.
  */
-const FACEBOOK_PAGE_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "business_management"].join(",");
+const FACEBOOK_PAGE_SCOPES = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_manage_engagement", "instagram_manage_comments", "business_management"].join(",");
 
 /**
  * Returns the Facebook Login for Business dialog URL for this topic (PUB-09).

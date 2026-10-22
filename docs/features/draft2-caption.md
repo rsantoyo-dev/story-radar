@@ -246,3 +246,11 @@ lost to it, in two Brossard runs (@randolphdix30, @quartierdix30).
 - **No space before a comma or a period** in a caption (`captionText`): the
   writer had put "@randolphdix30 , dans". An ellipsis and French spacing
   before ":", "!" and "?" stay.
+
+## Addendum, 2026-10-22: the first comment
+
+Each caption now comes with the first comment the account posts under the
+post once it is up: a light recap, the publication's take and one short
+question, at most 95 words, none on a grave story. The program checks it,
+the judge scores it as `conversation`, and the editor edits it or turns it
+off for the post. See `docs/features/publication-first-comment.md`.

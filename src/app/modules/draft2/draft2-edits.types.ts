@@ -13,12 +13,14 @@ import type { FunnelEditorEdit } from "./draft2-funnel";
  */
 export const DRAFT2_EDIT_STEPS = ["opening", "closing", "deck", "caption", "visual"] as const;
 export type Draft2EditStep = (typeof DRAFT2_EDIT_STEPS)[number];
-/** A slide's word field, a caption's text or hashtags, a script slide's direction. */
-export const DRAFT2_EDIT_FIELDS = ["headline", "subheadline", "body", "practical", "cta", "text", "hashtags", "direction"] as const;
+/** A slide's word field, a caption's text, hashtags or first comment, a script slide's direction. */
+export const DRAFT2_EDIT_FIELDS = ["headline", "subheadline", "body", "practical", "cta", "text", "hashtags", "comment", "direction"] as const;
 export type Draft2EditField = (typeof DRAFT2_EDIT_FIELDS)[number];
 /** Instagram's limit for a whole post bounds a caption; a slide's text or a direction is far shorter. */
 export const EDIT_CAPTION_MAX_CHARACTERS = 2_200;
 export const EDIT_TEXT_MAX_CHARACTERS = 700;
+/** A first comment of 95 words fits, in any of the publications' languages. */
+export const EDIT_COMMENT_MAX_CHARACTERS = 1_000;
 export const OWN_OPENING_MAX_CHARACTERS = 300;
 
 export type Draft2OwnOpening = { cover: { headline: string; subheadline: string }; slide2: { headline: string; body: string } };
@@ -65,8 +67,9 @@ export function parseDraft2EditInput(value: unknown): Draft2EditInput {
   if (!slide) throw new Draft2InputError("Name the slide, such as cover or s2.");
   const field = oneOf(DRAFT2_EDIT_FIELDS, body.field);
   if (!field) throw new Draft2InputError(`field must be one of ${DRAFT2_EDIT_FIELDS.join(", ")}.`);
-  const text = words(body.text, step === "caption" && field === "text" ? EDIT_CAPTION_MAX_CHARACTERS : EDIT_TEXT_MAX_CHARACTERS, "this text");
-  if (!text && field !== "practical" && field !== "hashtags") throw new Draft2InputError("A text cannot be left empty; write what it should say.");
+  const text = words(body.text, step === "caption" && field === "text" ? EDIT_CAPTION_MAX_CHARACTERS : field === "comment" ? EDIT_COMMENT_MAX_CHARACTERS : EDIT_TEXT_MAX_CHARACTERS, "this text");
+  // An empty first comment posts none.
+  if (!text && field !== "practical" && field !== "hashtags" && field !== "comment") throw new Draft2InputError("A text cannot be left empty; write what it should say.");
   return { action: "edit", step, slide, field, text };
 }
 

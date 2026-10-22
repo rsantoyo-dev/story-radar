@@ -78,6 +78,8 @@ test("what the canvas sends is checked: the step, the slide, the field and the t
   assert.throws(() => editsTypes.parseDraft2EditInput({ action: "edit", step: "focus", slide: "cover", field: "headline", text: "x" }), /step must be one of/);
   assert.throws(() => editsTypes.parseDraft2EditInput({ action: "edit", step: "opening", slide: "cover", field: "headline", text: "  " }), /cannot be left empty/);
   assert.equal((editsTypes.parseDraft2EditInput({ action: "edit", step: "deck", slide: "s1", field: "practical", text: "" }) as { text: string }).text, "", "a practical line may be emptied");
+  assert.equal((editsTypes.parseDraft2EditInput({ action: "edit", step: "caption", slide: "post", field: "comment", text: "" }) as { text: string }).text, "", "an emptied first comment posts none");
+  assert.equal((editsTypes.parseDraft2EditInput({ action: "edit", step: "caption", slide: "post", field: "comment", text: "x".repeat(900) }) as { text: string }).text.length, 900, "a first comment of 95 French words fits");
   assert.throws(() => editsTypes.parseDraft2EditInput({ action: "edit", step: "caption", slide: "post", field: "text", text: "x".repeat(2_201) }), /under 2,200 characters/);
   assert.throws(() => editsTypes.parseDraft2EditInput({ action: "own-opening", mode: "use", cover: { headline: "Mon hook" } }), /write the cover's subheadline and slide 2 too/);
   assert.equal((editsTypes.parseDraft2EditInput({ action: "own-opening", mode: "develop", cover: { headline: "Mon hook" } }) as { opening: { cover: { headline: string } } }).opening.cover.headline, "Mon hook");
@@ -121,6 +123,10 @@ test("the deck, the caption and the visual script are edited the same way; the c
   assert.equal((deckEdit.visual as { carousel: { slide: string; text: string }[] }).carousel.find((slide) => slide.slide === "s2")!.text, "Des outils faits pour les petites mains.");
   const tags = await h.edit({ action: "edit", step: "caption", slide: "post", field: "hashtags", text: "#Longueuil, #VieuxLongueuil #longueuil" });
   assert.deepEqual(chosen(tags, "caption").hashtags, ["Longueuil", "VieuxLongueuil"]);
+  const comment = await h.edit({ action: "edit", step: "caption", slide: "post", field: "comment", text: "La bibliothèque rouvre samedi. Quel livre tes enfants vont-ils choisir en premier?" });
+  assert.equal(chosen(comment, "caption").comment, "La bibliothèque rouvre samedi. Quel livre tes enfants vont-ils choisir en premier?", "the first comment, by hand");
+  const removed = await h.edit({ action: "edit", step: "caption", slide: "post", field: "comment", text: "" });
+  assert.equal("comment" in chosen(removed, "caption"), false, "emptied: the post has none");
   const direction = await h.edit({ action: "edit", step: "visual", slide: "cover", field: "direction", text: "Les portes ouvertes, de face, au matin." });
   assert.equal(((chosen(direction, "visual").slides as { slide: string; direction: string }[])[0]).direction, "Les portes ouvertes, de face, au matin.");
   assert.ok((direction.visual as funnel.FunnelRun).edits![0].findings.some((finding) => /made from the earlier direction/.test(finding)));

@@ -238,6 +238,22 @@ export async function fetchPagePostPermalink(
   };
 }
 
+/** Posts a comment as the Page on its own post. Returns the comment's id ("<postId>_<commentId>"). */
+export async function createPageComment(postId: string, pageAccessToken: string, message: string): Promise<string> {
+  if (!FACEBOOK_POST_ID.test(postId)) throw new MetaGraphApiError("Invalid Facebook post id", 400);
+  const payload = await facebookGraphPost<{ id?: unknown }>(`${postId}/comments`, pageAccessToken, { message });
+  return requireFacebookId(payload, FACEBOOK_POST_ID, "comment");
+}
+
+/** The id of the Page's own comment with exactly this text on the post, if there is one: an earlier send whose answer was lost. */
+export async function findPageComment(postId: string, pageId: string, pageAccessToken: string, message: string): Promise<string | undefined> {
+  if (!FACEBOOK_POST_ID.test(postId)) throw new MetaGraphApiError("Invalid Facebook post id", 400);
+  const key = (text: string) => text.replace(/\s+/gu, " ").trim();
+  const payload = await facebookGraphGet<{ data?: { id?: unknown; message?: unknown; from?: { id?: unknown } }[] }>(`${postId}/comments`, pageAccessToken, "id,message,from");
+  const found = (payload.data ?? []).find((comment) => typeof comment.message === "string" && key(comment.message) === key(message) && (comment.from?.id === undefined || comment.from.id === pageId));
+  return typeof found?.id === "string" ? found.id : undefined;
+}
+
 async function facebookGraphPost<T>(
   path: string,
   accessToken: string,

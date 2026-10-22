@@ -10,6 +10,7 @@ import { SQL, eq } from "drizzle-orm";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import * as schema from "../../../db/schema";
 import * as core from "./publish-publication-package.core";
+import * as commentCore from "./publication-first-comment.core";
 import * as access from "./instagram-publishing-access";
 import * as channelModule from "./publication-channel";
 import { MetaGraphApiError } from "./meta-token-response";
@@ -20,7 +21,7 @@ const requireLocal = createRequire(import.meta.url);
 const ids = { topic: "00000000-0000-4000-8000-000000000001", draft: "00000000-0000-4000-8000-000000000002",
   batch: "00000000-0000-4000-8000-000000000003", story: "00000000-0000-4000-8000-000000000004", pkg: "00000000-0000-4000-8000-000000000005" };
 
-async function setup(options: { channel?: "facebook-page" } = {}) {
+async function setup(options: { channel?: "facebook-page"; comment?: string } = {}) {
   const facebook = options.channel === "facebook-page";
   const client = new PGlite();
   const db = drizzle(client);
@@ -45,7 +46,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
     CREATE UNIQUE INDEX social_key ON story_social_publications(topic_id, story_id, platform);`);
   await db.insert(schema.instagramPublicationPackages).values({ id: ids.pkg, topicId: ids.topic, draftId: ids.draft,
     batchId: ids.batch, storyId: ids.story, draftVersion: 1, candidateSnapshotHash: "snapshot", packageHash: "package",
-    mediaType: facebook ? "carousel" : "image", caption: "Approved caption", connectionVersion: "conn-1",
+    mediaType: facebook ? "carousel" : "image", caption: "Approved caption", connectionVersion: "conn-1", firstComment: options.comment ?? null,
     ...(facebook ? { channel: "facebook-page", pageId: "555", igUserId: null } : { igUserId: "1789" }),
     scriptSnapshot: {}, transforms: [], expiresAt: new Date(Date.now() + 86_400_000) });
   for (const unitOrder of facebook ? [1, 2] : [1]) {
@@ -54,7 +55,19 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
       sha256: "hash", sourceSha256: "source-hash", width: 1080, height: 1350, expiresAt: new Date(Date.now() + 86_400_000) });
   }
   const calls = { publish: 0, create: 0, after: 0, upload: 0, feed: 0, feedPhotoIds: [] as string[], feedMessage: "", uploadedUrls: [] as string[], preservedPackages: [] as string[] };
-  const control = { rejectPublish: false, connection: "conn-1", containerStatus: "FINISHED", feedTimesOut: false };
+  const control = { rejectPublish: false, connection: "conn-1", containerStatus: "FINISHED", feedTimesOut: false,
+    commentFails: undefined as undefined | "permission" | "timeout", posted: [] as { on: string; text: string; id: string }[] };
+  const commentCalls = { create: 0, find: 0 };
+  const comment = (on: string, text: string) => {
+    commentCalls.create++;
+    if (control.commentFails === "permission") throw new MetaGraphApiError("denied", 403, { error: { message: "(#10) Application does not have permission for this action", code: 10 } });
+    const id = `${on}_c${commentCalls.create}`;
+    control.posted.push({ on, text, id });
+    // A timeout after Meta took it: the comment is up, the answer lost.
+    if (control.commentFails === "timeout") throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
+    return id;
+  };
+  const findComment = (on: string, text: string) => { commentCalls.find++; return control.posted.find((entry) => entry.on === on && entry.text === text)?.id; };
   const destination = () => facebook
     ? { channel: "facebook-page", pageId: "555", igUserId: null, connected: true, expired: false, connectionVersion: control.connection, appConfigurationVersion: "app-1" }
     : { connected: true, expired: false, igUserId: "1789", connectionVersion: control.connection, appConfigurationVersion: "app-1" };
@@ -63,6 +76,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
     "next/server": { after: () => { calls.after++; } }, // Deliberately never runs: only the worker advances jobs.
     "../stories/manage-creative-content": { CreativeContentConflictError: class extends Error {}, CreativeContentNotFoundError: class extends Error {} },
     "./publish-publication-package.core": core,
+    "./publication-first-comment.core": commentCore,
     "../stories/storage-maintenance": { preservePublishedPackage: async (packageId: string) => { calls.preservedPackages.push(packageId); } },
     "./instagram-publishing-access": access,
     "./get-publication-candidate": { getPublicationCandidate: async () => ({ state: "ready", snapshotHash: "snapshot" }) },
@@ -92,13 +106,17 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
         return "555_9999";
       },
       fetchPagePostPermalink: async () => ({ permalink: "https://www.facebook.com/555/posts/9999" }),
+      createPageComment: async (postId: string, _token: string, text: string) => comment(postId, text),
+      findPageComment: async (postId: string, _pageId: string, _token: string, text: string) => findComment(postId, text),
     },
     "./meta-graph-client": { GRAPH_API_VERSION: "v21.0",
       createInstagramMediaContainer: async () => { calls.create++; return String(1000 + calls.create); },
       createInstagramCarouselContainer: async () => "9001",
       getInstagramContainerStatus: async () => control.containerStatus,
       publishInstagramContainer: async () => { calls.publish++; if (control.rejectPublish) throw new MetaGraphApiError("rejected", 400); return "5001"; },
-      fetchInstagramMediaPermalink: async () => ({ permalink: "https://www.instagram.com/p/ABCDEF/" }) },
+      fetchInstagramMediaPermalink: async () => ({ permalink: "https://www.instagram.com/p/ABCDEF/" }),
+      createInstagramComment: async (mediaId: string, _token: string, text: string) => comment(mediaId, text),
+      findInstagramComment: async (mediaId: string, _token: string, text: string) => findComment(mediaId, text) },
   };
   function load<T>(file: string): T {
     const exports = {};
@@ -119,7 +137,7 @@ async function setup(options: { channel?: "facebook-page" } = {}) {
   }
   async function row() { return (await db.select().from(schema.instagramPublicationJobs))[0]; }
   async function finish() { for (let i = 0; i < 15; i++) { await step(); if (core.isTerminalPublicationJobStatus((await row()).status as core.PublicationJobStatus)) return; } throw new Error("unfinished"); }
-  return { client, db, repo, media, calls, control, step, row, finish };
+  return { client, db, repo, media, calls, commentCalls, control, step, row, finish };
 }
 
 test("concurrent publish requests and independent workers converge on one order and one post without browser reads", async () => {
@@ -452,5 +470,65 @@ test("an order whose delivery window closed is retried by name, now or at a new 
     await h.client.exec("UPDATE instagram_publication_jobs SET publish_at = now() - interval '1 minute'");
     await h.finish();
     assert.deepEqual([(await h.row()).status, h.calls.publish], ["published", 1]);
+  } finally { await h.client.close(); }
+});
+
+const COMMENT = "The library is back on Saturday. Which book will your kids pick first?";
+
+test("a published post gets its first comment once, as soon as it is up; a package without one gets none", async () => {
+  const h = await setup({ comment: COMMENT });
+  try {
+    const job = await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    assert.equal(job.comment?.status, "pending");
+    await h.finish();
+    const row = await h.row();
+    assert.deepEqual([row.status, row.commentStatus, row.commentId, h.commentCalls.create], ["published", "posted", "5001_c1", 1]);
+    assert.deepEqual(h.control.posted.map((entry) => [entry.on, entry.text]), [["5001", COMMENT]], "on the published media, the frozen text");
+    await h.step(); await h.step();
+    assert.equal(h.commentCalls.create, 1, "never twice");
+  } finally { await h.client.close(); }
+  const facebook = await setup({ channel: "facebook-page", comment: COMMENT });
+  try {
+    await facebook.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await facebook.finish();
+    assert.deepEqual([(await facebook.row()).commentStatus, facebook.control.posted[0]?.on], ["posted", "555_9999"], "under the Page post");
+  } finally { await facebook.client.close(); }
+  const none = await setup();
+  try {
+    await none.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await none.finish();
+    assert.deepEqual([(await none.row()).commentStatus, none.commentCalls.create], [null, 0]);
+  } finally { await none.client.close(); }
+});
+
+test("a comment Meta refuses for permission fails without touching the post, and the editor's retry posts it", async () => {
+  const h = await setup({ comment: COMMENT });
+  try {
+    h.control.commentFails = "permission";
+    await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.finish();
+    const failed = await h.row();
+    assert.deepEqual([failed.status, failed.commentStatus], ["published", "failed"]);
+    assert.match(failed.commentError ?? "", /instagram_business_manage_comments/u, "what to grant, for this channel");
+    await assert.rejects(h.repo.retryFirstComment(ids.topic, "00000000-0000-4000-8000-00000000000f", failed.id), /Only a first comment that was not posted/u, "another draft's order");
+    h.control.commentFails = undefined;
+    const retried = await h.repo.retryFirstComment(ids.topic, ids.draft, failed.id);
+    assert.equal(retried.comment?.status, "pending");
+    await h.step();
+    assert.deepEqual([(await h.row()).commentStatus, h.calls.publish], ["posted", 1], "the worker posts it; the post was sent once");
+  } finally { await h.client.close(); }
+});
+
+test("a comment whose answer was lost is found on the post by the next pass, never sent twice", async () => {
+  const h = await setup({ comment: COMMENT });
+  try {
+    h.control.commentFails = "timeout";
+    await h.repo.requestPublishNow(ids.topic, ids.draft, ids.pkg);
+    await h.finish();
+    assert.equal((await h.row()).commentStatus, "posting");
+    h.control.commentFails = undefined;
+    await h.step();
+    const row = await h.row();
+    assert.deepEqual([row.commentStatus, row.commentId, h.commentCalls.create, h.control.posted.length], ["posted", "5001_c1", 1, 1]);
   } finally { await h.client.close(); }
 });

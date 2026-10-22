@@ -76,7 +76,7 @@ async function copyStillApproved(topicId: string, publication: Draft2Publication
 /**
  * The editor approves the carousel as it stands for publishing: each
  * slide's shown image and the chosen caption, with its credits and
- * hashtags. Images the review did not pass need the editor's explicit
+ * hashtags, and its first comment. Images the review did not pass need the editor's explicit
  * acknowledgement. The approved carousel is copied once into v1's rows (a
  * brief, a draft and a completed batch under the `draft2` provider, all
  * approved), so v1's publication can freeze its immutable package and post
@@ -102,8 +102,10 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
   // The text v1 freezes and posts with its hashtags: the caption, then the source line and the credits (captionPostText's order).
   const caption = [captionText(target.caption.text), [target.source ?? "", ...target.credits].filter(Boolean).join("\n")].filter(Boolean).join("\n\n");
   const hashtags = target.caption.hashtags.map((tag) => `#${normalHashtag(tag)}`);
+  // The first comment is approved with the post; a carousel without one keeps the hash it had before comments.
   const snapshotHash = createHash("sha256").update(JSON.stringify({
     imagesRunId: target.imagesRunId, slides: target.slides.map(({ slide, version, sha256 }) => [slide, version, sha256]), caption, hashtags,
+    ...(target.comment ? { comment: target.comment } : {}),
   })).digest("hex");
   if (session.publication?.snapshotHash === snapshotHash && await copyStillApproved(topicId, session.publication)) return session;
 
@@ -159,6 +161,7 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
     draftId: draft.id, batchId: batch.id, snapshotHash, imagesRunId: target.imagesRunId, captionId: target.caption.id,
     slides: target.slides.map(({ slide, label, order, version, sha256 }) => ({ slide, label, order, version, sha256 })),
     postText: targetPostText(target),
+    ...(target.comment ? { firstComment: target.comment } : {}),
     approvedAt: new Date().toISOString(), acknowledgedIssues: acknowledgeIssues ? target.issues : [],
     ...(lever ? { lever } : {}),
   };

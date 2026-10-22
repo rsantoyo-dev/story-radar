@@ -55,6 +55,7 @@ export function editableText(step: Draft2EditStep, candidate: FunnelCandidate, s
     const caption = candidate as Draft2CaptionCandidate;
     if (slide === "post" && field === "text") return caption.text;
     if (slide === "post" && field === "hashtags") return caption.hashtags.map((tag) => `#${tag}`).join(" ");
+    if (slide === "post" && field === "comment") return caption.comment ?? "";
   } else {
     const entry = (candidate as Draft2VisualCandidate).slides.find((scripted) => scripted.slide === slide);
     if (entry && field === "direction") return entry.direction;
@@ -70,6 +71,12 @@ function withText(step: Draft2EditStep, candidate: FunnelCandidate, slide: strin
   if (step === "deck") return patchedDeck(candidate as Draft2DeckCandidate, slide, field as Draft2ReviewPatchField, text);
   if (step === "caption") {
     const caption = candidate as Draft2CaptionCandidate;
+    if (field === "comment") {
+      const { comment: _previous, ...rest } = caption;
+      void _previous;
+      const edited: Draft2CaptionCandidate = text.trim() ? { ...rest, comment: text.trim() } : rest;
+      return edited;
+    }
     const edited: Draft2CaptionCandidate = field === "hashtags" ? { ...caption, hashtags: parseHashtags(text) } : { ...caption, text };
     return edited;
   }

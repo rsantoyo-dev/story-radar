@@ -93,6 +93,8 @@ export function computePackageHash(input: {
   /** PUB-10. Omitted for instagram-direct so its hashes are unchanged. */
   channel?: "instagram-page" | "facebook-page";
   pageId?: string | null;
+  /** The first comment posted under the post; omitted when there is none, so a package without one keeps its hash. */
+  firstComment?: string;
 }): string {
   return createHash("sha256")
     .update(
@@ -104,6 +106,7 @@ export function computePackageHash(input: {
         igUserId: input.igUserId,
         connectionVersion: input.connectionVersion,
         ...(input.channel ? { channel: input.channel, pageId: input.pageId ?? null } : {}),
+        ...(input.firstComment ? { firstComment: input.firstComment } : {}),
       }),
     )
     .digest("hex");
