@@ -56,3 +56,36 @@ it in the next round or the repair; the evidence keeps the article's spelling.
 And a fact is editable by hand until the Opening exists (the people and
 places, the focus and the spine cite facts by id), no longer only while the
 facts wait.
+
+## Addendum, 2026-10-23: the Spine step itself, and a list's items
+
+The Saint-Jean weekend list (five items: f2, f9, f13, f22, f30) failed the
+Spine three times between 15:18 and 15:59 UTC, the same way each time: the
+first plan was refused for one beat's words over the limit ("in 1 to 280
+characters"), and the second, told only that, came back with three middle
+beats and an item dropped ("this spine has 3"), which fails the step. The
+plan that passed was then blocked for "billetterie" in the very practical
+line the finding had asked for. Now:
+
+- The planner's request names the items in order and the middle beats they
+  take (`spineLimits.items`), and the spine skill (v14) says every item the
+  focus chose has a beat of its own that cites its fact.
+- A refusal says what to fix and nothing more: a field over its limit gives
+  its length and "shorten that field alone and keep every beat"; a wrong
+  count of middle beats names the items no beat cites, the beats that carry
+  two, and the order. A refused first answer is also read as a last answer
+  would be, and what else it breaks joins the correction (`Also: …`), so the
+  second answer fixes everything at once.
+- The program decides after the targeted call: when the second answer is
+  refused and the first stands under the last answer's rules (long fields
+  cut at a word, image problems shown as notes, uncovered facts as findings),
+  the first answer is the step's; the trace says so on the second call. No
+  third call.
+- An item's beat (slide2, a middle) is read for conditions up to its
+  practical line ("Ligne pratique :", "Infos :", "Practical line:", "Línea
+  práctica:"), where its days, price and booking stand as plain data, as the
+  deck's practical line does; the cover and the last are read whole.
+- The server's autopilot writes the Spine again once from the program's
+  refusal when the step failed on two refused answers (in the job, or when
+  the job finds the session failed that way), as it does for "Fix the spine
+  first". A provider's failure is not rewritten from: it names nothing to fix.

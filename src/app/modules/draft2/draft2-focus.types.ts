@@ -5,7 +5,7 @@ import { editedLevers, leversForModels, parsePlanLevers, type Draft2FocusLevers 
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
 import { spineImageProblems, type Draft2SpineProblem } from "./draft2-spine-checks";
-import { caveatsIn, choreIn } from "./draft2-caveats.types";
+import { beforePracticalLine, caveatsIn, choreIn } from "./draft2-caveats.types";
 
 /**
  * Focus, the second Draft 2 step: what the story is for, decided once the
@@ -758,12 +758,20 @@ const clipped = (value: unknown, max: number): string | undefined => {
   return (end > max / 2 ? cut.slice(0, end) : whole.slice(0, max)).replace(/[\s,;:–-]+$/u, "");
 };
 
-/** The numbers the program checks a spine against, for the planner's request: the beats it may have and each field's characters. */
-export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode">) {
+/**
+ * The numbers the program checks a spine against, for the planner's request:
+ * the beats it may have, each field's characters, and for a list or a
+ * procedure its items in order with the middle beats they take.
+ */
+export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> & Partial<Pick<Draft2FocusValues, "structure">>) {
   const panorama = focusPresentation(values).images === "panorama";
+  const structure = values.structure;
+  const items = structure && structure.kind !== "arc" ? structure.itemFactIds : [];
   return {
     beats: { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS, ...(panorama ? { note: "a panorama: four or five read larger than six" } : {}) },
     characters: { scene: FOCUS_BEAT_SCENE_MAX_CHARACTERS, words: FOCUS_BEAT_WORDS_MAX_CHARACTERS, image: FOCUS_BEAT_IMAGE_MAX_CHARACTERS, withholds: FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, subject: FOCUS_BEAT_SUBJECT_MAX_CHARACTERS },
+    // A list's items are the focus's choice: the planner told only a count dropped one of five, twice in a row (2026-10-23).
+    ...(items.length ? { items: { factIds: [...items], middleBeats: { min: Math.max(1, items.length - 1), max: items.length }, rule: "one beat of its own per item, in this order, each citing its item's fact: the first on slide2 or on the first middle beat, every other on a middle beat; never two items on one beat, none left out" } } : {}),
     // A panorama's spine designs its scene (spine.panorama): the program requires it, one station per beat, exactly one station "large" (the turn's).
     ...(panorama ? { panorama: { required: true, stations: "one per beat, in the beats' order; exactly one large, on the turning point or the climax", characters: { world: PANORAMA_WORLD_MAX_CHARACTERS, axis: PANORAMA_AXIS_MAX_CHARACTERS, field: PANORAMA_FIELD_MAX_CHARACTERS, carrier: PANORAMA_CARRIER_MAX_CHARACTERS, crossing: PANORAMA_CROSSING_MAX_CHARACTERS } } } : {}),
   };
@@ -943,6 +951,31 @@ function parseConcept(value: unknown, { known, material, gravity, editorChoice }
   return { arc, premise, premiseFactIds, reveals };
 }
 
+/**
+ * Where a list's or a procedure's items stand on a spine with the wrong count
+ * of middle beats, for the planner to fix that and nothing else (2026-10-23:
+ * the Saint-Jean weekend's plan, told only "this spine has 3", dropped an item
+ * of five again on its second answer and failed the Spine three times): the
+ * items with no beat of their own, the beats that carry two, and the order.
+ */
+function itemBeatsProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }): string {
+  const body = beats.filter((beat) => beat.slide === "slide2" || beat.slide === "middle");
+  const carrying = (id: string) => body.filter((beat) => beat.factIds.includes(id));
+  const missing = structure.itemFactIds.filter((id) => !carrying(id).length);
+  let middle = 0;
+  const shared = body.flatMap((beat) => {
+    const name = beat.slide === "middle" ? `middle ${++middle}` : beat.slide;
+    const held = structure.itemFactIds.filter((id) => beat.factIds.includes(id));
+    return held.length > 1 ? [`${name} carries ${held.join(" and ")}`] : [];
+  });
+  const noun = structure.kind === "list" ? "item" : "step";
+  const parts = [
+    ...(missing.length ? [`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} cited by no beat`] : []),
+    ...shared,
+  ];
+  return `${parts.length ? `: ${parts.join("; ")}` : ""}. Keep every beat you have and give each ${noun} its own, in this order: ${structure.itemFactIds.join(", ")}; a weaker ${noun} is still one of them (the focus chose them)`;
+}
+
 /** What is wrong with a spine's shape for a structure, if anything: its positions, its count of middle beats, its turn and its ending. */
 export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, { maxBeats }: { maxBeats?: number } = {}): string | undefined {
   if (beats.length < FOCUS_SPINE_MIN_BEATS || beats.length > FOCUS_SPINE_MAX_BEATS) return `The spine has ${FOCUS_SPINE_MIN_BEATS} to ${FOCUS_SPINE_MAX_BEATS} beats, one per slide; this one has ${beats.length}`;
@@ -959,11 +992,24 @@ export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: 
   const middle = count("middle");
   if (structure.kind === "arc" && (middle < FOCUS_SPINE_ARC_MIDDLE_MIN || middle > FOCUS_SPINE_ARC_MIDDLE_MAX)) return `An arc's deck has ${FOCUS_SPINE_ARC_MIDDLE_MIN} to ${FOCUS_SPINE_ARC_MIDDLE_MAX} middle beats; this spine has ${middle}`;
   const items = structure.itemFactIds.length;
-  if (structure.kind !== "arc" && items && (middle < Math.max(1, items - 1) || middle > items)) return `A ${structure.kind === "list" ? "list" : "procedure"} has one middle beat per item or step (${items}, the first allowed on slide2); this spine has ${middle}`;
+  if (structure.kind !== "arc" && items && (middle < Math.max(1, items - 1) || middle > items)) return `A ${structure.kind === "list" ? "list" : "procedure"} has one middle beat per item or step (${items}, the first allowed on slide2); this spine has ${middle}${itemBeatsProblem(beats, structure)}`;
   if (!beats.some((beat) => SPINE_TURN_ROLES.includes(beat.role))) return "Every spine has a turning point or a climax: the strongest true thing the facts hold";
   if (!SPINE_ENDING_ROLES.includes(beats[beats.length - 1].role)) return "The last beat is a payoff or a resolution";
   if (beats.slice(0, -1).some((beat) => !beat.withholds)) return "Every beat but the last withholds something for the next slide";
   return undefined;
+}
+
+/**
+ * Why a beat's text was refused: missing, or over its limit by how much. An
+ * answer over a limit is told to shorten that field alone: told only "in 1 to
+ * 280 characters", the planner rewrote the whole spine shorter and dropped a
+ * list's item (2026-10-23, the Saint-Jean weekend, three times).
+ */
+function beatFieldProblem(index: number, value: unknown, needs: string, name: string, max: number): string {
+  const length = typeof value === "string" ? value.trim().length : 0;
+  return length > max
+    ? `Beat ${index + 1}'s ${name} is ${length} characters, over the ${max} allowed: shorten that field alone and keep every beat, its slide, its role and its facts`
+    : `Beat ${index + 1} needs ${needs}, in 1 to ${max} characters`;
 }
 
 /**
@@ -985,9 +1031,9 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
     const scene = field(body.scene, FOCUS_BEAT_SCENE_MAX_CHARACTERS);
     const words = field(body.words, FOCUS_BEAT_WORDS_MAX_CHARACTERS);
     const image = field(body.image, FOCUS_BEAT_IMAGE_MAX_CHARACTERS);
-    if (!scene) fail(`Beat ${index + 1} needs its scene, in 1 to ${FOCUS_BEAT_SCENE_MAX_CHARACTERS} characters`);
-    if (!words) fail(`Beat ${index + 1} needs the words' job, in 1 to ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} characters`);
-    if (!image) fail(`Beat ${index + 1} needs what the image adds, in 1 to ${FOCUS_BEAT_IMAGE_MAX_CHARACTERS} characters`);
+    if (!scene) fail(beatFieldProblem(index, body.scene, "its scene", "scene", FOCUS_BEAT_SCENE_MAX_CHARACTERS));
+    if (!words) fail(beatFieldProblem(index, body.words, "the words' job", "words' job", FOCUS_BEAT_WORDS_MAX_CHARACTERS));
+    if (!image) fail(beatFieldProblem(index, body.image, "what the image adds", "image line", FOCUS_BEAT_IMAGE_MAX_CHARACTERS));
     const withholds = typeof body.withholds === "string" ? (limits.clip ? clipped(body.withholds, FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS) ?? "" : body.withholds.trim()) : "";
     if (withholds.length > FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS) fail(`Beat ${index + 1} withholds in at most ${FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS} characters`);
     const factIds = known
@@ -1561,15 +1607,18 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
   const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure, { maxBeats: presentationMaxBeats(values) }) : undefined;
   if (shape) findings.push({ field: "spine", code: "SPINE_SHAPE", detail: `${shape}: decide again for Claude to rewrite the spine for this structure, or edit the beats.` });
   // Caveats are not content (2026-10-22): in a list or a procedure, a plan whose beats order conditions (a check, the box office, the weather, a purchase)
-  // writes the slides the program then refuses; the Saint-Jean weekend spine ordered them on five beats of seven. The items' practical lines carry them.
+  // writes the slides the program then refuses; the Saint-Jean weekend spine ordered them on five beats of seven. The items' practical lines carry them:
+  // an item's beat (slide2, a middle) is read up to its "Ligne pratique :", where its data stands as the deck's practical line does (2026-10-23, the same
+  // weekend's plan blocked three times for "billetterie en ligne" in the very line the finding asked for); the cover and the last are read whole.
   if (values.spine && values.structure.kind !== "arc") {
     let middle = 0;
     const planned = values.spine.beats.flatMap((beat) => {
       const name = beat.slide === "middle" ? `middle ${++middle}` : beat.slide;
-      const caveat = caveatsIn(beat.words)[0] ?? (beat.slide === "cover" ? choreIn(beat.words) : undefined);
+      const job = beat.slide === "slide2" || beat.slide === "middle" ? beforePracticalLine(beat.words) : beat.words;
+      const caveat = caveatsIn(job)[0] ?? (beat.slide === "cover" ? choreIn(beat.words) : undefined);
       return caveat ? [`${name} ("${caveat}")`] : [];
     });
-    if (planned.length) findings.push({ field: "spine", code: "SPINE_CAVEATS", detail: `The spine plans conditions instead of what the reader does or sees: ${planned.join(", ")}. In a ${values.structure.kind === "list" ? "list" : "procedure"} each item's beat says what the reader does or sees and where, then its practical line as plain data ("Ligne pratique : samedi 24 en soirée, réservation en ligne"), never as a warning ("à confirmer", "vérifie", "selon la météo", "exige un achat", "avant de partir"); the cover sells the items and the closing ends on the choice, with no checks. Rewrite the plan, or edit these beats.` });
+    if (planned.length) findings.push({ field: "spine", code: "SPINE_CAVEATS", detail: `The spine plans conditions instead of what the reader does or sees: ${planned.join(", ")}. In a ${values.structure.kind === "list" ? "list" : "procedure"} each item's beat says what the reader does or sees and where, then its practical line after "Ligne pratique :", where its days, price and booking stand as plain data ("Ligne pratique : samedi 24 en soirée, billets en ligne"); before that line a beat never warns ("à confirmer", "vérifie", "selon la météo", "exige un achat", "avant de partir"), and the cover sells the items and the closing ends on the choice, with no checks. Rewrite the plan, or edit these beats.` });
     // A guard that generalizes over the items ("les cinq sorties sont gratuites", "chaque sortie…") names the items' differences, which their own slides carry: it is no guard.
     const generalizing = (values.guards ?? []).filter((guard) => /(?<![\p{L}])(chaque|chacune?|toutes?|tous|les (?:cinq|quatre|trois|six|sept|huit|neuf|dix)|every|each|all|cada|tod[oa]s|las (?:cinco|cuatro|tres|seis|siete|ocho|nueve|diez))(?![\p{L}])/iu.test(guard.misreading));
     if (generalizing.length) findings.push({ field: "spine", code: "SPINE_GUARD_ITEMS", detail: `${generalizing.map((guard) => `"${guard.misreading}"`).join(" and ")} ${generalizing.length === 1 ? "generalizes" : "generalize"} over the items: their differences are no guard, each item's slide carries its own details. Rewrite the plan without ${generalizing.length === 1 ? "it" : "them"}.` });

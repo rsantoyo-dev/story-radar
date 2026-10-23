@@ -188,7 +188,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   assert.equal(json(focus.decidedBy), json({ provider: "anthropic", model: "claude-sonnet-5-5" }));
   const [decisionCall] = session.trace.filter((entry) => entry.step === "focus");
   assert.equal(session.trace.length, 2, "the facts trace is kept; the decision is one call, and the plan is the Spine step's");
-  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "18", discovery: "1", arcs: "1", narratives: "4", spine: "13" }, 900]));
+  assert.equal(json([decisionCall.provider, decisionCall.operation, decisionCall.outcome, decisionCall.skillVersions, decisionCall.cacheWriteTokens]), json(["anthropic", "draft2_focus", "ok", { focus: "18", discovery: "1", arcs: "1", narratives: "4", spine: "14" }, 900]));
   assert.equal(json([focus.values?.spine, focus.values?.levers, focus.staleDirections]), json([undefined, undefined, false]), "no plan yet: the Spine step writes it");
   assert.equal(focus.deliberation?.approaches.length, 3, "the tellings Claude compared stay on the focus for the editor");
   assert.equal(json([focus.values?.narrative, focus.inventoryVersion, h.reviewCalls.length]), json([focusTypes.CLASSIC_NARRATIVE, 2, 0]), "a classic story is not reviewed");
@@ -197,7 +197,7 @@ test("Claude decides the focus from the cached facts, the brand brief, the profi
   const planned = await h.plan();
   const planCall = planned.trace[planned.trace.length - 1];
   assert.equal(json([planned.step, planned.status, planned.error]), json(["spine", "ready", null]), "the Spine step claims the session and ends it ready");
-  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "18", levers: "1", spine: "13", reader: "3" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
+  assert.equal(json([planCall.operation, planCall.outcome, planCall.effort, planCall.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "18", levers: "1", spine: "14", reader: "3" }]), "a classic telling: the planner reads the focus, levers, spine and reader skills only");
   const spined = planned.focus!;
   assert.equal(json([spined.version, spined.values?.spine?.beats.length, spined.values?.direction, spined.reasons?.spine, spined.staleDirections]), json([2, 7, PLAN.direction, "Why spine.", false]), "the plan's spine, directions and reasons join the decision, and the version moves");
   assert.equal(json(Object.keys((h.calls[1].contents as { focus: Record<string, unknown> }).focus)), json(["line", "interest", "audience", "framing", "readerConsequence", "structure", "goal", "voice"]), "the planner reads the decision, the interest first, without the empty directions");
@@ -304,6 +304,35 @@ test("a second plan outside the contract fails the Spine step, with both plan ca
   assert.ok(Array.isArray((h.calls[1].contents as { factsToCover?: unknown }).factsToCover), "the facts every spine must place");
 });
 
+test("a first plan refused only for a field's length is the program's answer when the second is refused too: cut at a word, the refusal and the decision on the trace (2026-10-23)", async () => {
+  const long = "Dire qui examine les vidéos et ce qu'il regarde, avec le délai que le responsable donne et la portée du programme pour un fondateur. ".repeat(3).trim();
+  const first = { ...PLAN, spine: { beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, words: long } : beat) } };
+  const second = { ...PLAN, spine: { beats: ARC_SPINE.beats.filter((beat) => beat.slide !== "penultimate") } };
+  const h = harness({ answers: [answer()], plans: [first, second] });
+  await h.decide();
+  const planned = await h.plan();
+  assert.equal(h.calls.length, 3, "the decision, then the plan twice: never a third call");
+  assert.match(String((h.calls[2].contents as { correction: string }).correction), /^Beat 3's words' job is \d+ characters, over the 280 allowed: shorten that field alone and keep every beat, its slide, its role and its facts\. Return the whole plan again/);
+  assert.doesNotMatch(String((h.calls[2].contents as { correction: string }).correction), /Also:/, "nothing else was wrong with it");
+  const beats = (planned.focus as Draft2Focus).values!.spine!.beats;
+  assert.equal(json([planned.status, beats.length, beats.filter((beat) => beat.slide === "penultimate").length]), json(["ready", 7, 1]), "the first answer's spine, every beat kept");
+  assert.ok(beats[2].words.length <= 280 && long.startsWith(beats[2].words), "its long field cut at a word");
+  const notes = (planned.trace as types.Draft2TraceEntry[]).filter((entry) => entry.operation === "draft2_focus_plan").map((entry) => entry.note ?? "");
+  assert.match(notes[1], /^Refused by the program: An arc's closing has one penultimate beat before the last\. The first answer stands/);
+});
+
+test("a refused first plan is told everything the program sees wrong in it at once, and one that breaks the shape too is never kept (2026-10-23)", async () => {
+  const long = "Dire qui examine les vidéos et ce qu'il regarde, avec le délai que le responsable donne et la portée du programme pour un fondateur. ".repeat(3).trim();
+  const broken = { ...PLAN, spine: { beats: ARC_SPINE.beats.filter((beat) => beat.slide !== "penultimate").map((beat, index) => index === 2 ? { ...beat, words: long } : beat) } };
+  const h = harness({ answers: [answer()], plans: [broken, PLAN] });
+  await h.decide();
+  assert.equal((await h.plan()).status, "ready", "the second answer decides");
+  assert.match(String((h.calls[2].contents as { correction: string }).correction), /^Beat 3's words' job is \d+ characters, over the 280 allowed[^]*\. Also: An arc's closing has one penultimate beat before the last\. Return the whole plan again/);
+  const refused = harness({ answers: [answer()], plans: [broken, { ...PLAN, visualDirection: "" }] });
+  await refused.decide();
+  await assert.rejects(refused.plan(), /visual direction is missing/, "no answer stands: the Spine fails as before");
+});
+
 test("the focus waits for People and places: the narrative form is chosen with them", async () => {
   const h = harness({ answers: [answer()], session: { inventory: null } });
   await assert.rejects(h.decide(), (error: Error) => error instanceof types.Draft2InputError && /Find the people and places first/.test(error.message));
@@ -400,7 +429,7 @@ test("after the editor changes how the story is told, Claude rewrites the plan f
   assert.equal(json([contents.task, contents.focus.narrative?.form, "spine" in contents.focus, contents.editorChoices]), json(["plan", "character-guide", true, {}]), "the planner reads the decision, the earlier spine and the parts the editor owns (none here)");
   assert.equal(json((call.contents as { material?: unknown }).material), json(focusTypes.focusMaterial(INVENTORY as never)), "and People and places, as found now");
   const last = session.trace[session.trace.length - 1];
-  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "18", levers: "1", spine: "13", reader: "3", narratives: "4" }]));
+  assert.equal(json([last.operation, last.outcome, last.effort, last.skillVersions]), json(["draft2_focus_plan", "ok", "high", { focus: "18", levers: "1", spine: "14", reader: "3", narratives: "4" }]));
 });
 
 test("with the editor's notes, Claude revises the plan as it stands, the editor's changes in it; the whole new plan is Claude's and the notes are kept", async () => {

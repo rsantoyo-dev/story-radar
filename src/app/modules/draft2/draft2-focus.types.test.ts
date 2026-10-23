@@ -442,7 +442,8 @@ test("the spine: one beat per slide, shaped for the structure, a turning point o
   rejects({ beats: ARC_SPINE.beats.map((beat) => beat.role === "turning-point" || beat.role === "climax" ? { ...beat, role: "rising" } : beat) }, /turning point or a climax/);
   rejects({ beats: [...ARC_SPINE.beats.slice(0, 6), { ...ARC_SPINE.beats[6], role: "rising" }] }, /last beat is a payoff or a resolution/);
   rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, withholds: "" } : beat) }, /withholds something for the next slide/);
-  rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 1 ? { ...beat, scene: "x".repeat(241) } : beat) }, /Beat 2 needs its scene/);
+  rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 1 ? { ...beat, scene: "x".repeat(241) } : beat) }, /Beat 2's scene is 241 characters, over the 240 allowed: shorten that field alone and keep every beat/);
+  rejects({ beats: ARC_SPINE.beats.map((beat, index) => index === 1 ? { ...beat, scene: " " } : beat) }, /Beat 2 needs its scene, in 1 to 240 characters/);
   rejects({ beats: ARC_SPINE.beats.filter((beat) => beat.slide !== "penultimate") }, /arc's closing has one penultimate beat/);
   assert.equal(parse({ structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } }).values.spine?.beats.filter((beat) => beat.slide === "middle").length, 2, "a list of three: the first item on slide2, two middle beats");
   assert.throws(() => parse({ structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] }, spine: ARC_SPINE }), /closes on the last slide alone/, "an arc's spine on a list");
@@ -654,7 +655,7 @@ test("the last plan answer's beat over a character limit is cut at a word instea
   const answerWith = (words: string) => JSON.stringify({ levers: { primary: "free", alternatives: [], factIds: [], paidBy: "last" }, spine: { beats: ARC_SPINE.beats.map((entry, index) => index === 2 ? { ...entry, words } : entry) }, direction: "d", visualDirection: "v", reasons: {} });
   const known = new Set(["f1", "f2", "f3"]);
   const arc = { kind: "arc" as const, itemFactIds: [] };
-  assert.throws(() => parseFocusPlan(answerWith(long), { known, structure: arc }), new RegExp(`Beat 3 needs the words' job, in 1 to ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} characters`), "a first answer is asked again");
+  assert.throws(() => parseFocusPlan(answerWith(long), { known, structure: arc }), new RegExp(`Beat 3's words' job is ${long.length} characters, over the ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} allowed: shorten that field alone and keep every beat, its slide, its role and its facts`), "a first answer is asked again, for that field alone");
   const cut = parseFocusPlan(answerWith(long), { known, structure: arc, clip: true }).spine.beats[2].words;
   assert.ok(cut.length <= FOCUS_BEAT_WORDS_MAX_CHARACTERS && long.startsWith(cut), "the last one keeps its beat, cut at a word");
   assert.match(cut, /[\p{L}]$/u, "never on a comma or a space");
@@ -713,6 +714,29 @@ test("a panorama's spine designs its scene (spine v10): required with the plan a
   const without = focusWithSpineProblems({ ...decided(), values: { ...values, spine: ARC_SPINE as never } }, []);
   assert.deepEqual(without.spineProblems?.map((problem) => problem.code), ["SPINE_PANORAMA_SCENE"]);
   assert.equal(focusWithSpineProblems({ ...decided(), values }, []).spineProblems, undefined);
+});
+
+test("a list's spine with the wrong count of beats is told which items no beat cites and which beats carry two, in the items' order; the planner reads the items in its limits (2026-10-23)", () => {
+  const structure = { kind: "list" as const, itemFactIds: ["f2", "f9", "f13", "f22", "f30"] };
+  const beat = (slide: string, role: string, factIds: string[]) => ({ slide, role, scene: "A scene.", words: "Say the item.", image: "The item in its place.", withholds: slide === "last" ? "" : "The next one.", factIds });
+  const three = [beat("cover", "hook", []), beat("slide2", "setup", ["f2"]), beat("middle", "turning-point", ["f9"]), beat("middle", "rising", ["f13", "f22"]), beat("middle", "rising", ["f13"]), beat("last", "payoff", [])] as Draft2SpineBeat[];
+  assert.equal(spineShapeProblem(three, structure), "A list has one middle beat per item or step (5, the first allowed on slide2); this spine has 3: f30 is cited by no beat; middle 2 carries f13 and f22. Keep every beat you have and give each item its own, in this order: f2, f9, f13, f22, f30; a weaker item is still one of them (the focus chose them)");
+  const uncited = itemsSpine(2).beats as Draft2SpineBeat[];
+  assert.match(spineShapeProblem(uncited, structure) ?? "", /this spine has 1: f2, f9, f13, f22, f30 are cited by no beat\. Keep every beat/);
+  assert.deepEqual(spineLimitsForModels({ structure }).items, { factIds: ["f2", "f9", "f13", "f22", "f30"], middleBeats: { min: 4, max: 5 }, rule: "one beat of its own per item, in this order, each citing its item's fact: the first on slide2 or on the first middle beat, every other on a middle beat; never two items on one beat, none left out" });
+  assert.equal(spineLimitsForModels({ structure: { kind: "arc", itemFactIds: [] } }).items, undefined, "an arc has no items to place");
+});
+
+test("an item's beat may carry its conditions as plain data after \"Ligne pratique :\"; before it, on the cover or on the last, a condition is still the beat's job (2026-10-23)", () => {
+  const values = decided().values!;
+  const list = { ...values, structure: { kind: "list" as const, itemFactIds: ["f1", "f2", "f3"] }, spine: itemsSpine(3), guards: [] } as unknown as Draft2FocusValues;
+  const withWords = (words: Record<number, string>) => ({ ...list, spine: { beats: list.spine!.beats.map((beat, index) => words[index] ? { ...beat, words: words[index] } : beat) } }) as Draft2FocusValues;
+  const caveats = (next: Draft2FocusValues) => focusFindings(next).find((finding) => finding.code === "SPINE_CAVEATS")?.detail;
+  assert.equal(caveats(withWords({ 1: "Le spectacle de feu au Domaine Trinity, ce qu'on y voit. Ligne pratique : samedi 24 et dimanche 25, billetterie en ligne.", 2: "Le Relais hanté au Verger Charbonneau. Infos : une activité liée à un achat." })), undefined, "the practical line holds the data");
+  assert.match(caveats(withWords({ 2: "Dire que l'activité est liée à un achat. Ligne pratique : dimanche 25." })) ?? "", /middle 1 \("liée à un achat"\)/u, "before the line, it is the beat's job");
+  assert.match(caveats(withWords({ 4: "Choisir sa sortie. Ligne pratique : billetterie en ligne." })) ?? "", /last \("billetterie"\)/u, "the last is read whole");
+  assert.match(caveats(withWords({ 0: "Cinq sorties. Infos : billetterie." })) ?? "", /cover \("billetterie"\)/u, "the cover is read whole");
+  assert.match(caveats(withWords({ 2: "Dire que l'activité est liée à un achat." })) ?? "", /after "Ligne pratique :", where its days, price and booking stand as plain data/u);
 });
 
 test("a list's spine that plans conditions, or a guard that generalizes over the items, is a finding the autopilot stops on (2026-10-22)", () => {

@@ -57,3 +57,18 @@ export function isChecklist(headline: string, body: string): string | undefined 
   const caveats = caveatSentences(body);
   return caveats.length >= 2 ? caveats.slice(0, 2).join('", "') : undefined;
 }
+
+/** The label a list item's beat opens its practical line with ("Ligne pratique :", "Practical line:", "Línea práctica:", "Infos :"). */
+const PRACTICAL_LABEL = /(?<![\p{L}])(?:lignes? pratiques?|infos? pratiques?|pratique|practical(?: line| details?| info)?|l[ií]neas? pr[aá]cticas?|datos pr[aá]cticos|pr[aá]ctic[oa]|infos?)\s*:/iu;
+
+/**
+ * A list item's beat before its practical line (2026-10-23): the line after
+ * "Ligne pratique :" holds the item's data, its conditions as plain data
+ * ("billets en ligne"), as the deck's practical line does; what comes before
+ * it is the beat's job, where a condition is a warning. A beat with no label
+ * is all job.
+ */
+export function beforePracticalLine(text: string): string {
+  const label = PRACTICAL_LABEL.exec(text);
+  return label ? text.slice(0, label.index) : text;
+}

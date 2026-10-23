@@ -147,3 +147,41 @@ test("a plan the program refuses is written again once from its findings before 
   const other = harness([], { next: () => ({ blocked: "2 people wait for you in People and places." }) });
   assert.deepEqual((await runAutopilotPass(other.deps)).end, { kind: "blocked", reason: "2 people wait for you in People and places." }, "only a spine's findings are repaired");
 });
+
+test("a Spine the program refused twice is written again once from its refusal, in the job or when the job finds it failed; a provider's failure is not (2026-10-23)", async () => {
+  const refusal = "A list has one middle beat per item or step (5, the first allowed on slide2); this spine has 3: f30 is cited by no beat.";
+  const refusedTrace = [{ at: "2026-10-23T16:01:26.119Z", step: "focus", operation: "draft2_focus_plan", outcome: "ok", note: `Refused by the program: ${refusal}` }] as never[];
+  // A session decided up to its spine: verified facts, people and places found, a focus with no finding of its own.
+  const decidedUpToSpine = {
+    facts: [{ id: "f1", claim: "Le Domaine Trinity accueille un spectacle.", evidence: "accueille", kind: "event", status: "established", importance: 95 }],
+    inventory: { status: "ready", version: 1, characters: "auto", roster: [], storyPhotos: [], entities: [] },
+    focus: { status: "ready", version: 1, edited: [], values: { structure: { kind: "arc", itemFactIds: [] }, framing: "news", voice: { gravity: "light" } } },
+  } as unknown as Partial<AutopilotSession>;
+  const failedSpine = session({ ...decidedUpToSpine, step: "spine", status: "failed", error: refusal, trace: refusedTrace });
+  const decided = nextAutopilotStep(failedSpine, Date.now());
+  assert.deepEqual(["blocked" in decided && decided.blocked, "repair" in decided && decided.repair], [`The spine failed: ${refusal} Write it again once it is fixed.`, refusal], "the decisions carry the refusal for the rewrite");
+  const lost = nextAutopilotStep(session({ ...decidedUpToSpine, step: "spine", status: "failed", error: "Anthropic returned HTTP 529", trace: [{ at: "2026-10-23T16:01:26.119Z", step: "focus", operation: "draft2_focus_plan", outcome: "error", note: "HTTP 529" }] as never[] }), Date.now());
+  assert.deepEqual(["blocked" in lost, "repair" in lost], [true, false], "a provider's failure names nothing to fix");
+  // In the job: the Spine step fails, the job reads the session again and writes it once from the refusal.
+  let spineRuns = 0;
+  const notes: (string | undefined)[] = [];
+  const h = harness([], { next: (current) => !current || current.status !== "failed" ? (spineRuns ? { done: true } : { step: "spine" }) : { blocked: `The spine failed: ${refusal}`, repair: refusal } });
+  let loaded = 0;
+  h.deps.loadSession = async () => (loaded++ ? failedSpine : session());
+  h.deps.runStep = async (step, options) => {
+    spineRuns++;
+    notes.push(options.notes);
+    if (spineRuns === 1) throw new Error(refusal);
+    return session();
+  };
+  const { end, steps } = await runAutopilotPass(h.deps);
+  assert.deepEqual([end, steps.map((entry) => [entry.step, entry.status, entry.reason ?? null])], [{ kind: "done" }, [["spine", "failed", null], ["spine", "ready", "the program's findings on it"]]]);
+  assert.deepEqual(notes, [undefined, refusal], "the second run reads the refusal as its notes");
+  // Refused once more: the job stops, failed, without a third run.
+  let runs = 0;
+  const stubborn = harness([], { next: (current) => current?.status === "failed" ? { blocked: `The spine failed: ${refusal}`, repair: refusal } : { step: "spine" } });
+  stubborn.deps.loadSession = async () => (runs ? failedSpine : session());
+  stubborn.deps.runStep = async () => { runs++; throw new Error(refusal); };
+  const again = await runAutopilotPass(stubborn.deps);
+  assert.deepEqual([again.end.kind, runs], ["failed", 2]);
+});

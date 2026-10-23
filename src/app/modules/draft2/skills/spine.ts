@@ -56,7 +56,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "13",
+  version: "14",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -165,6 +165,17 @@ story takes the ones it needs, in this order, and may repeat rising:
   never by a general sentence on slide 2 ("Les autres sorties n'ont pas
   toutes les mêmes jours"): the slide2 beat is the first item's, and its
   words say what that item is and where.
+- In a list or a procedure, the items are the focus's choice, every one of
+  them: spineLimits.items names them in order and the middle beats they
+  take. Each item has a beat of its own that cites its fact, none left out
+  and never two on one beat; an item that seems weaker is still told, in
+  fewer words. "As many slides as the story needs" counts the items as given.
+- An item's words say what the reader does or sees and where, then end on
+  its practical line, after "Ligne pratique :" (the label in the
+  publication's language), where its days, hours, price and booking stand as
+  plain data ("Ligne pratique : samedi 24 en soirée, billets en ligne").
+  Before that line the words never warn: the program reads a condition there
+  as the beat's job.
 - The images are a sequence, not a series: from beat to beat the dominant
   subject moves with the story (the place, the tool, the people's trace, a
   comparison, the consequence), within what the facts hold. The story's
@@ -253,7 +264,8 @@ above does not apply to them; everything else below does.
   roleText: {
     "focus-planner": `## The numbers you are checked against
 spineLimits gives them: the fewest and the most beats (a panorama's six),
-and each beat field's characters (scene, words, image, withholds, subject).
+each beat field's characters (scene, words, image, withholds, subject), and
+for a list or a procedure its items with the middle beats they take.
 Keep every field at least ten characters under its limit: the program
 counts every character, and an answer over a limit is asked for again.
 With spineLimits.panorama, the answer's spine carries "panorama" (world,

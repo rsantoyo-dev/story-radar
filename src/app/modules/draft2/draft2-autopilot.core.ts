@@ -42,6 +42,12 @@ export const NO_CLEAN_VERSION = "its last run ended with no clean version";
 export const FROM_FINDINGS = "the program's findings on it";
 const SPINE_BLOCK = "Fix the spine first: ";
 
+/** Whether the session's last plan call was answered and refused by the program, not lost to the provider. */
+function planRefused(trace: readonly Draft2TraceEntry[]): boolean {
+  const last = [...trace].reverse().find((entry) => entry.operation === "draft2_focus_plan");
+  return Boolean(last && last.outcome === "ok" && last.note?.startsWith("Refused by the program"));
+}
+
 /** The session as the decisions read it: the row, or the canvas's view of it (its dates as strings). */
 export type AutopilotSession = {
   id: string;
@@ -67,7 +73,7 @@ export type AutopilotSession = {
 export type AutopilotNext =
   | { step: Draft2AutopilotStep; continuing?: boolean; /** Why a step that had run is written again. */ reason?: string }
   | { done: true }
-  | { blocked: string };
+  | { blocked: string; /** The program's own words on a plan it refused, for the one rewrite from them. */ repair?: string };
 
 /** A funnel run as the autopilot reads it: nothing yet, stopped (to continue), failed (stop), finished for something that changed since (write again), or finished. */
 export function runNeeds(step: Draft2AutopilotStep, run: { status: string; winnerId?: string; editorChoiceId?: string; error?: string } | null | undefined, changed: boolean, noun: string): AutopilotNext | undefined {
@@ -114,10 +120,17 @@ export function nextAutopilotStep(session: AutopilotSession | null | undefined, 
   // The spine: the plan the words and the images follow, written from the focus; a focus decided or changed since needs it again.
   const spineRunning = session.step === "spine" && session.status === "running";
   if (spineRunning && !stale) return { blocked: "The spine is being written." };
-  if (session.step === "spine" && session.status === "failed") return { blocked: `The spine failed${session.error ? `: ${session.error}` : "."} Write it again once it is fixed.` };
+  if (session.step === "spine" && session.status === "failed") {
+    // A plan the program refused twice names what to fix: written again once from it. A provider's failure names nothing to fix.
+    const refused = session.error && planRefused(session.trace) ? { repair: session.error } : {};
+    return { blocked: `The spine failed${session.error ? `: ${session.error}` : "."} Write it again once it is fixed.`, ...refused };
+  }
   if (!focus.values.spine || focus.staleDirections || spineRunning) return { step: "spine" };
   const spineFindings = findings.filter((finding) => finding.field === "spine");
-  if (spineFindings.length) return { blocked: `Fix the spine first: ${spineFindings.map((finding) => finding.detail).join(" ")}` };
+  if (spineFindings.length) {
+    const detail = spineFindings.map((finding) => finding.detail).join(" ");
+    return { blocked: `${SPINE_BLOCK}${detail}`, repair: detail };
+  }
   const mentions = session.mentions;
   if (!mentions || mentions.status === "failed" || (mentions.status === "running" && stale)) return { step: "mentions" };
   const opening = session.opening;
@@ -257,6 +270,9 @@ export type AutopilotPassDependencies = {
   fresh?: boolean;
 };
 
+/** Whether the job has already written the spine again from the program's findings: once per job. */
+const spineRepaired = (steps: readonly AutopilotJobEntry[]) => steps.some((entry) => entry.step === "spine" && entry.reason === FROM_FINDINGS);
+
 /**
  * One pass of a job: from the session as it stands, step after step, until
  * the target is done, a step blocks, fails or does not advance, the editor
@@ -279,15 +295,16 @@ export async function runAutopilotPass(deps: AutopilotPassDependencies): Promise
     if ("done" in next) return { end: { kind: "done" }, steps };
     if ("blocked" in next) {
       // A plan the program refuses is written again once from its findings (2026-10-23: "debería ser una llamada simple para arreglarse"); refused again, it is the editor's.
-      const repairable = next.blocked.startsWith(SPINE_BLOCK) && !steps.some((entry) => entry.step === "spine" && entry.reason === FROM_FINDINGS);
-      if (!repairable) return { end: { kind: "blocked", reason: next.blocked }, steps };
+      // So is a Spine step that failed on two refused answers (the same day's weekend list: an item dropped twice).
+      const repair = next.repair ?? (next.blocked.startsWith(SPINE_BLOCK) ? next.blocked.slice(SPINE_BLOCK.length) : undefined);
+      if (repair === undefined || spineRepaired(steps)) return { end: { kind: "blocked", reason: next.blocked }, steps };
       const left = deps.deadline - deps.now();
       if (left < (AUTOPILOT_STEP_ESTIMATE_MS.spine ?? AUTOPILOT_MIN_STEP_MS)) return { end: { kind: "out-of-time", next: "spine" }, steps };
       runs += 1;
       await deps.progress({ currentStep: "spine", steps, ...(session ? { sessionId: session.id } : {}) });
       const begin = deps.now();
       try {
-        session = await deps.runStep("spine", { session, continuing: false, deadline: deps.deadline, notes: next.blocked.slice(SPINE_BLOCK.length) });
+        session = await deps.runStep("spine", { session, continuing: false, deadline: deps.deadline, notes: repair });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "The spine step failed.";
         steps.push({ step: "spine", status: "failed", ms: deps.now() - begin, startedAt: new Date(begin).toISOString(), reason: FROM_FINDINGS });
@@ -324,6 +341,16 @@ export async function runAutopilotPass(deps: AutopilotPassDependencies): Promise
       const reason = error instanceof Error ? error.message : `The ${AUTOPILOT_STEP_TITLE[next.step].toLowerCase()} step failed.`;
       steps.push({ step: next.step, status: "failed", ms: deps.now() - begin, startedAt: new Date(begin).toISOString(), ...(next.reason ? { reason: next.reason } : {}) });
       await deps.progress({ currentStep: null, steps });
+      // A Spine the program refused is written again once from its refusal, as the decisions read it from the session.
+      if (next.step === "spine" && !spineRepaired(steps)) {
+        const reloaded = await deps.loadSession();
+        const decided = (deps.next ?? nextAutopilotStep)(reloaded, deps.now());
+        if ("blocked" in decided && decided.repair !== undefined) {
+          session = reloaded;
+          previous = undefined;
+          continue;
+        }
+      }
       return { end: { kind: "failed", reason: `The ${AUTOPILOT_STEP_TITLE[next.step].toLowerCase()} step failed: ${reason}` }, steps };
     }
     session = result;

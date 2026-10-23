@@ -16,7 +16,7 @@ import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact
 import {
   CLASSIC_CONCEPT, CLASSIC_NARRATIVE, focusPlanSchema, focusNarrative, focusWithSpineProblems, focusPresentation, presentationMaxBeats, spineFactsToCover, spineLimitsForModels, spineRecurring, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
   focusWithPlan, narrativeReviewRequest, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField,
-  type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial,
+  type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial, type Draft2FocusPlan,
 } from "./draft2-focus.types";
 import { draft2ModelName, draft2RoleModel, draft2SolModel } from "./draft2-models";
 import { OPENING_STALL_MS, openingFactsSnapshot } from "./draft2-opening.types";
@@ -213,10 +213,12 @@ export async function editDraft2Focus({ topicId, sessionId, field, value, reset 
  * answer breaks a rule (the parse says which, as a response error); both calls
  * stay on the trace, since both were paid.
  */
-async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext, operation, instructions, skillVersions, contents, schema, effort, maxOutputTokens, parse, again }: {
+async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext, operation, instructions, skillVersions, contents, schema, effort, maxOutputTokens, parse, again, rescue }: {
   apiKey: string; model: string; trace: Draft2TraceEntry[]; verifiedFacts: unknown; auditContext: { runId: string; topicId: string; storyId: string };
   operation: string; instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown>;
   effort: "medium" | "high"; maxOutputTokens: number; parse: (answer: string, attempt: number) => T; again: string;
+  /** The program's decision when the last answer is refused: an earlier answer that stands under the last answer's rules, with what it says of it. */
+  rescue?: () => { value: T; note: string } | undefined;
 }): Promise<T> {
   let correction: string | undefined;
   for (let attempt = 1; attempt <= FOCUS_ATTEMPTS; attempt++) {
@@ -242,7 +244,10 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
       // Why the program refused the answer stays on its call in the trace, so a failed step can be read afterwards.
       if (error instanceof Draft2ResponseError) {
         const call = trace[trace.length - 1];
-        if (call) call.note = `Refused by the program: ${error.message}`.slice(0, 600);
+        const rescued = attempt === FOCUS_ATTEMPTS ? rescue?.() : undefined;
+        if (call) call.note = `Refused by the program: ${error.message}${rescued ? `. ${rescued.note}` : ""}`.slice(0, 600);
+        // The targeted call was made and refused: the program decides with what it has, never a third call.
+        if (rescued) return rescued.value;
       }
       // An answer outside the contract (a field too long, a value it does not accept) is asked for again once, with the rule it broke; a second one fails the step.
       if (!(error instanceof Draft2ResponseError) || attempt === FOCUS_ATTEMPTS) throw error;
@@ -267,6 +272,10 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
   const owned = Object.fromEntries(Object.entries(editorChoices).filter(([key]) => (FOCUS_PLAN_FIELDS as readonly string[]).includes(key)));
   // The decision as the planner reads it: the directions still empty are left out.
   const told = Object.fromEntries(Object.entries(focusForModels(values)).filter(([, value]) => value !== ""));
+  const panorama = focusPresentation(values).images === "panorama";
+  // An answer read for the step (the first: its image lines and its coverage checked, nothing cut) or as the last one is read.
+  const parseAs = (answer: string, last: boolean) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), clip: last, panorama, ...(last ? {} : { imageCheck: { avoid, recurring: spineRecurring(focusNarrative(values)), panorama }, coverage: facts }) });
+  let kept: Draft2FocusPlan | undefined;
   return {
     instructions: planner.instructions,
     skillVersions: planner.skillVersions,
@@ -276,7 +285,24 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), spineLimits: spineLimitsForModels(values), factsToCover: spineFactsToCover(facts), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
     // A panorama caps the slides and is one scene: its sections are not compared for their subjects.
-    parse: (answer: string, attempt: number) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), clip: attempt === FOCUS_ATTEMPTS, panorama: focusPresentation(values).images === "panorama", ...(attempt < FOCUS_ATTEMPTS ? { imageCheck: { avoid, recurring: spineRecurring(focusNarrative(values)), panorama: focusPresentation(values).images === "panorama" }, coverage: facts } : {}) }),
+    // A refused first answer is also read as a last one would be: what else it breaks joins the correction, so the second answer fixes all of
+    // it at once; and when it stands under those rules, it is the program's answer if the second is refused (2026-10-23, the Saint-Jean weekend:
+    // a first plan refused for one field's length, then a second that dropped an item, failed the Spine three times).
+    parse: (answer: string, attempt: number) => {
+      if (attempt === FOCUS_ATTEMPTS) return parseAs(answer, true);
+      try {
+        return parseAs(answer, false);
+      } catch (error) {
+        if (!(error instanceof Draft2ResponseError)) throw error;
+        try {
+          kept = parseAs(answer, true);
+        } catch (other) {
+          if (other instanceof Draft2ResponseError && other.message !== error.message) throw new Draft2ResponseError(`${error.message}. Also: ${other.message}`);
+        }
+        throw error;
+      }
+    },
+    rescue: () => kept ? { value: kept, note: "The first answer stands, as a last answer is read: its long fields cut at a word, its other problems shown to the editor" } : undefined,
   };
 }
 
