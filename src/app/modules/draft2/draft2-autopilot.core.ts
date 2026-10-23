@@ -68,6 +68,8 @@ export type AutopilotSession = {
   trace: Draft2TraceEntry[];
   error: string | null;
   updatedAt: string | Date;
+  /** v4 reads the whole carousel after its visual script (docs/features/draft2-v4.md); a session stored before is v2. */
+  pipeline?: string;
 };
 
 export type AutopilotNext =
@@ -146,15 +148,28 @@ export function nextAutopilotStep(session: AutopilotSession | null | undefined, 
   if (deckNeeds) return deckNeeds;
   const deckId = deck!.editorChoiceId ?? deck!.winnerId;
   // The review reads the chosen carousel before its images are planned; a new opening, closing or deck needs a new reading.
+  // v4 reads it after the visual script, its words and its image directions together, so a new script needs a new reading too.
+  const v4 = session.pipeline === "v4";
   const review = session.review;
-  if (!review || review.status === "failed" || !reviewCurrent(review, { openingId, closingId, deckId }) || (review.status === "running" && stale)) return { step: "review" };
-  if (review.status === "running") return { blocked: "The carousel is being read." };
+  const reviewNeeds = (visualId?: string): AutopilotNext | undefined => {
+    if (!review || review.status === "failed" || !reviewCurrent(review, { openingId, closingId, deckId, ...(visualId ? { visualId } : {}) }) || (review.status === "running" && stale)) return { step: "review" };
+    if (review.status === "running") return { blocked: "The carousel is being read." };
+    return undefined;
+  };
+  if (!v4) {
+    const needs = reviewNeeds();
+    if (needs) return needs;
+  }
   const visual = session.visual;
   // The script pictures the carousel's words and the images letter them: a review patch or an edit applied since asks for a new script, as does a new visual direction.
   const carouselNow = deckCarousel(deck!);
   const visualNeeds = runNeeds("visual", visual, Boolean(visual && (visual.deckId !== deckId || visual.inventoryVersion !== inventory.version || (visual.carousel && carouselNow && !sameCarouselWords(visual.carousel, carouselNow)) || visualDirectionChanged(visual.focus, focus))), "visual script");
   if (visualNeeds) return visualNeeds;
   const visualId = visual!.editorChoiceId ?? visual!.winnerId;
+  if (v4) {
+    const needs = reviewNeeds(visualId);
+    if (needs) return needs;
+  }
   const images = session.images;
   // The same id written again by a rewritten script is another script: the images follow the one written before them.
   if (!images || images.visualId !== visualId || !imagesScript(images, visual!.rounds)) return { step: "images" };

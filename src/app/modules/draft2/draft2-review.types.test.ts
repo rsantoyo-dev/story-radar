@@ -7,6 +7,7 @@ import {
   type Draft2Review,
 } from "./draft2-review.types";
 import type { Draft2CarouselSlide } from "./draft2-visual.types";
+import * as reviewTypes from "./draft2-review.types";
 
 const carousel: Draft2CarouselSlide[] = [
   { slide: "cover", label: "Cover", headline: "The library opens its doors again", text: "Saturday, in Vieux-Longueuil, after two years of work.", factIds: ["f1"] },
@@ -135,4 +136,32 @@ test("the word limits the editor reads, per slide and text, as the steps set the
   assert.throws(() => parseShortenAnswer(JSON.stringify({ after: "" })), (error: Error) => error instanceof Draft2ResponseError && /shortened replacement is missing or longer than 400/.test(error.message));
   assert.throws(() => parseShortenAnswer(JSON.stringify({ after: "x".repeat(401) })), Draft2ResponseError);
   assert.deepEqual((DRAFT2_REVIEW_SHORTEN_SCHEMA as { required: string[] }).required, ["after"]);
+});
+
+test("a v4 review's direction patches: the direction it quoted checked against the script, numbered after the text patches; a misquote, the same direction or what the brand avoids is refused (2026-10-23)", () => {
+  const images = [
+    { slide: "slide2", need: "generic-illustration", subject: "the sky", direction: "A wide rectangle of clear autumn daytime sky, soft blue, a few light clouds." },
+    { slide: "s1", need: "generic-illustration", subject: "walking shoes", direction: "A pair of brown leather walking shoes, cut out, on a teal plane." },
+  ];
+  const answer = JSON.stringify({ directions: [
+    { slide: "slide2", kind: "truth", before: "A wide rectangle of clear autumn daytime sky, soft blue, a few light clouds.", after: "The inside of a planetarium dome at night, a projected starry sky over rows of reclined seats, seen from below.", reason: "The show is under a dome, not outdoors." },
+    { slide: "slide2", kind: "detail", before: "x", after: "twice", reason: "A second patch on one slide is dropped." },
+    { slide: "s1", kind: "style", before: "Something the script never said.", after: "A lantern on a cobbled street.", reason: "Misquoted." },
+  ] });
+  const avoid = (direction: string) => /sparkles/i.test(direction) ? "Sparkles" : undefined;
+  const patches = reviewTypes.directionPatches(answer, images, { firstId: 3, avoid });
+  assert.deepEqual(patches.map((patch) => [patch.id, patch.slide, patch.owner, patch.field, patch.kind, patch.status]), [["p3", "slide2", "visual", "direction", "truth", "proposed"], ["p4", "s1", "visual", "direction", "style", "refused"]]);
+  assert.equal(patches[0].before, images[0].direction, "the direction as it stands, quoted whole");
+  assert.match(patches[1].note ?? "", /^The review quoted "Something the script never said\."/);
+  const avoided = reviewTypes.directionPatches(JSON.stringify({ directions: [{ slide: "s1", kind: "detail", before: images[1].direction, after: "Walking shoes with sparkles around them.", reason: "Brighter." }] }), images, { firstId: 1, avoid });
+  assert.match(avoided[0].note ?? "", /asks for "Sparkles", which the brand's identity avoids/);
+  const same = reviewTypes.directionPatches(JSON.stringify({ directions: [{ slide: "s1", kind: "style", before: images[1].direction, after: images[1].direction, reason: "Same." }] }), images, { firstId: 1, avoid });
+  assert.equal(same[0].note, "The replacement is the same direction.");
+  assert.deepEqual(reviewTypes.directionPatches("not json", images, { firstId: 1, avoid }), []);
+  // A review is current for the script it read, when a script is named.
+  const read = { openingId: "c1", closingId: "k1", deckId: "d1", visualId: "v1" };
+  assert.equal(reviewTypes.reviewCurrent(read, { openingId: "c1", closingId: "k1", deckId: "d1", visualId: "v1" }), true);
+  assert.equal(reviewTypes.reviewCurrent(read, { openingId: "c1", closingId: "k1", deckId: "d1", visualId: "v2" }), false);
+  assert.equal(reviewTypes.reviewCurrent({ ...read, visualId: undefined }, { openingId: "c1", closingId: "k1", deckId: "d1", visualId: "v1" }), false, "a review that read no script is not current for one");
+  assert.equal(reviewTypes.reviewCurrent({ ...read, visualId: undefined }, { openingId: "c1", closingId: "k1", deckId: "d1" }), true, "v2 and v3 name none");
 });

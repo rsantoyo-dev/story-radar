@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { comparableText, Draft2InputError } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot, Draft2PanoramaStation } from "./draft2-focus.types";
 import { PANORAMA_FIELD_BREAK } from "./draft2-spine-checks";
@@ -281,7 +282,9 @@ export function visualLayout(profile: Pick<CreativeProfile, "brandOverlay" | "ca
 }
 
 /** The plan a carousel asks for: by the pipeline, the same for every length since visuals v10 (the carousel stays a parameter for the stored runs' lookups). */
-export const visualPlan = (carousel: readonly unknown[], pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v3" ? VISUAL_PLAN_V3 : VISUAL_PLAN; };
+/** v4: one script, judged once; the whole-carousel review reads its directions beside the words and patches them (docs/features/draft2-v4.md). */
+export const VISUAL_PLAN_V4: readonly FunnelPlanRound[] = VISUAL_PLAN_V3.slice(0, 1);
+export const visualPlan = (carousel: readonly unknown[], pipeline: Draft2Pipeline = "v2"): readonly FunnelPlanRound[] => { void carousel; return pipeline === "v4" ? VISUAL_PLAN_V4 : pipeline === "v3" ? VISUAL_PLAN_V3 : VISUAL_PLAN; };
 
 /**
  * The spine's image line for each carousel slide: the cover's and slide 2's

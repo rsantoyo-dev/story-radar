@@ -58,7 +58,7 @@ export const draft2Sessions = pgTable("draft2_sessions", {
   publication: jsonb("publication").$type<Draft2Publication>(),
   /** The editor's choice of the funnel steps' writer and judge models (the canvas's "Models"); null: today's cast. */
   models: jsonb("models").$type<Draft2ModelChoice>(),
-  /** The pipeline the session runs on (2026-10-16): v2, the one in use; v3, the one being adjusted over it. A session stored before is v2. */
+  /** The pipeline the session runs on (2026-10-16): v2, the one in use; v3, the one being adjusted over it; v4 (2026-10-23), draft first. A session stored before is v2. */
   pipeline: text("pipeline").$type<Draft2Pipeline>().notNull().default("v2"),
   threads: jsonb("threads").$type<Draft2Threads>().notNull().default(sql`'{}'::jsonb`),
   trace: jsonb("trace").$type<Draft2TraceEntry[]>().notNull().default(sql`'[]'::jsonb`),
@@ -68,7 +68,7 @@ export const draft2Sessions = pgTable("draft2_sessions", {
 }, (t) => [
   index("draft2_sessions_story_idx").on(t.topicId, t.storyId, t.createdAt),
   check("draft2_sessions_status_check", sql`${t.status} IN ('running','ready','needs-review','failed')`),
-  check("draft2_sessions_pipeline_check", sql`${t.pipeline} IN ('v2','v3')`),
+  check("draft2_sessions_pipeline_check", sql`${t.pipeline} IN ('v2','v3','v4')`),
 ]);
 
 export type Draft2SessionRow = typeof draft2Sessions.$inferSelect;

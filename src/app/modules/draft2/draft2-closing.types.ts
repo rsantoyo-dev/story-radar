@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { isChecklist, withoutPlanningLabels } from "./draft2-caveats.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
@@ -38,7 +39,7 @@ export const CLOSING_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 2, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
 /** The plan a run follows, by its pipeline. */
-export const closingPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? CLOSING_PLAN_V3 : CLOSING_ROUND_PLAN;
+export const closingPlan = (pipeline: Draft2Pipeline): readonly FunnelPlanRound[] => pipeline !== "v2" ? CLOSING_PLAN_V3 : CLOSING_ROUND_PLAN;
 const MAX_PROPOSALS = Math.max(...CLOSING_ROUND_PLAN.map((plan) => plan.proposals));
 export const CLOSING_MAX_ROUNDS = CLOSING_ROUND_PLAN.length;
 export const CLOSING_ACCEPT_SCORE = 95;

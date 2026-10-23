@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { caveatIn, withoutPlanningLabels } from "./draft2-caveats.types";
 import { dayPeriodIn, daysOutsidePeriod } from "./draft2-data-marks";
@@ -141,8 +142,8 @@ export function deckShape(structure: { kind: Draft2FocusStructureKind; itemFactI
 }
 
 /** The plan a shape asks for: four decks for an arc, two for a list or steps. */
-export const deckPlan = (shape: Pick<Draft2DeckShape, "kind">, pipeline: "v2" | "v3" = "v2"): readonly FunnelPlanRound[] =>
-  pipeline === "v3" ? (shape.kind === "arc" ? DECK_ARC_PLAN_V3 : DECK_ITEMS_PLAN_V3) : (shape.kind === "arc" ? DECK_ARC_PLAN : DECK_ITEMS_PLAN);
+export const deckPlan = (shape: Pick<Draft2DeckShape, "kind">, pipeline: Draft2Pipeline = "v2"): readonly FunnelPlanRound[] =>
+  pipeline !== "v2" ? (shape.kind === "arc" ? DECK_ARC_PLAN_V3 : DECK_ITEMS_PLAN_V3) : (shape.kind === "arc" ? DECK_ARC_PLAN : DECK_ITEMS_PLAN);
 
 const factIds = { type: "array", maxItems: 10, items: { type: "string" } };
 const slideSchema = {

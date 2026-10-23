@@ -3,6 +3,7 @@ import { ARCS_SKILL } from "./arcs";
 import { CAPTION_ROLES, CAPTIONS_SKILL } from "./captions";
 import { CLOSING_ROLES, CLOSINGS_SKILL } from "./closings";
 import { DECK_ROLES, DECKS_SKILL } from "./decks";
+import { DRAFT_ROLES, DRAFTS_SKILL } from "./drafts";
 import { DISCOVERY_ROLES, DISCOVERY_SKILL } from "./discovery";
 import { FACTS_ROLES, FACTS_SKILL } from "./facts";
 import { FAIRNESS_SKILL } from "./fairness";
@@ -25,8 +26,8 @@ import { READER_SKILL } from "./reader";
  * skill, so they work from one rubric; every provider call records the
  * skill versions its instructions were composed from.
  */
-export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "levers" | "fairness" | "reader" | "hooks" | "closings" | "decks" | "review" | "visuals" | "images" | "captions";
-export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-planner" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge"
+export type Draft2SkillName = "facts" | "focus" | "narratives" | "discovery" | "arcs" | "spine" | "levers" | "fairness" | "reader" | "hooks" | "closings" | "decks" | "drafts" | "review" | "visuals" | "images" | "captions";
+export type Draft2Role = "extractor" | "reviewer" | "focus-editor" | "focus-planner" | "focus-narrative-judge" | "focus-concept-judge" | "opening-writer" | "opening-judge" | "closing-writer" | "closing-judge" | "deck-writer" | "deck-judge" | "draft-writer"
   | "people-finder" | "visual-writer" | "visual-judge" | "image-judge" | "caption-writer" | "caption-judge" | "mention-finder" | "carousel-reader" | "carousel-editor";
 
 export type Draft2Skill = {
@@ -38,10 +39,10 @@ export type Draft2Skill = {
   roleText?: Partial<Record<Draft2Role, string>>;
 };
 
-export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, levers: LEVERS_SKILL, fairness: FAIRNESS_SKILL, reader: READER_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
+export const DRAFT2_SKILLS: Record<Draft2SkillName, Draft2Skill> = { facts: FACTS_SKILL, focus: FOCUS_SKILL, narratives: NARRATIVES_SKILL, discovery: DISCOVERY_SKILL, arcs: ARCS_SKILL, spine: SPINE_SKILL, levers: LEVERS_SKILL, fairness: FAIRNESS_SKILL, reader: READER_SKILL, hooks: HOOKS_SKILL, closings: CLOSINGS_SKILL, decks: DECKS_SKILL, drafts: DRAFTS_SKILL, review: REVIEW_SKILL, visuals: VISUALS_SKILL, images: IMAGES_SKILL, captions: CAPTIONS_SKILL };
 
 /** Each role's own instructions: who it is and what it receives. */
-export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...NARRATIVE_ROLES, ...DISCOVERY_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...REVIEW_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
+export const DRAFT2_ROLES: Record<Draft2Role, string> = { ...FACTS_ROLES, ...FOCUS_ROLES, ...NARRATIVE_ROLES, ...DISCOVERY_ROLES, ...OPENING_ROLES, ...CLOSING_ROLES, ...DECK_ROLES, ...DRAFT_ROLES, ...REVIEW_ROLES, ...VISUAL_ROLES, ...IMAGE_ROLES, ...CAPTION_ROLES };
 
 /** The narratives skill when the focus names a form other than classic; a classic story's instructions stay as they were. */
 export const narrativeSkills = (narrative: { form: string } | undefined): Draft2Skill[] => narrative && narrative.form !== "classic" ? [NARRATIVES_SKILL] : [];
@@ -86,9 +87,19 @@ const ORIGINALITY_JUDGES: readonly Draft2Role[] = ["opening-judge", "closing-jud
 /** The standard a role reads after its own instructions: the writers' check, the judges' originality; nothing for the other roles. */
 export const roleStandard = (role: Draft2Role): string => role === "visual-writer" ? VISUAL_WRITER_STANDARD : role.endsWith("-writer") ? WRITER_STANDARD : ORIGINALITY_JUDGES.includes(role) ? JUDGE_STANDARD : "";
 
+/**
+ * What a skill tells a role beside its text. The v4 draft writer replaces the
+ * three writers of the words: it reads what each skill tells them (the spine,
+ * the arc, the levers, the narrative form); their own output contracts live in
+ * DRAFT2_ROLES and stay theirs.
+ */
+const DRAFT_WRITER_PARTS: readonly Draft2Role[] = ["opening-writer", "deck-writer", "closing-writer"];
+const roleTextsOf = (skill: Draft2Skill, role: Draft2Role): string[] => role !== "draft-writer" ? [skill.roleText?.[role] ?? ""]
+  : [...new Set(DRAFT_WRITER_PARTS.map((part) => skill.roleText?.[part] ?? ""))];
+
 /** Role instructions + the role's standard + the skills the role reads + the Topic's brand brief, in that order. */
 export function composeInstructions(role: Draft2Role, skills: readonly Draft2Skill[], brandBrief?: string): { instructions: string; skillVersions: Record<string, string> } {
-  const parts = [DRAFT2_ROLES[role], roleStandard(role), ...skills.flatMap((skill) => [skill.text, skill.roleText?.[role] ?? ""]), brandBrief ?? ""];
+  const parts = [DRAFT2_ROLES[role], roleStandard(role), ...skills.flatMap((skill) => [skill.text, ...roleTextsOf(skill, role)]), brandBrief ?? ""];
   return {
     instructions: parts.map((part) => part.trim()).filter((part) => part.length > 0).join("\n\n"),
     skillVersions: Object.fromEntries(skills.map((skill) => [skill.name, skill.version])),

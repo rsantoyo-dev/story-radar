@@ -39,8 +39,8 @@ export const REVIEW_PATCH_KINDS = ["truth", "repetition", "detail", "style"] as 
 export type Draft2ReviewPatchKind = (typeof REVIEW_PATCH_KINDS)[number];
 /** The kinds the autopilot applies on its own; a style patch waits for the editor. */
 export const REVIEW_NECESSARY_KINDS: readonly Draft2ReviewPatchKind[] = ["truth", "repetition", "detail"];
-/** The step whose chosen candidate a slide belongs to. */
-export type Draft2ReviewOwner = "opening" | "closing" | "deck";
+/** The step whose chosen candidate a slide belongs to; "visual" for an image direction a v4 review patches. */
+export type Draft2ReviewOwner = "opening" | "closing" | "deck" | "visual";
 
 export type Draft2ReviewReaction = { slide: string; swipe: boolean; thought: string };
 export type Draft2ReviewReader = {
@@ -55,11 +55,13 @@ export type Draft2ReviewReader = {
 };
 export type Draft2ReviewScore = Record<Draft2ReviewCriterion, number> & { overall: number };
 export type Draft2ReviewPatchStatus = "proposed" | "applied" | "declined" | "refused";
-export type Draft2ReviewPatch = {
+/** A patch on a slide's text (owner: the step whose version the slide is), or on its image direction (owner "visual", field "direction", v4). */
+export type Draft2ReviewPatch = Draft2ReviewTextPatch | Draft2ReviewDirectionPatch;
+export type Draft2ReviewTextPatch = Draft2ReviewPatchBase & { owner: Exclude<Draft2ReviewOwner, "visual">; field: Draft2ReviewPatchField };
+export type Draft2ReviewDirectionPatch = Draft2ReviewPatchBase & { owner: "visual"; field: "direction" };
+type Draft2ReviewPatchBase = {
   id: string;
   slide: string;
-  owner: Draft2ReviewOwner;
-  field: Draft2ReviewPatchField;
   /** Why it changes the text; absent on a patch written before kinds (read as style). */
   kind?: Draft2ReviewPatchKind;
   /** The slide's text as the review read it; an apply checks it still is. */
@@ -91,6 +93,9 @@ export type Draft2Review = {
   focusVersion: number;
   /** The carousel's words as the review read them. */
   carousel: Draft2CarouselSlide[];
+  /** v4: the visual script version the review read beside the words, and the image directions it read. */
+  visualId?: string;
+  images?: Draft2ReviewImage[];
   reader?: Draft2ReviewReader;
   readerBy?: FunnelRole;
   editor?: Draft2ReviewEditor;
@@ -101,7 +106,9 @@ export type Draft2Review = {
   /** Earlier reviews on this session, oldest first, without the carousel they read. */
   previousRuns?: Draft2ReviewRun[];
 };
-export type Draft2ReviewRun = Omit<Draft2Review, "previousRuns" | "carousel">;
+export type Draft2ReviewRun = Omit<Draft2Review, "previousRuns" | "carousel" | "images">;
+/** An image direction as a v4 review reads it beside its slide's words. */
+export type Draft2ReviewImage = { slide: string; need: string; subject: string; direction: string };
 
 const score = { type: "integer", minimum: 1, maximum: 100 };
 
@@ -180,6 +187,26 @@ export const DRAFT2_REVIEW_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
+/** v4: the editor also patches the image directions it read beside the words, before any image is made. */
+export const REVIEW_MAX_DIRECTION_PATCHES = 4;
+export const REVIEW_DIRECTION_MAX_CHARACTERS = 900;
+export const DRAFT2_REVIEW_V4_SCHEMA: Record<string, unknown> = {
+  ...DRAFT2_REVIEW_SCHEMA,
+  properties: {
+    ...(DRAFT2_REVIEW_SCHEMA.properties as Record<string, unknown>),
+    directions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { slide: { type: "string" }, kind: { type: "string" }, before: { type: "string" }, after: { type: "string" }, reason: { type: "string" } },
+        required: ["slide", "kind", "before", "after", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [...(DRAFT2_REVIEW_SCHEMA.required as string[]), "directions"],
+};
+
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown, max: number): string | undefined => typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : undefined;
 const parseObject = (answer: string, what: string): Record<string, unknown> => {
@@ -242,7 +269,7 @@ export function parseReaderAnswer(answer: string, carousel: readonly Pick<Draft2
 }
 
 /** The step a slide's words belong to: the Opening's two, the Closing's last two, the Deck's between. */
-export function patchOwner(slide: string): Draft2ReviewOwner {
+export function patchOwner(slide: string): Draft2ReviewTextPatch["owner"] {
   if (slide === "cover" || slide === "slide2") return "opening";
   if (slide === "penultimate" || slide === "last") return "closing";
   return "deck";
@@ -282,7 +309,7 @@ export function patchField(name: unknown, slide: Pick<Draft2CarouselSlide, "slid
   return REVIEW_PATCH_FIELDS.find((candidate) => candidate === key);
 }
 
-export type Draft2ReviewAnswer = Omit<Draft2ReviewEditor, "patches"> & { patches: Omit<Draft2ReviewPatch, "id" | "owner" | "status" | "note">[] };
+export type Draft2ReviewAnswer = Omit<Draft2ReviewEditor, "patches"> & { patches: Omit<Draft2ReviewTextPatch, "id" | "owner" | "status" | "note">[] };
 
 /**
  * The editor's answer, checked against the contract and the carousel it read:
@@ -368,7 +395,7 @@ export function locateQuote(carousel: readonly Draft2CarouselSlide[], slide: str
  * text. The first real reviews lost two of three patches to quoting a
  * sentence of the body instead of the whole body.
  */
-export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Draft2CarouselSlide[]): Draft2ReviewPatch[] {
+export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Draft2CarouselSlide[]): Draft2ReviewTextPatch[] {
   return answer.patches.map((patch, index) => {
     const id = `p${index + 1}`;
     const found = locateQuote(carousel, patch.slide, patch.field, patch.before);
@@ -385,7 +412,7 @@ export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Dra
       moved ? `The review named ${patch.slide}'s ${patch.field}; the text it quoted is ${found.slide}'s ${found.field}.` : "",
       found.part ? "It quoted part of the text: the patch replaces that part." : "",
     ].filter(Boolean).join(" ");
-    const base: Draft2ReviewPatch = { id, owner: patchOwner(found.slide), status: "proposed", ...patch, slide: found.slide, field: found.field, before: found.text, after, ...(note ? { note } : {}) };
+    const base: Draft2ReviewTextPatch = { id, owner: patchOwner(found.slide), status: "proposed", ...patch, slide: found.slide, field: found.field, before: found.text, after, ...(note ? { note } : {}) };
     if (sameWords(after, found.text)) return { ...base, status: "refused", note: "The replacement is the same text." };
     return base;
   });
@@ -399,7 +426,7 @@ export function reviewPatches(answer: Draft2ReviewAnswer, carousel: readonly Dra
  * (a Saint-Jean review patch opened a body with the headline, 2026-10-17).
  * Each broken rule is a line.
  */
-export function reviewPatchRules(patch: Pick<Draft2ReviewPatch, "slide" | "field" | "kind" | "before" | "after">, facts: readonly Draft2Fact[], headline?: string): string[] {
+export function reviewPatchRules(patch: Pick<Draft2ReviewTextPatch, "slide" | "field" | "kind" | "before" | "after">, facts: readonly Draft2Fact[], headline?: string): string[] {
   const rules: string[] = [];
   if (patch.slide === "cover" && patch.field === "headline" && patch.kind !== "truth") {
     rules.push("The cover's headline passed the Opening's gate: the review changes it only to fix a fact; a missing name or detail goes in the subheadline.");
@@ -447,10 +474,41 @@ export function carouselWithText(carousel: readonly Draft2CarouselSlide[], slide
           : { ...entry, text });
 }
 
-/** Whether a review read the versions chosen now and the focus they follow. */
-export function reviewCurrent(review: Pick<Draft2Review, "openingId" | "closingId" | "deckId"> | null | undefined, ids: { openingId?: string; closingId?: string; deckId?: string }): boolean {
-  return Boolean(review && review.openingId === ids.openingId && review.closingId === ids.closingId && review.deckId === ids.deckId);
+/** Whether a review read the versions chosen now and the focus they follow; with a visual script named (v4), that script too. */
+export function reviewCurrent(review: Pick<Draft2Review, "openingId" | "closingId" | "deckId" | "visualId"> | null | undefined, ids: { openingId?: string; closingId?: string; deckId?: string; visualId?: string }): boolean {
+  return Boolean(review && review.openingId === ids.openingId && review.closingId === ids.closingId && review.deckId === ids.deckId && (ids.visualId === undefined || review.visualId === ids.visualId));
 }
 
 /** The patches still waiting for a decision. */
 export const proposedPatches = (review: Pick<Draft2Review, "editor"> | null | undefined): Draft2ReviewPatch[] => (review?.editor?.patches ?? []).filter((patch) => patch.status === "proposed");
+
+/**
+ * A v4 review's direction patches (2026-10-23, docs/features/draft2-v4.md):
+ * one per slide the script has, the direction it quoted checked against the
+ * script, numbered after the text patches. A quote the script does not have
+ * is refused; a replacement over its length, the same direction, or one that
+ * asks for what the brand avoids is refused with the rule.
+ */
+export function directionPatches(answer: string, images: readonly Draft2ReviewImage[], { firstId, avoid }: { firstId: number; avoid: (direction: string) => string | undefined }): Draft2ReviewPatch[] {
+  let body: Record<string, unknown> = {};
+  try { body = record(JSON.parse(answer)); } catch { return []; }
+  const patches: Draft2ReviewPatch[] = [];
+  for (const entry of Array.isArray(body.directions) ? body.directions : []) {
+    const patch = record(entry);
+    const image = images.find((candidate) => candidate.slide === resolveSlide(patch.slide, images.map((each) => ({ slide: each.slide, label: each.slide, headline: "", text: "", factIds: [] }))));
+    const after = typeof patch.after === "string" ? patch.after.replace(/\s+/g, " ").trim() : "";
+    const reason = clip(patch.reason, REVIEW_LINE_MAX_CHARACTERS);
+    const kind = REVIEW_PATCH_KINDS.find((each) => each === (typeof patch.kind === "string" ? patch.kind.trim().toLowerCase() : "")) ?? "style";
+    if (!image || !after || !reason || patches.some((existing) => existing.slide === image.slide)) continue;
+    const before = typeof patch.before === "string" ? patch.before : "";
+    const base: Draft2ReviewPatch = { id: `p${firstId + patches.length}`, slide: image.slide, owner: "visual", field: "direction", kind, before: image.direction, after, reason, status: "proposed" };
+    const quoted = flat(before);
+    const refusal = quoted && !flat(image.direction).includes(quoted.slice(0, 60)) ? `The review quoted "${quoted.slice(0, 80)}", and the slide's direction says "${image.direction.slice(0, 80)}".`
+      : after.length > REVIEW_DIRECTION_MAX_CHARACTERS ? `The new direction has ${after.length} characters; a direction takes ${REVIEW_DIRECTION_MAX_CHARACTERS} at most.`
+        : sameWords(after, image.direction) ? "The replacement is the same direction."
+          : avoid(after) ? `The new direction asks for "${avoid(after)}", which the brand's identity avoids.` : undefined;
+    patches.push(refusal ? { ...base, status: "refused", note: refusal } : base);
+    if (patches.length >= REVIEW_MAX_DIRECTION_PATCHES) break;
+  }
+  return patches;
+}

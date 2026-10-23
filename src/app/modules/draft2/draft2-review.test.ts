@@ -256,3 +256,29 @@ test("a patch that repeats the slide's headline in its body is refused: the body
   assert.deepEqual(rule("Quiet tables in the reading room.", "A reading room"), [], "the headline's words in another order are no repetition");
   assert.deepEqual(reviewTypes.reviewPatchRules({ slide: "s1", field: "headline", kind: "detail", before: "x", after: "A reading room" } as never, facts, "A reading room"), [], "the headline itself is not its own repetition");
 });
+
+test("v4: the review reads the words beside the visual script's image directions, the editor at high effort; a direction patch applied changes the script's slide, and an undo restores it (2026-10-23)", async () => {
+  const slides = ["cover", "slide2", "s1", "s2", "penultimate", "last"].map((slide) => ({ slide, beat: "A beat.", subject: `${slide} subject`, discovery: "", recurring: "none", shot: "medium", headlineLink: "", direction: `The ${slide} image: a quiet room.`, need: "generic-illustration", characterIds: [], references: [] }));
+  const script = { id: "v1", angle: "Rooms", concept: "Rooms", protagonist: "", motif: "", cast: "", characterPlan: { use: false, characterIds: [], role: "" }, slides };
+  const visual = { status: "ready", winnerId: "v1", candidates: [script], rounds: [{ round: 1, candidates: [script], mechanical: [], at: "t" }], deckId: "d1", openingId: "c1", closingId: "k1", focus: FOCUS, inventoryVersion: 1 };
+  const editor = { ...EDITOR, patches: [], directions: [{ slide: "s1", kind: "truth", before: "The s1 image: a quiet room.", after: "A reading room with quiet tables by tall windows.", reason: "The slide names the windows." }] };
+  const h = harness({ session: { pipeline: "v4", visual }, editor });
+  const session = await h.review();
+  const editorCall = h.calls[1];
+  assert.equal(json([editorCall.schemaName, editorCall.effort]), json(["draft2_review", "high"]));
+  assert.match(String(editorCall.instructions), /# Reviewing a carousel[^]*## The whole carousel, before its images[^]*# Verified facts/);
+  assert.equal((editorCall.contents as { images: unknown[] }).images.length, 6, "every slide's direction beside its words");
+  assert.ok("directions" in ((editorCall.schema as { properties: object }).properties), "the v4 contract asks for directions");
+  const review = session.review!;
+  assert.equal(json([review.visualId, review.images?.length]), json(["v1", 6]));
+  assert.equal(json(review.editor?.patches.map((patch) => [patch.id, patch.owner, patch.field, patch.kind, patch.status])), json([["p1", "visual", "direction", "truth", "proposed"]]));
+  assert.equal(json(session.trace.find((entry) => entry.operation === "draft2_review")?.skillVersions?.["review-v4"]), json("1"));
+  const applied = await h.decide("apply-all", undefined, "autopilot");
+  const direction = (row: Row) => ((row.visual as typeof visual).rounds[0].candidates[0].slides.find((slide) => slide.slide === "s1")!).direction;
+  assert.equal(direction(applied), "A reading room with quiet tables by tall windows.", "a truth patch on a direction is one the autopilot applies");
+  assert.equal(applied.review?.images?.find((image) => image.slide === "s1")?.direction, "A reading room with quiet tables by tall windows.");
+  assert.equal(applied.review?.editor?.patches[0].status, "applied");
+  const undone = await h.decide("undo", "p1");
+  assert.equal(direction(undone), "The s1 image: a quiet room.");
+  await assert.rejects(harness({ session: { pipeline: "v4" } }).review(), /Finish the visual script first/);
+});

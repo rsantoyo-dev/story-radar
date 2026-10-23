@@ -1,5 +1,6 @@
 import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
+import { getDraft2Session } from "./draft2-session.repository";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
 import { focusFindings, focusForModels, focusItemCount, focusMaterial, spineBeatFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
@@ -89,7 +90,12 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
  * revision, so a round never loses the best opening so far. Pausing,
  * continuing and the heartbeat are the funnel's (draft2-funnel-run.ts).
  */
-export function runDraft2Opening(input: Draft2OpeningInput): Promise<Draft2SessionRow> {
+export async function runDraft2Opening(input: Draft2OpeningInput): Promise<Draft2SessionRow> {
+  // v4 (docs/features/draft2-v4.md): the Opening step drafts the whole carousel's words in one call; a v4 draft paused for time is drafted again.
+  if (!input.more) {
+    const session = await getDraft2Session(input.topicId, input.sessionId);
+    if (session?.pipeline === "v4" && (!input.resume || session.opening?.pipeline === "v4")) return (await import("./draft2-draft")).runDraft2Draft(input);
+  }
   return runFunnelStep(OPENING_STEP, input);
 }
 

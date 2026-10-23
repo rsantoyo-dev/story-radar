@@ -1117,7 +1117,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenModels = session ? session.models : pendingModels;
   const pipeline: Draft2Pipeline = session ? session.pipeline ?? "v2" : pendingPipeline;
   const modelsBadge = <>
-    <StatusBadge tone={pipeline === "v3" ? "info" : "neutral"}>{pipeline}</StatusBadge>
+    <StatusBadge tone={pipeline === "v2" ? "neutral" : "info"}>{pipeline}</StatusBadge>
     {!draft2ChoiceIsEmpty(chosenModels) ? <StatusBadge tone="warning">{choiceSummary(chosenModels)}</StatusBadge> : null}
   </>;
   // The buttons on every screen start the autopilot on the server (the page can be closed); the tab's own run lives on the overview.
@@ -3053,6 +3053,7 @@ function choiceSummary(choice: Draft2ModelChoice | null | undefined): string {
 const PIPELINE_LABEL: Record<Draft2Pipeline, string> = {
   v2: "v2 · in use: 15 openings in 3 rounds, judges at medium, two visual rounds",
   v3: "v3 · adjusting: 5 distinct openings in 2 rounds, judges at low, one visual script",
+  v4: "v4 · testing: the whole carousel drafted at once, one visual script, one whole-carousel review",
 };
 const EFFORT_LABEL: Record<Draft2Effort, string> = { low: "Low", medium: "Medium", high: "High" };
 const FUNNEL_STEP_LABEL: Record<Draft2FunnelStepName, string> = { opening: "Opening", closing: "Closing", deck: "Deck", visual: "Visual script", caption: "Caption" };
@@ -3111,7 +3112,7 @@ function ModelsCard({ choice, pipeline, cast, saving, locked, error, onChange, o
   };
   // v3's judges judge at low, the visual script's at medium (VISUAL_PLAN_V3: at low it scored 3 to 13 points under medium and accepted no script).
   const effortSelect = (step: Draft2FunnelStepName, part: "writerEffort" | "judgeEffort") => <select value={choice?.steps?.[step]?.[part] ?? ""} disabled={disabled} onChange={(event) => setStep(step, part, event.target.value)}>
-    <option value="">{`The plan's · ${pipeline === "v3" ? (part === "judgeEffort" && step !== "visual" ? "low" : "medium") : (part === "judgeEffort" ? "medium" : "medium, then high")}`}</option>
+    <option value="">{`The plan's · ${pipeline !== "v2" ? (part === "judgeEffort" && step !== "visual" ? "low" : "medium") : (part === "judgeEffort" ? "medium" : "medium, then high")}`}</option>
     {DRAFT2_EFFORTS.map((effort) => <option key={effort} value={effort}>{EFFORT_LABEL[effort]}</option>)}
   </select>;
   const sameModel = DRAFT2_FUNNEL_STEP_NAMES.filter((step) => { const chosen = draft2StepChoice(choice, step); const writer = chosen.writer?.model ?? cast?.funnel[step].writer.model; const judge = chosen.judge?.model ?? cast?.funnel[step].judge.model; return writer && writer === judge; });
@@ -3124,9 +3125,9 @@ function ModelsCard({ choice, pipeline, cast, saving, locked, error, onChange, o
     </div>
     <div className={styles.focusGrid}>
       <div className={styles.focusField}>
-        <FormField label="Pipeline" description="v2 stays as it is; v3 is the recipe being adjusted over the same engine. A session keeps its pipeline, and every run records the one it ran on.">
+        <FormField label="Pipeline" description="v2 stays as it is; v3 is the recipe being adjusted over the same engine; v4 drafts the whole carousel at once and is being tested beside v3. A session keeps its pipeline, and every run records the one it ran on.">
           <select value={pipeline} disabled={disabled} onChange={(event) => { const next = parseDraft2Pipeline(event.target.value); if (next) onPipeline(next); }}>
-            {(["v3", "v2"] as const).map((entry) => <option key={entry} value={entry}>{PIPELINE_LABEL[entry]}</option>)}
+            {(["v3", "v4", "v2"] as const).map((entry) => <option key={entry} value={entry}>{PIPELINE_LABEL[entry]}</option>)}
           </select>
         </FormField>
       </div>

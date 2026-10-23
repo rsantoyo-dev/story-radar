@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { choreIn, opensWithCaveat, withoutPlanningLabels } from "./draft2-caveats.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
@@ -69,7 +70,7 @@ export const OPENING_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
 /** The plan a run follows, by its pipeline. */
-export const openingPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? OPENING_PLAN_V3 : OPENING_ROUND_PLAN;
+export const openingPlan = (pipeline: Draft2Pipeline): readonly FunnelPlanRound[] => pipeline !== "v2" ? OPENING_PLAN_V3 : OPENING_ROUND_PLAN;
 /** What the v3 writer reads with its first round: five openings that differ in what they pull on, never in wording alone. */
 export const OPENING_DISTINCT_INSTRUCTION = "Each of the five openings pulls on a different lever or angle of the story's tension, named in `angle`: five ways in, never five variants of one phrase. The program refuses a cover whose words are mostly another candidate's.";
 /** Two covers sharing this share of their longer words are one angle in two wordings. */

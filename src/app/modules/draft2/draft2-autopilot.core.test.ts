@@ -208,3 +208,26 @@ test("a visual script written again that reuses its winner's id makes the images
   const followed = nextAutopilotStep(decidedUpToImages([{ round: 2, at: "2026-10-23T17:38:00.000Z", candidates: [{ id: "c1.2" }] }]), Date.now());
   assert.notDeepEqual(followed, { step: "images" }, "the script the images were made from: they stand");
 });
+
+test("v4 writes the visual script before its whole-carousel review, and the review stays current only for the script it read (2026-10-23)", () => {
+  const beat = (slide: string, role: string, withholds = "La suite.") => ({ slide, role, scene: "Une scène.", words: "Dire le fait.", image: "Une image.", withholds, factIds: ["f1"] });
+  const values = { structure: { kind: "arc", itemFactIds: [] }, framing: "news", voice: { gravity: "light" }, spine: { beats: [beat("cover", "hook"), beat("slide2", "setup"), beat("middle", "turning-point"), beat("penultimate", "climax"), beat("last", "payoff", "")] } };
+  const done = (id: string) => ({ status: "ready", winnerId: id, rounds: [{ round: 1, at: "2026-10-23T16:00:00.000Z", candidates: [{ id }], mechanical: [] }] });
+  const at = (patch: Record<string, unknown>) => session({
+    pipeline: "v4", step: "deck", status: "ready",
+    facts: [{ id: "f1", claim: "Un fait.", evidence: "fait", kind: "event", status: "established", importance: 95 }],
+    inventory: { status: "ready", version: 1, characters: "auto", roster: [], storyPhotos: [], entities: [] },
+    focus: { status: "ready", version: 1, edited: [], values },
+    mentions: { status: "ready" }, opening: { ...done("c1"), focus: { version: 1, values } }, closing: { ...done("c1"), opening: { id: "c1" } }, deck: done("c1"),
+    ...patch,
+  } as unknown as Partial<AutopilotSession>);
+  const visual = { status: "needs-review", winnerId: "v1", deckId: "c1", inventoryVersion: 1, focus: { version: 1, values }, rounds: [{ round: 1, at: "2026-10-23T16:10:00.000Z", candidates: [{ id: "v1" }] }] };
+  const now = Date.now();
+  assert.deepEqual(nextAutopilotStep(at({}), now), { step: "visual" }, "the draft done, the script comes before the review");
+  assert.deepEqual(nextAutopilotStep(at({ visual }), now), { step: "review" });
+  const review = { status: "ready", openingId: "c1", closingId: "c1", deckId: "c1", visualId: "v1", focusVersion: 1, carousel: [] };
+  assert.deepEqual(nextAutopilotStep(at({ visual, review }), now), { step: "images" });
+  assert.deepEqual(nextAutopilotStep(at({ visual, review: { ...review, visualId: undefined } }), now), { step: "review" }, "a review that read no script is read again");
+  assert.deepEqual(nextAutopilotStep(at({ visual: { ...visual, winnerId: "v2", rounds: [{ round: 1, at: "2026-10-23T16:10:00.000Z", candidates: [{ id: "v2" }] }] }, review }), now), { step: "review" }, "a new script, a new reading");
+  assert.deepEqual(nextAutopilotStep(at({ pipeline: "v3", visual: undefined }), now), { step: "review" }, "v3 keeps the review before the script");
+});

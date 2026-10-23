@@ -40,8 +40,8 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(composeInstructions("opening-judge", [skill]).instructions, `${OPENING_ROLES["opening-judge"]}\n\n${JUDGE_STANDARD}\n\n## Shared craft\n\n## Judge only`, "a judge reads the originality standard, then its own part after the shared text");
   assert.equal(composeInstructions("visual-writer", [skill], "# Brand").instructions, `${VISUAL_ROLES["visual-writer"]}\n\n${VISUAL_WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "the visual writer reads its own standard: it writes no headline to count and cites no fact");
   assert.match(VISUAL_WRITER_STANDARD, /every direction under 700 characters[^]*a corner or a band kept free for the logo is fine/);
-  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@5", "focus@18", "narratives@4", "discovery@1", "arcs@1", "spine@14", "levers@1", "fairness@2", "reader@3", "hooks@13", "closings@5", "decks@6", "review@8", "visuals@16", "images@6", "captions@4"]);
+  assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "draft-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@5", "focus@18", "narratives@4", "discovery@1", "arcs@1", "spine@14", "levers@1", "fairness@2", "reader@3", "hooks@13", "closings@5", "decks@6", "drafts@1", "review@8", "visuals@16", "images@6", "captions@4"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -224,4 +224,14 @@ test("the captions rubric keeps the caption's numbers, and tags every account th
   assert.match(CAPTION_ROLES["mention-finder"], /Never invent a username to fill the list/);
   assert.deepEqual(composeInstructions("caption-writer", [CAPTIONS_SKILL], brandBrief(profile)).skillVersions, { captions: "4" });
   assert.deepEqual(composeInstructions("mention-finder", [], brandBrief(profile)).skillVersions, {}, "the finder reads its role and the brand brief, no skill");
+});
+
+test("the v4 draft writer reads what every skill tells the three writers of the words, never their output contracts (2026-10-23)", () => {
+  const { instructions, skillVersions } = composeInstructions("draft-writer", [DRAFT2_SKILLS.drafts, DRAFT2_SKILLS.hooks, DRAFT2_SKILLS.decks, DRAFT2_SKILLS.closings, DRAFT2_SKILLS.spine], "# Brand");
+  assert.match(instructions, /^You are an expert editor of social carousels[^]*You write the whole carousel/);
+  assert.match(instructions, /# A carousel written whole/);
+  assert.ok(instructions.includes(DRAFT2_SKILLS.spine.roleText!["opening-writer"]!) && instructions.includes(DRAFT2_SKILLS.spine.roleText!["deck-writer"]!) && instructions.includes(DRAFT2_SKILLS.spine.roleText!["closing-writer"]!), "the spine's guidance for each writer");
+  assert.ok(!instructions.includes(DRAFT2_ROLES["opening-writer"]) && !instructions.includes(DRAFT2_ROLES["deck-writer"]), "the writers' own contracts stay theirs");
+  assert.match(instructions, /# Brand$/);
+  assert.equal(skillVersions.drafts, "1");
 });

@@ -14,15 +14,16 @@ import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draf
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
 import { mechanicalClosingIssues, type Draft2Closing, type Draft2ClosingCandidate } from "./draft2-closing.types";
 import { mechanicalDeckIssues, type Draft2Deck, type Draft2DeckCandidate } from "./draft2-deck.types";
-import { carouselSlides, type Draft2CarouselSlide } from "./draft2-visual.types";
+import { carouselSlides, type Draft2VisualCandidate } from "./draft2-visual.types";
+import { avoidTerms, mentionsTerm } from "./draft2-image-rules";
 import {
-  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, DRAFT2_REVIEW_SHORTEN_SCHEMA, REVIEW_MAX_PATCHES, REVIEW_NECESSARY_KINDS, carouselWithText, lengthOnly, parseReaderAnswer, parseReviewAnswer, parseShortenAnswer, patchedClosing, patchedDeck, patchedOpening,
+  DRAFT2_READER_SCHEMA, DRAFT2_REVIEW_SCHEMA, DRAFT2_REVIEW_SHORTEN_SCHEMA, DRAFT2_REVIEW_V4_SCHEMA, REVIEW_MAX_PATCHES, directionPatches, REVIEW_NECESSARY_KINDS, carouselWithText, lengthOnly, parseReaderAnswer, parseReviewAnswer, parseShortenAnswer, patchedClosing, patchedDeck, patchedOpening,
   reviewCurrent, reviewPatchRules, reviewPatches, reviewWordLimits, sameWords, slideText,
-  type Draft2Review, type Draft2ReviewPatch } from "./draft2-review.types";
+  type Draft2Review, type Draft2ReviewImage, type Draft2ReviewPatch, type Draft2ReviewRun, type Draft2ReviewTextPatch } from "./draft2-review.types";
 import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2-skills";
 import { FAIRNESS_SKILL } from "./skills/fairness";
 import { READER_SKILL } from "./skills/reader";
-import { REVIEW_SKILL } from "./skills/review";
+import { REVIEW_SKILL, REVIEW_V4_SECTION, REVIEW_V4_VERSION } from "./skills/review";
 import type { Draft2SessionRow } from "@/db/schema";
 
 const READER_MAX_OUTPUT_TOKENS = 4_000;
@@ -73,6 +74,21 @@ function chosenCarousel(session: Draft2SessionRow): Chosen {
   return { opening, closing, deck, openingId, closingId, deckId, deckCandidate: deckVersion.candidate, focus: deck.focus };
 }
 
+/**
+ * v4 (docs/features/draft2-v4.md): the visual script the review reads beside
+ * the words, finished and following the deck chosen now, with each slide's
+ * image direction.
+ */
+function reviewScript(session: Draft2SessionRow, chosen: Chosen): { visualId: string; images: Draft2ReviewImage[] } {
+  const visual = session.visual;
+  if (!visual || visual.status === "running" || visual.status === "paused") throw new Draft2InputError("A v4 review reads the words beside their image directions. Finish the visual script first.");
+  const visualId = visual.editorChoiceId ?? visual.winnerId;
+  const script = visualId ? funnelVersions(visual.rounds).find((version) => version.candidate.id === visualId)?.candidate as Draft2VisualCandidate | undefined : undefined;
+  if (!visualId || !script) throw new Draft2InputError("The visual script has no version to review yet. Choose one first.");
+  if (visual.deckId && visual.deckId !== chosen.deckId) throw new Draft2InputError("The visual script pictures another deck. Write the visual script again first.");
+  return { visualId, images: script.slides.map(({ slide, need, subject, direction }) => ({ slide, need, subject, direction })) };
+}
+
 /** The chosen candidate of a step, found among its versions. */
 function chosenOf<C extends FunnelCandidate>(run: FunnelRun<C>, id: string): C {
   const version = funnelVersions(run.rounds).find((entry) => entry.candidate.id === id);
@@ -87,7 +103,7 @@ function chosenOf<C extends FunnelCandidate>(run: FunnelRun<C>, id: string): C {
  * version already had (a rule newer than the carousel, such as abbreviations
  * since 2026-10-15) never refuses a patch elsewhere in it.
  */
-function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number, reader: Draft2Reader): string[] {
+function patchFindings(session: Draft2SessionRow, chosen: Chosen, patch: Pick<Draft2ReviewTextPatch, "owner" | "slide" | "field" | "after">, facts: readonly Draft2Fact[], emojis: number, reader: Draft2Reader): string[] {
   const values = chosen.focus.values;
   const itemCount = focusItemCount(values);
   const brought = (before: readonly { detail: string }[], after: readonly { detail: string }[]) => {
@@ -128,6 +144,8 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   if (!facts.length || (session.step === "facts" && session.status !== "ready")) throw new Draft2InputError("The review rests on verified facts. Verify the facts first.");
   const chosen = chosenCarousel(session);
   const carousel = carouselSlides(chosen.deck.opening!, chosen.deckCandidate, chosen.deck.closing!);
+  // v4: after the visual script, the words and their image directions read together, by the editor at high effort.
+  const script = session.pipeline === "v4" ? reviewScript(session, chosen) : undefined;
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Draft2InputError("OPENAI_API_KEY is not configured: the review needs the reader and the editor.");
   const models = reviewModels(process.env);
@@ -137,8 +155,8 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   const running: Draft2Review = {
     status: "running", version: (earlier?.version ?? 0) + 1,
     openingId: chosen.openingId, closingId: chosen.closingId, deckId: chosen.deckId, focusVersion: chosen.focus.version,
-    carousel, startedAt, updatedAt: startedAt,
-    previousRuns: earlier ? [...(earlier.previousRuns ?? []), (({ previousRuns: _history, carousel: _read, ...run }) => run)(earlier)] : undefined,
+    carousel, ...(script ? { visualId: script.visualId, images: script.images } : {}), startedAt, updatedAt: startedAt,
+    previousRuns: earlier ? [...(earlier.previousRuns ?? []), reviewRunSummary(earlier)] : undefined,
   };
   const claimed = await claimDraft2Session(session.id, { step: "review", review: running, error: null });
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
@@ -147,7 +165,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
 
   /** One structured call on the trace, with its cost; a failure stays on the trace too. */
-  const call = async (role: FunnelRole, operation: string, request: { instructions: string; contents: Record<string, unknown>; schema: Record<string, unknown>; maxOutputTokens: number; reasoningEffort: "low" | "medium"; timeoutMs: number; skillVersions: Record<string, string> }) => {
+  const call = async (role: FunnelRole, operation: string, request: { instructions: string; contents: Record<string, unknown>; schema: Record<string, unknown>; maxOutputTokens: number; reasoningEffort: "low" | "medium" | "high"; timeoutMs: number; skillVersions: Record<string, string> }) => {
     const at = new Date().toISOString();
     const begin = Date.now();
     const provider = role.provider;
@@ -192,21 +210,22 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       // 2. The editor: the whole carousel, the focus, the reader's reactions and the facts; Claude by default, changing only what must change.
       const editorBy = models.editor;
       const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(chosen.focus.values)], brief);
-      const editorInstructions = `${editor.instructions}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`;
+      const editorInstructions = `${editor.instructions}${script ? `\n\n${REVIEW_V4_SECTION}` : ""}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`;
+      const editorSkills = script ? { ...editor.skillVersions, "review-v4": REVIEW_V4_VERSION } : editor.skillVersions;
       // The word limits each slide's text keeps, so a patch is written within them (the Saint-Jean review lost both its truth patches to a 30-word body, 2026-10-17).
       const limits = { patches: REVIEW_MAX_PATCHES, words: reviewWordLimits(carousel, { deck: chosen.deck.shape ?? undefined, closing: chosen.closing.shape ?? undefined }) };
       const editorAnswer = await call(editorBy, "draft2_review", {
         instructions: editorInstructions,
-        contents: { task: "review", slides, focus: focusForModels(chosen.focus.values), reader: read, limits },
-        schema: DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editor.skillVersions,
+        contents: { task: "review", slides, ...(script ? { images: script.images } : {}), focus: focusForModels(chosen.focus.values), reader: read, limits },
+        schema: script ? DRAFT2_REVIEW_V4_SCHEMA : DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: script ? "high" : "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editorSkills,
       });
       const answer = parseReviewAnswer(editorAnswer, carousel);
       // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice; one over its slide's word limit alone is asked shorter once, the same change within the limit.
       const address = { address: profile.readerAddress, language: profile.language };
       const headlineOf = (slide: string) => carousel.find((entry) => entry.slide === slide)?.headline;
-      const checked = (patch: Draft2ReviewPatch) => [...reviewPatchRules(patch, facts, headlineOf(patch.slide)), ...patchFindings(session, chosen, patch, facts, emojis, address)];
+      const checked = (patch: Draft2ReviewTextPatch) => [...reviewPatchRules(patch, facts, headlineOf(patch.slide)), ...patchFindings(session, chosen, patch, facts, emojis, address)];
       /** The editor's own patch within the limit, counted as the program counts, or nothing when the call fails or answers nothing usable: the refusal stands. */
-      const shorten = async (patch: Draft2ReviewPatch, limit: number, findings: string[]): Promise<string | undefined> => {
+      const shorten = async (patch: Draft2ReviewTextPatch, limit: number, findings: string[]): Promise<string | undefined> => {
         const words = funnelWordCount(patch.after);
         try {
           const shortAnswer = await call(editorBy, "draft2_review_shorten", {
@@ -235,6 +254,11 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
         if (!findings.length) { patches.push(again); continue; }
         patches.push({ ...patch, status: "refused" as const, note: findings.join(" ") });
       }
+      // v4: the image directions it would change, checked against the script it read and the brand's avoid list.
+      if (script) {
+        const avoided = avoidTerms(profile.creativeIdentity);
+        patches.push(...directionPatches(editorAnswer, script.images, { firstId: patches.length + 1, avoid: (direction) => avoided.find((term) => mentionsTerm(direction, term)) }));
+      }
       const now = new Date().toISOString();
       return { ...running, status: "ready", reader: read, readerBy, editor: { ...answer, patches }, editorBy, updatedAt: now };
     });
@@ -248,7 +272,28 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
   return (await updateDraft2Session(session.id, { review, trace, status: "ready", error: null })) ?? claimed;
 }
 
+/** An earlier review as the session keeps it: without the carousel and the images it read, or its own history. */
+function reviewRunSummary(review: Draft2Review): Draft2ReviewRun {
+  const { previousRuns, carousel, images, ...run } = review;
+  void previousRuns; void carousel; void images;
+  return run;
+}
+
 export type Draft2ReviewAction = "apply" | "decline" | "undo" | "apply-all";
+
+/** The visual script version chosen now. */
+const chosenVisualId = (session: Draft2SessionRow) => session.visual?.editorChoiceId ?? session.visual?.winnerId ?? undefined;
+
+/** What a patch's place says now: a slide's text in the review's carousel, or an image direction in the chosen script. */
+function patchedText(session: Draft2SessionRow, review: Draft2Review, patch: Draft2ReviewPatch): string {
+  if (patch.owner === "visual") {
+    const visual = session.visual;
+    const id = chosenVisualId(session);
+    const script = visual && id ? funnelVersions(visual.rounds).find((version) => version.candidate.id === id)?.candidate as Draft2VisualCandidate | undefined : undefined;
+    return script?.slides.find((slide) => slide.slide === patch.slide)?.direction ?? "";
+  }
+  return slideText(review.carousel.find((entry) => entry.slide === patch.slide)!, patch.field);
+}
 
 /** A step's run with one version's text replaced wherever the run keeps that version (its rounds and its last candidates). */
 const withCandidate = <C extends FunnelCandidate, R extends FunnelRun<C, never, never> | FunnelRun<C>>(run: R, candidate: C): R => funnelWithCandidate(run as FunnelRun<C>, candidate) as R;
@@ -262,6 +307,15 @@ const withCandidate = <C extends FunnelCandidate, R extends FunnelRun<C, never, 
  */
 function patched(session: Draft2SessionRow, chosen: Chosen, patch: Draft2ReviewPatch, after: string): Draft2SessionPatch {
   const changes: Draft2SessionPatch = {};
+  if (patch.owner === "visual") {
+    // v4: the chosen script's slide takes the new direction, and the review's copy follows; the images are made from it.
+    const visual = session.visual!;
+    const candidate = chosenOf<Draft2VisualCandidate>(visual, (visual.editorChoiceId ?? visual.winnerId)!);
+    changes.visual = withCandidate(visual, { ...candidate, slides: candidate.slides.map((slide) => slide.slide === patch.slide ? { ...slide, direction: after } : slide) });
+    const review = session.review!;
+    changes.review = { ...review, images: (review.images ?? []).map((image) => image.slide === patch.slide ? { ...image, direction: after } : image) };
+    return changes;
+  }
   if (patch.owner === "opening") {
     const candidate = patchedOpening(chosenOf<Draft2OpeningCandidate>(chosen.opening, chosen.openingId), patch.slide, patch.field, after);
     changes.opening = withCandidate(chosen.opening, candidate);
@@ -321,16 +375,14 @@ export async function decideDraft2ReviewPatch({ topicId, sessionId, patchId, act
     } else if (action === "undo") {
       if (patch.status !== "applied") throw new Draft2InputError(`${id} is not applied.`);
       const chosen = chosenCarousel(session);
-      if (!reviewCurrent(current, chosen)) throw new Draft2InputError("The review read other versions of the carousel; read it again before undoing.");
-      const slide = current.carousel.find((entry) => entry.slide === patch.slide)!;
-      if (!sameWords(slideText(slide, patch.field), patch.after)) throw new Draft2InputError("The slide no longer says what this patch wrote; undo is not possible.");
+      if (!reviewCurrent(current, { ...chosen, ...(patch.owner === "visual" ? { visualId: chosenVisualId(session) } : {}) })) throw new Draft2InputError("The review read other versions of the carousel; read it again before undoing.");
+      if (!sameWords(patchedText(session, current, patch), patch.after)) throw new Draft2InputError("The slide no longer says what this patch wrote; undo is not possible.");
       changes = record({ ...patch, status: "proposed", appliedAt: undefined, appliedBy: undefined }, patched(session, chosen, patch, patch.before));
     } else {
       if (patch.status !== "proposed") throw new Draft2InputError(`${id} was already ${patch.status}.`);
       const chosen = chosenCarousel(session);
-      if (!reviewCurrent(current, chosen)) throw new Draft2InputError("The review read other versions of the carousel; read it again before applying a patch.");
-      const slide = current.carousel.find((entry) => entry.slide === patch.slide)!;
-      if (!sameWords(slideText(slide, patch.field), patch.before)) throw new Draft2InputError("The slide no longer says what the review quoted; read the carousel again.");
+      if (!reviewCurrent(current, { ...chosen, ...(patch.owner === "visual" ? { visualId: chosenVisualId(session) } : {}) })) throw new Draft2InputError("The review read other versions of the carousel; read it again before applying a patch.");
+      if (!sameWords(patchedText(session, current, patch), patch.before)) throw new Draft2InputError("The slide no longer says what the review quoted; read the carousel again.");
       changes = record({ ...patch, status: "applied", appliedAt: now, appliedBy: by }, patched(session, chosen, patch, patch.after));
     }
     const updated = await updateDraft2Session(session.id, changes);

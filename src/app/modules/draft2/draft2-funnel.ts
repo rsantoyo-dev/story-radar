@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { comparableText, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import type { Draft2Provider } from "./draft2-models";
 
@@ -179,7 +180,7 @@ export type FunnelRun<C extends FunnelCandidate = FunnelCandidate, S extends Fun
   writer?: FunnelRole;
   judge?: FunnelRole;
   /** The pipeline the run started on (its plan and default efforts); a run stored before pipelines ran on v2. */
-  pipeline?: "v2" | "v3";
+  pipeline?: Draft2Pipeline;
   /** How many rounds the run's plan had when it started, so the canvas and a continue request read the plan the run follows. */
   plannedRounds?: number;
   /** The efforts the editor chose for this step when the run started (over its plan), kept so a continued run keeps them. */

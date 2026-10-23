@@ -1,3 +1,4 @@
+import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { isChecklist } from "./draft2-caveats.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
@@ -41,7 +42,7 @@ export const CAPTION_PLAN_V3: readonly FunnelPlanRound[] = [
   { revise: 1, fresh: 0, proposals: 0, effort: "medium", judgeEffort: "low" },
 ];
 /** The plan a run follows, by its pipeline. */
-export const captionPlan = (pipeline: "v2" | "v3"): readonly FunnelPlanRound[] => pipeline === "v3" ? CAPTION_PLAN_V3 : CAPTION_PLAN;
+export const captionPlan = (pipeline: Draft2Pipeline): readonly FunnelPlanRound[] => pipeline !== "v2" ? CAPTION_PLAN_V3 : CAPTION_PLAN;
 export const CAPTION_MAX_ROUNDS = CAPTION_PLAN.length;
 export const CAPTION_ACCEPT_SCORE = 95;
 export const CAPTION_CRITERION_FLOOR = 85;

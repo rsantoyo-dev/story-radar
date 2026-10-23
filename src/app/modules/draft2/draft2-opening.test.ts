@@ -40,7 +40,7 @@ const FOCUS: Draft2Focus = {
   status: "ready", version: 2, values: FOCUS_VALUES, ai: FOCUS_VALUES, reasons: {}, edited: [], lineOptions: [FOCUS_VALUES.line!],
   decidedBy: { provider: "anthropic", model: "claude-sonnet-5-5" }, decidedAt: "2026-10-10T12:00:00.000Z",
 };
-const profile = { name: "Example Daily", language: "English", region: "Austin", platform: "Instagram", audience: "Founders who sell to government", brandPersonality: ["direct"], formality: 30, humor: 70, energy: 70, optimism: 60, provocation: 60 };
+const profile = { name: "Example Daily", language: "English", region: "Austin", platform: "Instagram", audience: "Founders who sell to government", brandPersonality: ["direct"], formality: 30, humor: 70, energy: 70, optimism: 60, provocation: 60, callToActionStyle: "Invite the reader to follow." };
 
 const HEADLINES = [
   "Pentagon buyers now judge five-minute videos", "Your demo video is now the bid", "Five minutes of video replaces the paperwork",
@@ -156,7 +156,7 @@ function harness({ writes, judgments, fixes, failAt, session, busy = false, clai
     "./skills/levers": leversSkill,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
     // A fixed cost per call: the trace's arithmetic is the meter's (creative-text-cost.test.ts); here only that it is recorded.
-    "./draft2-trace-cost": { traceCostMicros: () => 1234 },
+    "./draft2-trace-cost": { traceCostMicros: () => 1234, traceCost: () => ({ costMicros: 1234 }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
@@ -209,6 +209,18 @@ test("a judgment the program refuses is asked for again once with what it broke;
   const stubborn = harness({ writes: [writer()], judgments: [unscored, unscored] });
   await assert.rejects(stubborn.run(), (error: Error) => error instanceof types.Draft2ResponseError && /did not score c2/.test(error.message));
   assert.equal(json([stubborn.row().opening?.status, stubborn.judgeCalls().length]), json(["failed", 2]), "never a third judgment");
+});
+
+test("a v4 session's Opening drafts the whole carousel's words in one call instead of the funnel (2026-10-23, docs/features/draft2-v4.md)", async () => {
+  const { FOCUS: DRAFT_FOCUS, answer: draftAnswer } = await import("./draft2-draft.fixtures");
+  const v4 = { pipeline: "v4", focus: { ...FOCUS, version: DRAFT_FOCUS.version, values: DRAFT_FOCUS.values }, inventory: { status: "ready", version: 1, characters: "auto", roster: [], storyPhotos: [], entities: [] } };
+  const h = harness({ writes: [], judgments: [() => JSON.parse(draftAnswer())], session: v4 });
+  const session = await h.run();
+  assert.equal(json(h.calls.map((call) => call.input.schemaName)), json(["draft2_draft"]), "one call, the draft's");
+  assert.equal(json([session.opening?.pipeline, session.opening?.winnerId, session.step, (session as { closing?: { winnerId?: string } }).closing?.winnerId]), json(["v4", "c1", "deck", "c1"]));
+  const v3 = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })], session: { pipeline: "v3" } });
+  await v3.run();
+  assert.equal(v3.calls[0].input.schemaName, "draft2_opening", "v3 keeps its funnel");
 });
 
 test("Claude writes and Sol judges; both read the focus and the facts snapshot where their provider caches it, never a conversation", async () => {

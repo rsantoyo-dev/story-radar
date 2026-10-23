@@ -25,8 +25,11 @@ const effortOf = (value: unknown): Draft2Effort | undefined => DRAFT2_EFFORTS.fi
  * engine (fewer, harder rounds; the judges at low effort; five distinct
  * openings; one visual script). A session keeps its pipeline, and every run
  * records the one it ran on, so a v2 story is never finished by v3 rules.
+ * v4 (2026-10-23, "draft first", docs/features/draft2-v4.md): the Opening
+ * step writes the whole carousel's words in one call (opening, closing, deck),
+ * one visual script, then one whole-carousel review; every other rule is v3's.
  */
-export const DRAFT2_PIPELINES = ["v2", "v3"] as const;
+export const DRAFT2_PIPELINES = ["v2", "v3", "v4"] as const;
 export type Draft2Pipeline = (typeof DRAFT2_PIPELINES)[number];
 export const DEFAULT_DRAFT2_PIPELINE: Draft2Pipeline = "v3";
 export const parseDraft2Pipeline = (value: unknown): Draft2Pipeline | undefined => DRAFT2_PIPELINES.find((pipeline) => pipeline === value);
@@ -42,7 +45,7 @@ export const parseDraft2Pipeline = (value: unknown): Draft2Pipeline | undefined 
  * either. A round that names its effort keeps it.
  */
 export function draft2RevisionEffort(role: "writer" | "judge", env: Draft2Env, pipeline: Draft2Pipeline = "v2"): Draft2Effort {
-  const fallback = pipeline === "v3" ? (role === "judge" ? "low" : "medium") : (role === "judge" ? "medium" : "high");
+  const fallback = pipeline !== "v2" ? (role === "judge" ? "low" : "medium") : (role === "judge" ? "medium" : "high");
   return effortOf(role === "judge" ? env.DRAFT2_REVISION_EFFORT_JUDGE : env.DRAFT2_REVISION_EFFORT_WRITER) ?? fallback;
 }
 
