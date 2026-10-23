@@ -110,6 +110,10 @@ test("what the program finds goes back to the writer once; the program keeps the
   const kept = await stubborn.run();
   assert.equal(stubborn.calls.length, 2);
   assert.equal(json([kept.opening?.status, kept.opening?.winnerId, kept.status]), json(["needs-review", "c1", "needs-review"]), "the fix came out no better: the first draft stands, for the review and the editor");
+  const lost = harness({ answers: [flagged] });
+  const first = await lost.run();
+  assert.equal(lost.calls.length, 2, "the fix call was made and lost");
+  assert.equal(json([first.opening?.status, first.opening?.winnerId, first.step]), json(["needs-review", "c1", "deck"]), "a lost fix call leaves the first draft, never a failed step");
 });
 
 test("an answer outside the contract is asked for again once with the rule; a second one fails the step and keeps the trace", async () => {

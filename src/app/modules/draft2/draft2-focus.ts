@@ -35,8 +35,13 @@ import type { Draft2SessionRow } from "@/db/schema";
 
 /** Every field and a reason for each, with Claude's thinking, which the API counts against the same ceiling. */
 const MAX_OUTPUT_TOKENS = 12_000;
-/** The plan: the spine (up to ten beats) and the two directions, with Claude's thinking. */
-const PLAN_MAX_OUTPUT_TOKENS = 10_000;
+/**
+ * The plan: the spine (up to ten beats) and the two directions, with Claude's
+ * thinking. A list's beats carry each item's practical line: the Saint-Jean
+ * weekend's first plan took 8 585 tokens and its correction ran out at 10 000
+ * (2026-10-23), failing the Spine.
+ */
+const PLAN_MAX_OUTPUT_TOKENS = 16_000;
 const DECISION_AGAIN = "Return the whole decision again, every field and every reason, with this fixed and nothing else changed.";
 const PLAN_AGAIN = "Return the whole plan again, the spine, both directions and every reason, with this fixed and nothing else changed.";
 /** One call; the adapter's default limit (120 s) is short for high effort on a long facts list. */
@@ -217,7 +222,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
   apiKey: string; model: string; trace: Draft2TraceEntry[]; verifiedFacts: unknown; auditContext: { runId: string; topicId: string; storyId: string };
   operation: string; instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown>;
   effort: "medium" | "high"; maxOutputTokens: number; parse: (answer: string, attempt: number) => T; again: string;
-  /** The program's decision when the last answer is refused: an earlier answer that stands under the last answer's rules, with what it says of it. */
+  /** The program's decision when the last answer is refused or its call is lost: an earlier answer that stands under the last answer's rules, with what it says of it. */
   rescue?: () => { value: T; note: string } | undefined;
 }): Promise<T> {
   let correction: string | undefined;
@@ -231,8 +236,11 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
       answered = await generateAnthropicStructuredResponse({ apiKey, model, instructions, context: { verifiedFacts }, contents: request, schema, schemaName: operation, maxOutputTokens, effort, timeoutMs: CALL_TIMEOUT_MS, auditContext });
     } catch (error) {
       const note = error instanceof Error ? error.message : "unknown error";
-      trace.push({ at, step: "focus", round: attempt, provider: "anthropic", model, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions, effort });
+      // The last call lost (cut at its ceiling, timed out, refused by the provider): an earlier answer that stands is the program's answer.
+      const rescued = attempt === FOCUS_ATTEMPTS ? rescue?.() : undefined;
+      trace.push({ at, step: "focus", round: attempt, provider: "anthropic", model, operation, durationMs: Date.now() - begin, outcome: "error", note: rescued ? `${note}. ${rescued.note}`.slice(0, 600) : note, ...failedCall(error), skillVersions, effort });
       draft2DevTrace({ step: "focus", round: attempt, provider: "anthropic", model, operation, phase: "error", durationMs: Date.now() - begin, detail: { error: note } });
+      if (rescued) return rescued.value;
       throw error;
     }
     const durationMs = Date.now() - begin;

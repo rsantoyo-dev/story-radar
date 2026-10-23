@@ -132,8 +132,9 @@ export async function runDraft2Draft(input: FunnelStepInput): Promise<Draft2Sess
       const made = [{ draft: first.draft, findings: firstFindings }];
       // What the program found goes back to the writer once; the program then keeps the draft with fewer findings.
       if (findingCount(firstFindings)) {
-        const fixed = await write(2, "draft2_draft_fix", draftFixRequest(plan, first.text, findingLines(firstFindings)));
-        made.push({ draft: fixed.draft, findings: draftFindings(fixed.draft, plan, checks) });
+        // A fix call lost (cut, timed out, refused twice) leaves the first draft, its findings marked for the review: it is on the trace.
+        const fixed = await write(2, "draft2_draft_fix", draftFixRequest(plan, first.text, findingLines(firstFindings))).catch(() => undefined);
+        if (fixed) made.push({ draft: fixed.draft, findings: draftFindings(fixed.draft, plan, checks) });
       }
       return made;
     });

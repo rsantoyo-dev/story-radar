@@ -122,6 +122,7 @@ function harness({ answers = [], plans = [], reviews = [], session, busy = false
       calls.push(input);
       if (fail) throw Object.assign(new Error("anthropic claude-sonnet-5-5 failed (HTTP 529: overloaded)"), { status: 529 });
       const next = input.schemaName === "draft2_focus_plan" ? (plans.shift() ?? PLAN) : answers.shift();
+      if (next instanceof Error) throw next;
       return { text: typeof next === "string" ? next : JSON.stringify(next), provider: "anthropic", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, cachedInputTokens: 0, cacheWriteTokens: 900 };
     } },
     "../stories/openai-structured-response": { generateOpenAiStructuredResponse: async (input: Record<string, unknown>) => {
@@ -319,6 +320,22 @@ test("a first plan refused only for a field's length is the program's answer whe
   assert.ok(beats[2].words.length <= 280 && long.startsWith(beats[2].words), "its long field cut at a word");
   const notes = (planned.trace as types.Draft2TraceEntry[]).filter((entry) => entry.operation === "draft2_focus_plan").map((entry) => entry.note ?? "");
   assert.match(notes[1], /^Refused by the program: An arc's closing has one penultimate beat before the last\. The first answer stands/);
+});
+
+test("a second plan call lost (cut at its ceiling) leaves the first answer, refused for a field's length, as the step's (2026-10-23, the Saint-Jean weekend's v4 run)", async () => {
+  const long = "Dire qui examine les vidéos et ce qu'il regarde, avec le délai que le responsable donne et la portée du programme pour un fondateur. ".repeat(3).trim();
+  const first = { ...PLAN, spine: { beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, words: long } : beat) } };
+  const cut = Object.assign(new Error("Claude claude-sonnet-5-5 ran out of output tokens before finishing (16000)"), { usage: { promptTokens: 100, outputTokens: 16000, thoughtsTokens: 0, totalTokens: 16100 } });
+  const h = harness({ answers: [answer()], plans: [first, cut] });
+  await h.decide();
+  const planned = await h.plan();
+  assert.equal(json([planned.status, (planned.focus as Draft2Focus).values!.spine!.beats.length]), json(["ready", 7]));
+  const calls = (planned.trace as types.Draft2TraceEntry[]).filter((entry) => entry.operation === "draft2_focus_plan");
+  assert.equal(json(calls.map((entry) => entry.outcome)), json(["ok", "error"]));
+  assert.match(calls[1].note ?? "", /ran out of output tokens before finishing \(16000\)\. The first answer stands/);
+  const lost = harness({ answers: [answer()], plans: [{ ...PLAN, direction: "" }, cut] });
+  await lost.decide();
+  await assert.rejects(lost.plan(), /ran out of output tokens/, "no answer stands: the Spine fails as before");
 });
 
 test("a refused first plan is told everything the program sees wrong in it at once, and one that breaks the shape too is never kept (2026-10-23)", async () => {
