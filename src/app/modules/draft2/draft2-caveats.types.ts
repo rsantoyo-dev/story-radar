@@ -16,7 +16,7 @@ const CHORE = /(?<![\p{L}])(vérifiez?|vérifie[sz]?|confirmez?|confirme[sz]?|re
 const CAVEAT = new RegExp([
   CHORE.source,
   "à confirmer", "sous réserve", "selon la météo", "la météo (?:décide|conditionne|le permet)", "dépend(?:ent)? (?:de la|des) (?:météo|conditions)", "conditions? météo",
-  "exige un achat", "condition d['’]achat", "billetterie", "avant de réserver", "avant de partir", "avant de (?:te|vous) déplacer", "peu(?:ven)?t évoluer", "peu(?:ven)?t changer",
+  "exige un achat", "condition d['’]achat", "li[ée]e?s? à un achat", "sur achat", "avec achat", "billetterie", "avant de réserver", "avant de partir", "avant de (?:te|vous) déplacer", "peu(?:ven)?t évoluer", "peu(?:ven)?t changer",
   "subject to", "weather permitting", "depends? on the weather", "requires? a purchase", "with purchase", "before you go", "may change", "box office", "check with",
   "sujet[oa]s? a", "según el clima", "depende del clima", "si el clima lo permite", "requiere (?:una )?compra", "con compra", "antes de ir", "antes de salir", "pueden? cambiar", "taquilla",
 ].map((part) => `(?:${part})`).join("|"), "giu");

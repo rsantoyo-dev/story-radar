@@ -714,3 +714,17 @@ test("a panorama's spine designs its scene (spine v10): required with the plan a
   assert.deepEqual(without.spineProblems?.map((problem) => problem.code), ["SPINE_PANORAMA_SCENE"]);
   assert.equal(focusWithSpineProblems({ ...decided(), values }, []).spineProblems, undefined);
 });
+
+test("a list's spine that plans conditions, or a guard that generalizes over the items, is a finding the autopilot stops on (2026-10-22)", () => {
+  const values = decided().values!;
+  const list = { ...values, structure: { kind: "list" as const, itemFactIds: ["f1", "f2", "f3"] }, spine: itemsSpine(3), guards: [] } as unknown as Draft2FocusValues;
+  const codes = (next: Draft2FocusValues) => focusFindings(next).filter((finding) => finding.code === "SPINE_CAVEATS" || finding.code === "SPINE_GUARD_ITEMS").map((finding) => finding.code);
+  assert.deepEqual(codes(list), []);
+  const caveats = { ...list, spine: { beats: list.spine!.beats.map((beat, index) => index === 0 ? { ...beat, words: "Promettre cinq idées, avec le détail à connaître avant de partir." } : index === 2 ? { ...beat, words: "Dire que l'heure et le tarif se confirment à la billetterie." } : beat) } } as Draft2FocusValues;
+  assert.deepEqual(codes(caveats), ["SPINE_CAVEATS"]);
+  assert.match(focusFindings(caveats).find((finding) => finding.code === "SPINE_CAVEATS")!.detail, /cover \("avant de partir"\), middle 1 \("billetterie"\)/u);
+  const guards = { ...list, guards: [{ misreading: "Chaque sortie est offerte les trois jours du week-end", factIds: ["f2"] }, { misreading: "Le Houston ferme", factIds: ["f1"] }] } as Draft2FocusValues;
+  assert.deepEqual(codes(guards), ["SPINE_GUARD_ITEMS"]);
+  assert.match(focusFindings(guards).find((finding) => finding.code === "SPINE_GUARD_ITEMS")!.detail, /"Chaque sortie est offerte les trois jours du week-end" generalizes over the items/u);
+  assert.deepEqual(codes({ ...values, spine: { beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, words: "Vérifie à la billetterie." } : beat) }, guards: [{ misreading: "Tous ferment", factIds: ["f1"] }] } as unknown as Draft2FocusValues), [], "an arc's beats and guards are its own");
+});

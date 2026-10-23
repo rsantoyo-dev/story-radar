@@ -266,3 +266,16 @@ names its place, keeps to the cover's days, carries no condition), closings v5
 (never a checklist), spine v12 (a list's guards are discharged by each item's
 practical line, never by a sentence on slide 2). Left to the judges: whether
 each item's first line says what one does or sees before the logistics.
+
+The same day, the plan itself: the Saint-Jean weekend spine ordered the
+conditions on six beats of seven ("avec le détail à connaître avant de
+partir", "prévenir que les autres sorties n'ont pas les mêmes jours",
+"la météo décide", "liée à un achat", "donner la liste à garder") and the
+Focus named two guards that generalized over the items. The Opening written
+again on 2026-10-23 produced fifteen covers about conditions. Two focus
+findings now stop the autopilot before the Opening on a list or a procedure
+(`focusFindings`): `SPINE_CAVEATS`, a beat whose words plan a condition or
+the cover's beat a chore, and `SPINE_GUARD_ITEMS`, a guard that generalizes
+over the items ("chaque sortie…", "les cinq sorties…"). Focus v18 and hooks
+v13 say why: the items' own details on each slide are what prevents the
+generalization.

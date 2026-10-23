@@ -5,6 +5,7 @@ import { editedLevers, leversForModels, parsePlanLevers, type Draft2FocusLevers 
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
 import { spineImageProblems, type Draft2SpineProblem } from "./draft2-spine-checks";
+import { caveatsIn, choreIn } from "./draft2-caveats.types";
 
 /**
  * Focus, the second Draft 2 step: what the story is for, decided once the
@@ -579,7 +580,7 @@ export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, 
   return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values) || spineImagesChanged(script.values.spine, focus.values.spine);
 }
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED";
+export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED" | "SPINE_CAVEATS" | "SPINE_GUARD_ITEMS";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -1558,6 +1559,20 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
   // A spine written for another structure (an arc's penultimate on a list, too few middle beats) no longer fits the slides the steps will write.
   const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure, { maxBeats: presentationMaxBeats(values) }) : undefined;
   if (shape) findings.push({ field: "spine", code: "SPINE_SHAPE", detail: `${shape}: decide again for Claude to rewrite the spine for this structure, or edit the beats.` });
+  // Caveats are not content (2026-10-22): in a list or a procedure, a plan whose beats order conditions (a check, the box office, the weather, a purchase)
+  // writes the slides the program then refuses; the Saint-Jean weekend spine ordered them on five beats of seven. The items' practical lines carry them.
+  if (values.spine && values.structure.kind !== "arc") {
+    let middle = 0;
+    const planned = values.spine.beats.flatMap((beat) => {
+      const name = beat.slide === "middle" ? `middle ${++middle}` : beat.slide;
+      const caveat = caveatsIn(beat.words)[0] ?? (beat.slide === "cover" ? choreIn(beat.words) : undefined);
+      return caveat ? [`${name} ("${caveat}")`] : [];
+    });
+    if (planned.length) findings.push({ field: "spine", code: "SPINE_CAVEATS", detail: `The spine plans conditions instead of what the reader does or sees: ${planned.join(", ")}. In a ${values.structure.kind === "list" ? "list" : "procedure"} each item's practical line carries its own days, price and reservation; the cover sells the items and the closing ends on the choice. Rewrite the plan, or edit these beats.` });
+    // A guard that generalizes over the items ("les cinq sorties sont gratuites", "chaque sortie…") names the items' differences, which their own slides carry: it is no guard.
+    const generalizing = (values.guards ?? []).filter((guard) => /(?<![\p{L}])(chaque|chacune?|toutes?|tous|les (?:cinq|quatre|trois|six|sept|huit|neuf|dix)|every|each|all|cada|tod[oa]s|las (?:cinco|cuatro|tres|seis|siete|ocho|nueve|diez))(?![\p{L}])/iu.test(guard.misreading));
+    if (generalizing.length) findings.push({ field: "spine", code: "SPINE_GUARD_ITEMS", detail: `${generalizing.map((guard) => `"${guard.misreading}"`).join(" and ")} ${generalizing.length === 1 ? "generalizes" : "generalize"} over the items: their differences are no guard, each item's slide carries its own details. Rewrite the plan without ${generalizing.length === 1 ? "it" : "them"}.` });
+  }
   return findings;
 }
 
