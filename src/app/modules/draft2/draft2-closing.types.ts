@@ -1,5 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
-import { isChecklist } from "./draft2-caveats.types";
+import { isChecklist, withoutPlanningLabels } from "./draft2-caveats.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
@@ -167,7 +167,8 @@ function closingFrom(shape: Draft2ClosingShape) {
     const item = funnelRecord(raw);
     const last = funnelRecord(item.last);
     const lastHeadline = funnelText(last.headline, 300);
-    const lastBody = funnelText(last.body, 1_000);
+    // The spine's "Ligne pratique :" is a planning label, never the reader's words.
+    const lastBody = funnelText(typeof last.body === "string" ? withoutPlanningLabels(last.body) : last.body, 1_000);
     const cta = typeof last.cta === "string" && last.cta.trim().length <= 300 ? last.cta.trim() : undefined;
     const lastFacts = funnelFactIds(last.factIds);
     if (!lastHeadline || !lastBody || cta === undefined || !lastFacts) return undefined;
@@ -175,7 +176,7 @@ function closingFrom(shape: Draft2ClosingShape) {
     if (shape === "two-slides") {
       const slide = funnelRecord(item.penultimate);
       const headline = funnelText(slide.headline, 300);
-      const body = funnelText(slide.body, 1_000);
+      const body = funnelText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
       const slideFacts = funnelFactIds(slide.factIds);
       if (!headline || !body || !slideFacts) return undefined;
       penultimate = { headline, body, factIds: slideFacts };

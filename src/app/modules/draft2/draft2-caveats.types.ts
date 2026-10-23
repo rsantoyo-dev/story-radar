@@ -72,3 +72,21 @@ export function beforePracticalLine(text: string): string {
   const label = PRACTICAL_LABEL.exec(text);
   return label ? text.slice(0, label.index) : text;
 }
+
+/** The spine's planning label for an item's practical line, never the reader's words. */
+const PLANNING_LABEL = /(?<![\p{L}])(?:lignes? pratiques?|practical line|l[ií]neas? pr[aá]cticas?)\s*:\s*(\p{L}?)/giu;
+
+/**
+ * A slide's text without the spine's planning label (2026-10-23): the
+ * Saint-Jean weekend's writers copied "Ligne pratique :" from the beats into
+ * slide 2's body and every deck item's practical line. The data stays; a
+ * sentence it opened starts with a capital.
+ */
+export function withoutPlanningLabels(text: string): string {
+  if (!PLANNING_LABEL.test(text)) return text;
+  PLANNING_LABEL.lastIndex = 0;
+  return text.replace(PLANNING_LABEL, (_label, next: string, offset: number) => {
+    const before = text.slice(0, offset).trimEnd();
+    return !before || /[.!?]$/u.test(before) ? next.toLocaleUpperCase() : next;
+  }).replace(/[ \t]{2,}/gu, " ").trim();
+}

@@ -1,5 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
-import { choreIn, opensWithCaveat } from "./draft2-caveats.types";
+import { choreIn, opensWithCaveat, withoutPlanningLabels } from "./draft2-caveats.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { beatFactsFinding, beatFactsMissing, type Draft2FocusGuard, type Draft2FocusSnapshot } from "./draft2-focus.types";
@@ -213,7 +213,8 @@ function openingFrom(raw: unknown, fallbackId: string): Draft2OpeningCandidate |
   const coverHeadline = funnelText(cover.headline, 300);
   const subheadline = funnelText(cover.subheadline, 500);
   const slideHeadline = funnelText(slide2.headline, 300);
-  const slideBody = funnelText(slide2.body, 1_000);
+  // The spine's "Ligne pratique :" is a planning label, never the reader's words.
+  const slideBody = funnelText(typeof slide2.body === "string" ? withoutPlanningLabels(slide2.body) : slide2.body, 1_000);
   const coverFacts = funnelFactIds(cover.factIds);
   const slideFacts = funnelFactIds(slide2.factIds);
   if (!coverHeadline || !subheadline || !slideHeadline || !slideBody || !coverFacts || !slideFacts) return undefined;

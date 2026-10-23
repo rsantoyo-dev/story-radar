@@ -106,3 +106,13 @@ Visual script, Caption):
   the time a judgment takes (else the round pauses and a new request judges
   it). The refusal stays on the call in the trace. Refused again, the step
   fails as before: never a third judgment.
+
+## Addendum, 2026-10-23: the spine's planning label
+
+The spine (v14) ends an item's beat with "Ligne pratique :" so the program
+can read its data apart from its job. The Saint-Jean weekend's writers copied
+the label into slide 2's body and every deck item's practical line, and it
+reached the images. The program now takes the label out of every Opening,
+Closing and Deck text as it reads the writer's answer
+(`withoutPlanningLabels`): the data stays, and a sentence the label opened
+starts with a capital. A reader's own label ("Infos :") stays.

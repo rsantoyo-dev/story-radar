@@ -63,6 +63,9 @@ test("the writer's answer becomes decks; a slide missing a part is rejected, an 
   const [parsed] = parseDeckCandidates(JSON.stringify({ candidates: [deck("c1")] }));
   assert.equal(parsed.slides.length, 3);
   assert.equal(parsed.slides[0].practical, "");
+  const labelled = deck("c1", [{ ...slide("Un parcours hanté", "Au Verger Charbonneau. Ligne pratique : billets en ligne.", ["f1"]), practical: "Ligne pratique : samedi, dimanche; gratuit 2 ans et moins." }]);
+  const [clean] = parseDeckCandidates(JSON.stringify({ candidates: [labelled] }));
+  assert.deepEqual([clean.slides[0].body, clean.slides[0].practical], ["Au Verger Charbonneau. Billets en ligne.", "Samedi, dimanche; gratuit 2 ans et moins."], "the spine's planning label is taken out of the slide (2026-10-23)");
   const broken = { ...deck("c1"), slides: [{ headline: "No body", practical: "", factIds: ["f1"] }] };
   assert.throws(() => parseDeckCandidates(JSON.stringify({ candidates: [broken] })), (error: Error) => error instanceof Draft2ResponseError && /c1 is incomplete/.test(error.message));
   assert.throws(() => parseDeckCandidates(JSON.stringify({ candidates: [{ ...deck("c1"), slides: [] }] })), /incomplete/);

@@ -1,5 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
-import { caveatIn } from "./draft2-caveats.types";
+import { caveatIn, withoutPlanningLabels } from "./draft2-caveats.types";
 import { dayPeriodIn, daysOutsidePeriod } from "./draft2-data-marks";
 import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
@@ -179,8 +179,9 @@ function deckFrom(raw: unknown, fallbackId: string): Draft2DeckCandidate | undef
   for (const entry of item.slides.slice(0, DECK_MAX_SLIDES)) {
     const slide = funnelRecord(entry);
     const headline = funnelText(slide.headline, 300);
-    const body = funnelText(slide.body, 1_000);
-    const practical = typeof slide.practical === "string" && slide.practical.trim().length <= 300 ? slide.practical.trim() : undefined;
+    // The spine's "Ligne pratique :" is a planning label, never the reader's words.
+    const body = funnelText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
+    const practical = typeof slide.practical === "string" && slide.practical.trim().length <= 300 ? withoutPlanningLabels(slide.practical.trim()) : undefined;
     const ids = funnelFactIds(slide.factIds);
     if (!headline || !body || practical === undefined || !ids) return undefined;
     slides.push({ headline, body, practical, factIds: ids });
