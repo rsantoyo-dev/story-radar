@@ -1,3 +1,4 @@
+import { explainedAbbreviations } from "./draft2-abbreviations.types";
 import type { CreativeAiUsage } from "../stories/creative-content.types";
 
 /**
@@ -290,6 +291,18 @@ export function mechanicalFactIssues(facts: readonly Draft2Fact[], articleText: 
     else claims.set(key, fact.id);
     if (fact.status === "attributed" && !fact.attribution) {
       issues.push({ code: "WRONG_ATTRIBUTION", factId: fact.id, detail: "An attributed fact must name who says it, as the article does." });
+    }
+  }
+  // An abbreviation with its letters in another order (2026-10-23: the Houston article's "RAJC" for RACJ, kept by the extractor and accepted by the
+  // reviewer): the facts spell one out, another fact writes the same letters in another order. The claim and the attribution take the spelled-out one.
+  const explained = [...explainedAbbreviations(facts).keys()];
+  const sorted = (word: string) => [...word].sort().join("");
+  for (const fact of facts) {
+    const words = `${fact.claim} ${fact.attribution ?? ""}`.match(/(?<![\p{L}\p{N}])\p{Lu}{3,8}(?![\p{L}\p{N}])/gu) ?? [];
+    const typo = words.find((word) => !explained.includes(word) && explained.some((known) => known.length === word.length && known !== word && sorted(known) === sorted(word)));
+    if (typo) {
+      const known = explained.find((entry) => entry.length === typo.length && sorted(entry) === sorted(typo))!;
+      issues.push({ code: "INEXACT_VALUE", factId: fact.id, detail: `"${typo}" has the letters of ${known} in another order, the article's own typo: write ${known} in the claim and the attribution (the evidence stays verbatim).` });
     }
   }
   return issues;

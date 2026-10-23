@@ -177,7 +177,8 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline, deadl
 export async function editDraft2Fact({ topicId, sessionId, factId, claim, attribution }: { topicId: string; sessionId: string; factId: string; claim?: string; attribution?: string }): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
-  if (session.step !== "facts" || session.status === "running") throw new Draft2InputError("A fact is edited while the facts wait for you: before a later step runs on them. Start over from the facts to change one now.");
+  // Until the Opening exists: the people and places, the focus and the spine cite facts by id and keep no copy of their words; the word steps do.
+  if (session.status === "running" || session.opening) throw new Draft2InputError("A fact is edited before the Opening is written: the words cite the facts as they were. Start over from the facts to change one now.");
   if (!session.facts?.length) throw new Draft2InputError("There is no fact to edit: extract the facts first.");
   const facts = editedFacts(session.facts, factId, { claim, attribution }, new Date());
   const updated = await updateDraft2Session(session.id, { facts });

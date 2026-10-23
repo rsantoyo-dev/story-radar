@@ -126,3 +126,16 @@ test("the repair's rules: repairable only when every issue names a fact or asks 
   const noDuplicateRule = applyFactsRepair(facts, [], [{ code: "VAGUE", factId: "f24", detail: "Vague." }]);
   assert.deepEqual(noDuplicateRule.unaddressed, ["f24"], "an omitted fact is removed only when called a duplicate");
 });
+
+test("an abbreviation with its letters in another order is the article's typo: the program names it, so the extractor fixes it and the repair covers it (2026-10-23)", () => {
+  const article = "Selon une décision récente de la Régie des alcools, des courses et des jeux (RACJ), les policiers ont observé des individus. Selon le tribunal de la RAJC, la présence récurrente peut constituer une nuisance.";
+  const facts: Draft2Fact[] = [
+    { id: "f3", claim: "Selon une décision récente de la Régie des alcools, des courses et des jeux (RACJ), les policiers ont observé des individus.", evidence: "Selon une décision récente de la Régie des alcools, des courses et des jeux (RACJ), les policiers ont observé des individus.", kind: "event", status: "attributed", attribution: "la RACJ", importance: 80 },
+    { id: "f6", claim: "Selon le tribunal de la RAJC, la présence récurrente peut constituer une nuisance.", evidence: "Selon le tribunal de la RAJC, la présence récurrente peut constituer une nuisance.", kind: "event", status: "attributed", attribution: "le tribunal de la RAJC", importance: 70 },
+  ];
+  const issues = mechanicalFactIssues(facts, article);
+  assert.deepEqual(issues.map((issue) => [issue.code, issue.factId]), [["INEXACT_VALUE", "f6"]]);
+  assert.match(issues[0].detail, /"RAJC" has the letters of RACJ in another order/u);
+  assert.deepEqual(mechanicalFactIssues([facts[0], { ...facts[1], claim: facts[1].claim.replace("RAJC", "RACJ"), attribution: "le tribunal de la RACJ" }], article), [], "written right, nothing to find; the evidence keeps the article's typo");
+  assert.deepEqual(mechanicalFactIssues([facts[0], { ...facts[1], claim: "Le SPAL enquête.", attribution: undefined, status: "established" }], article), [], "another abbreviation is not a typo of this one");
+});

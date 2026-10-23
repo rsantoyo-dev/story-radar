@@ -45,3 +45,14 @@ and a deterministic check (`docs/features/pipeline-nets-over-agents`).
   (confirmed only by an exact verified match; otherwise no photo, no name).
 - A focus finding (`NO_READER_CONSEQUENCE`, `TOO_FEW_ITEMS`): the decision
   made again once with the finding as a note.
+
+## Addendum, 2026-10-23: a typo the article carries
+
+Houston's second facts run was accepted at 87 with "RAJC" still in f6: the
+reviewer let the article's own typo through. The program now finds it
+(`mechanicalFactIssues`, `INEXACT_VALUE`): a capitalized word with the letters
+of an abbreviation the facts spell out, in another order. The extractor fixes
+it in the next round or the repair; the evidence keeps the article's spelling.
+And a fact is editable by hand until the Opening exists (the people and
+places, the focus and the spine cite facts by id), no longer only while the
+facts wait.

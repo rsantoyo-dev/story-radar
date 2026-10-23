@@ -1158,7 +1158,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text. <Link href={studio}>Open the studio</Link></EmptyState>}
           </section>
           <section className={styles.factsResult} aria-label="The facts">
-            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} onEdit={session.step === "facts" && session.status !== "running" ? editFacts : undefined} /> : null}
+            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} onEdit={!session.opening && session.status !== "running" ? editFacts : undefined} /> : null}
             {session === null && running !== "facts" && text.length ? <EmptyState title="No facts yet">Extract and verify the facts: {factsCast.extractor} reads the article and lists every fact the story depends on; {factsCast.reviewer} checks each one against it.</EmptyState> : null}
           </section>
         </div>
