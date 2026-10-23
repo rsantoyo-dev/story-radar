@@ -114,3 +114,12 @@ test("the first comment: parsed with the caption, one short question under 100 w
   assert.deepEqual(codes([caption("c1", { comment: "Back Saturday 📚📚📚. Which book first?" })]), ["c1:TOO_MANY_EMOJIS"]);
   assert.equal(sameCaption(caption("c1"), caption("c2", { comment: "Another take. Which book first?" })), false, "a different first comment is a different caption");
 });
+
+test("a caption that reads as a list of conditions is a program finding: its conditions are on the slides (2026-10-23, the Saint-Jean weekend)", () => {
+  const weekend = "Cinq sorties ce week-end, du 23 au 25 octobre.\n\nChacune a son petit piège, et mieux vaut le connaître avant de partir.\n\nGratuit ou avec billets en ligne, activités qui dépendent de la météo, roue de prix liée à un achat : tout y est.";
+  const flagged = mechanicalCaptionIssues([caption("c1", { text: weekend })], facts, { credits: [], mentions: [], rules: RULES }).filter((issue) => issue.code === "CAVEATS");
+  assert.equal(flagged.length, 1);
+  assert.match(flagged[0].detail, /reads as a list of conditions \("avant de partir", "dépendent de la météo"\)/u);
+  const one = "Cinq sorties ce week-end, du 23 au 25 octobre.\n\nLe Relais hanté se fait sur réservation, billetterie en ligne.";
+  assert.deepEqual(mechanicalCaptionIssues([caption("c1", { text: one })], facts, { credits: [], mentions: [], rules: RULES }).filter((issue) => issue.code === "CAVEATS"), [], "one condition, once, is the reader's information");
+});

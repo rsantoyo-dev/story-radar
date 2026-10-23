@@ -1,4 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
+import { isChecklist } from "./draft2-caveats.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
@@ -59,7 +60,7 @@ export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action",
 export const CAPTION_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION", "MENTION_MISSING",
   "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
-  "COMMENT_MISSING", "COMMENT_ON_GRAVE", "COMMENT_TOO_LONG", "COMMENT_NO_QUESTION", "COMMENT_TAGS",
+  "COMMENT_MISSING", "COMMENT_ON_GRAVE", "COMMENT_TOO_LONG", "COMMENT_NO_QUESTION", "COMMENT_TAGS", "CAVEATS",
 ] as const;
 export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "WEAK_QUESTION", "OTHER"] as const;
 export const CAPTION_ISSUE_CODES = [...CAPTION_MECHANICAL_CODES, ...CAPTION_JUDGE_CODES] as const;
@@ -289,6 +290,10 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     if (narration) add("NARRATES_CAROUSEL", `"${narration[0]}" talks about the carousel; the caption talks about the story.`);
     if (candidate.text.length > CAPTION_SPACING_THRESHOLD && !candidate.text.includes("\n\n")) add("NO_SPACING", "A caption this long needs blank lines between its parts.");
     if (CREDIT.test(candidate.text)) add("CREDIT_IN_TEXT", "The source and the photo credits are added after the text by the program; leave them out.");
+    // Caveats are not content, in the caption too (2026-10-23): the Saint-Jean weekend's caption brought back "son petit piège… avant de partir" and
+    // "roue de prix liée à un achat" after the auditor had them taken off the slides. Each item's conditions are on its slide.
+    const checklist = isChecklist("", candidate.text);
+    if (checklist) add("CAVEATS", `The caption reads as a list of conditions ("${checklist}"): it tells the story and what the reader gets; each item's conditions are on its slide, so name one at most, once.`);
     const address = addressBreaches(candidate.text, reader);
     if (address.length && reader) add("WRONG_ADDRESS", addressFinding(address, reader));
     const abbreviations = abbreviationBreaches(candidate.text, explained);
