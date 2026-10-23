@@ -58,7 +58,7 @@ import { placeMention } from "./draft2-inventory";
 import {
   ANCHOR_PLATE_FILE, ANCHOR_PLATE_PROMPT_FILE, OWN_SCENE_MIN_SECTION, anchorPlateSettled, cutSections, masterPlateFile, nextSceneVersion, ownSceneOriginalFile, sceneBefore, setAsMismatches, standingScene, masterPlatePromptFile, type Draft2OwnFit, type Draft2OwnImage, type Draft2CutOffset, type Draft2MasterPlateRecord, slideCarriesAnchor, visualNarrative, type Draft2AnchorPlate, type Draft2MasterPlate,
   COVER_PROGRAM_PROMPT, COVER_PROMPT, DRAFT2_IMAGE_REVIEW_SCHEMA, DRAFT2_PORTRAIT_SUBJECT_SCHEMA, IMAGE_SUBMISSION_GRACE_MS, IMAGE_SUBMIT_CONCURRENCY, IMAGES_QUALITY, PORTRAIT_LOCATOR_INSTRUCTIONS, focusSubject, parsePortraitSubject,
-  awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesTarget, latestAttempt, mapFile,
+  awaitsReview, chosenSlide, correctionFor, draft2ImageDownloads, draft2ImageReview, imageBaseFile, imageFile, imagePromptFile, imagesNote, imagesScript, imagesTarget, latestAttempt, mapFile,
   movedMapSlide, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, settledStatus, shownAttempt, slideFacts, slideSettled, slideUnit, slideWordsOf, slidesWithChangedWords,
   type Draft2ImageAttempt, type Draft2ImageReview, type Draft2WordsLayout, withStyleOf, type Draft2Images, type Draft2ImagesRun, type Draft2MapPanel, type Draft2PortraitFit, type Draft2SlideImage, type Draft2SlideMaterial,
 } from "./draft2-images.types";
@@ -989,7 +989,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
   const current = session.images ?? undefined;
   if (resume && !current?.slides.some((slide) => !slideSettled(slide))) throw new Draft2InputError("There are no images waiting to be made. Generate the images again.");
   const target = imagesTarget(session);
-  if (resume && current && (current.visualId !== target.script.id || current.inventoryVersion !== target.inventory.version)) {
+  if (resume && current && (current.visualId !== target.script.id || !imagesScript(current, session.visual?.rounds ?? []) || current.inventoryVersion !== target.inventory.version)) {
     throw new Draft2InputError("The visual script or the people and places changed since these images started. Generate the images again.");
   }
   if (!process.env.OPENAI_API_KEY?.trim()) throw new Draft2InputError(`OPENAI_API_KEY is not configured; ${draft2ModelName(draft2SolModel(process.env), "openai")} reviews the images.`);

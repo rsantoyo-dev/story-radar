@@ -517,6 +517,27 @@ export type Draft2ImagesRun = {
 };
 export type Draft2Images = Draft2ImagesRun & { previousRuns?: Draft2ImagesRun[] };
 
+/**
+ * The script version an images run pictures, in the visual run as it stands:
+ * the version with its id, written before the images started. A rewritten
+ * script numbers its versions again from c1, so an id alone paired the earlier
+ * images with the new script (2026-10-23, the Saint-Jean weekend: the script
+ * written again without a false photo kept "c1.2", the images were taken as
+ * current and nothing was redrawn). A round stored without its time counts as
+ * written before.
+ */
+export function imagesScript<C extends { id: string }>(images: Pick<Draft2ImagesRun, "visualId" | "startedAt">, rounds: readonly { candidates: readonly C[]; at?: string }[]): C | undefined {
+  const started = Date.parse(images.startedAt);
+  let found: C | undefined;
+  for (const round of rounds) {
+    const candidate = round.candidates.find((entry) => entry.id === images.visualId);
+    if (!candidate) continue;
+    const written = round.at ? Date.parse(round.at) : NaN;
+    found = Number.isFinite(written) && Number.isFinite(started) && written > started ? undefined : candidate;
+  }
+  return found;
+}
+
 /** The files of a slide's version, named for R2 (buildDraft2ImageObjectKey). */
 export const imageFile = (slide: string, version: number) => `${slide}-v${version}.png`;
 export const imageBaseFile = (slide: string, version: number) => `${slide}-v${version}-base.png`;

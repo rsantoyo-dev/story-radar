@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError } from "./draft2-facts.types";
 import {
-  correctionFor, draft2ImageDownloads, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
+  correctionFor, imagesScript, draft2ImageDownloads, draft2ImageReview, imagesNote, imagesTarget, newImagesRun, parseDraft2ImageReview, parseImagesAction, regeneratedSlide, chosenSlide,
   settledStatus, shownAttempt, slideMaterial, slideSettled, slideUnit, textDifferences, awaitsReview, slidesWithChangedWords, PANORAMA_SCENE,
   type Draft2ImageAttempt, type Draft2SlideImage, focusSubject, parsePortraitSubject,
 } from "./draft2-images.types";
@@ -367,4 +367,14 @@ test("the text set apart from the headline: its own box, alignment and backgroun
   assert.equal(withStyleOf(joined, layout).textBlock, undefined, "a slide whose text follows its headline keeps it so");
   assert.equal(json(withStyleOf(apart, layout).textBlock), json({ box: apart.textBlock!.box, align: "right", background: layout.textBlock!.background }), "a slide whose text is apart keeps its place and takes the text's style");
   assert.equal(json(withStyleOf(apart, joined).textBlock), json({ box: apart.textBlock!.box, align: joined.align, background: joined.background }), "from a joined style, the words' alignment and background");
+});
+
+test("the script an images run pictures is the one written before it: a script written again that reuses the id is another one (2026-10-23)", () => {
+  const images = { visualId: "c1.2", startedAt: "2026-10-23T17:40:00.000Z" };
+  const earlier = [{ at: "2026-10-23T17:30:00.000Z", candidates: [{ id: "c1" }] }, { at: "2026-10-23T17:38:00.000Z", candidates: [{ id: "c1.2" }, { id: "c2" }] }];
+  assert.equal(imagesScript(images, earlier)?.id, "c1.2", "the script the images followed");
+  const rewritten = [{ at: "2026-10-23T18:22:00.000Z", candidates: [{ id: "c1" }] }, { at: "2026-10-23T18:24:00.000Z", candidates: [{ id: "c1.2" }, { id: "c2" }] }];
+  assert.equal(imagesScript(images, rewritten), undefined, "the Saint-Jean weekend: the same id, written after the images");
+  assert.equal(imagesScript(images, [{ candidates: [{ id: "c1.2" }] }])?.id, "c1.2", "a round stored without its time counts as written before");
+  assert.equal(imagesScript(images, [{ at: "2026-10-23T17:38:00.000Z", candidates: [{ id: "c3" }] }]), undefined, "no such version");
 });

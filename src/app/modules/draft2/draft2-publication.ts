@@ -9,9 +9,8 @@ import { creativeImageModelVisibleText } from "../stories/creative-image-prompt-
 import type { CreativeAiUsage, CreativeUnit } from "../stories/creative-content.types";
 import { activeDraft2Session, getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
-import { funnelVersions } from "./draft2-funnel";
 import { draft2ImageFile } from "./draft2-images";
-import { shownAttempt, slideUnit } from "./draft2-images.types";
+import { imagesScript, shownAttempt, slideUnit } from "./draft2-images.types";
 import { findStoryPhoto } from "../stories/story-materials.repository";
 import { publishablePhoto } from "../stories/story-materials.types";
 import { captionText, normalHashtag } from "./draft2-caption.types";
@@ -111,7 +110,8 @@ export async function prepareDraft2Publication({ topicId, storyId, sessionId, ac
 
   const visual = session.visual;
   const images = session.images!;
-  const script = visual ? funnelVersions(visual.rounds).find((version) => version.candidate.id === images.visualId)?.candidate : undefined;
+  // The script written before these images, never a later one that reused its id.
+  const script = visual ? imagesScript(images, visual.rounds) : undefined;
   if (!visual?.carousel || !script) throw new Draft2InputError("The visual script these images picture is no longer in the session. Make the images again.");
   const carousel = visual.carousel;
   const units: CreativeUnit[] = target.slides.map((slide, index) => {

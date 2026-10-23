@@ -3,8 +3,7 @@ import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInpu
 import { DRAFT2_CAPTION_ROLES } from "./draft2-models";
 import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
 import { focusForModels, type Draft2FocusSnapshot } from "./draft2-focus.types";
-import { funnelVersions } from "./draft2-funnel";
-import { shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-images.types";
+import { imagesScript, shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-images.types";
 import { confirmedMentions, sameMentions } from "./draft2-mentions.types";
 import {
   CAPTION_EVALUATION_SCHEMA, CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_HASHTAGS, CAPTION_MIN_HASHTAGS, captionPlan, CAPTION_SCHEMA,
@@ -107,7 +106,7 @@ async function captionTarget(session: Draft2SessionRow, stopped: Draft2Caption |
   if (!images || images.status === "running" || images.status === "paused" || !images.slides.every(slideSettled)) throw new Draft2InputError("The caption accompanies the finished carousel. Finish the images first.");
   if (images.slides.some((slide) => !shownAttempt(slide))) throw new Draft2InputError("Every slide needs an image before the caption. Make the missing ones first.");
   const visual = session.visual;
-  if (!visual?.carousel?.length || !visual.focus || !funnelVersions(visual.rounds).some((version) => version.candidate.id === images.visualId)) {
+  if (!visual?.carousel?.length || !visual.focus || !imagesScript(images, visual.rounds)) {
     throw new Draft2InputError("The visual script changed since the images were made. Make the images again first.");
   }
   return {

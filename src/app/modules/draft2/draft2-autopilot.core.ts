@@ -3,7 +3,7 @@ import type { Draft2Closing } from "./draft2-closing.types";
 import type { Draft2Deck } from "./draft2-deck.types";
 import type { Draft2Fact, Draft2SessionStatus, Draft2Step, Draft2TraceEntry } from "./draft2-facts.types";
 import { focusFindings, focusMaterial, visualDirectionChanged, wordsFollowFocus, type Draft2Focus } from "./draft2-focus.types";
-import { shownAttempt, slideSettled, type Draft2Images } from "./draft2-images.types";
+import { imagesScript, shownAttempt, slideSettled, type Draft2Images } from "./draft2-images.types";
 import { awaitsConfirmation, type Draft2Inventory } from "./draft2-inventory.types";
 import { confirmedMentions, sameMentions, type Draft2Mentions } from "./draft2-mentions.types";
 import { OPENING_STALL_MS, type Draft2Opening } from "./draft2-opening.types";
@@ -156,7 +156,8 @@ export function nextAutopilotStep(session: AutopilotSession | null | undefined, 
   if (visualNeeds) return visualNeeds;
   const visualId = visual!.editorChoiceId ?? visual!.winnerId;
   const images = session.images;
-  if (!images || images.visualId !== visualId) return { step: "images" };
+  // The same id written again by a rewritten script is another script: the images follow the one written before them.
+  if (!images || images.visualId !== visualId || !imagesScript(images, visual!.rounds)) return { step: "images" };
   const pending = images.slides.some((slide) => !slideSettled(slide));
   if (pending && (images.status === "paused" || images.status === "failed" || (images.status === "running" && stale))) return { step: "images", continuing: true };
   if (images.status === "running" && !stale) return { blocked: "The images are being made." };

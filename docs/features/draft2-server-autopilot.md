@@ -99,3 +99,13 @@ migration 0119): the job's first step is the facts, which open a new session
 whatever the story's latest one says, and the steps then follow from it. The
 earlier session stays as history, with its approval and its runs. The top
 bar's buttons keep going on from where the story stands.
+
+## Addendum, 2026-10-23: a script written again reuses its ids
+
+A visual script written again numbers its versions from c1 like the first
+one, so the Saint-Jean weekend's new script (written without a false photo)
+won as "c1.2" again: the autopilot took the earlier images as current and
+ended the job without redrawing them. The images now follow the script
+version with their id written before they started (`imagesScript`); the
+autopilot, the caption, the publication, a continued images run and the
+canvas all read it that way.

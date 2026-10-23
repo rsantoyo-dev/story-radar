@@ -185,3 +185,26 @@ test("a Spine the program refused twice is written again once from its refusal, 
   const again = await runAutopilotPass(stubborn.deps);
   assert.deepEqual([again.end.kind, runs], ["failed", 2]);
 });
+
+test("a visual script written again that reuses its winner's id makes the images again (2026-10-23, the Saint-Jean weekend)", () => {
+  const decidedUpToImages = (rounds: { round: number; at: string; candidates: { id: string }[] }[]) => {
+    const beat = (slide: string, role: string, withholds = "La suite.") => ({ slide, role, scene: "Une scène.", words: "Dire le fait.", image: "Une image.", withholds, factIds: ["f1"] });
+    const spine = { beats: [beat("cover", "hook"), beat("slide2", "setup"), beat("middle", "turning-point"), beat("penultimate", "climax"), beat("last", "payoff", "")] };
+    const values = { structure: { kind: "arc", itemFactIds: [] }, framing: "news", voice: { gravity: "light" }, spine };
+    const done = (id: string) => ({ status: "ready", winnerId: id, rounds: [{ round: 1, at: "2026-10-23T16:00:00.000Z", candidates: [{ id }], mechanical: [] }] });
+    return session({
+      step: "images", status: "ready",
+      facts: [{ id: "f1", claim: "Un fait.", evidence: "fait", kind: "event", status: "established", importance: 95 }],
+      inventory: { status: "ready", version: 2, characters: "auto", roster: [], storyPhotos: [], entities: [] },
+      focus: { status: "ready", version: 1, edited: [], values },
+      mentions: { status: "ready" }, opening: { ...done("c1"), focus: { version: 1, values } }, closing: { ...done("c2"), opening: { id: "c1" } }, deck: done("c3"),
+      review: { status: "ready", openingId: "c1", closingId: "c2", deckId: "c3" },
+      visual: { status: "needs-review", winnerId: "c1.2", deckId: "c3", inventoryVersion: 2, focus: { version: 1, values }, rounds },
+      images: { status: "ready", visualId: "c1.2", startedAt: "2026-10-23T17:40:00.000Z", inventoryVersion: 1, slides: [] },
+    } as unknown as Partial<AutopilotSession>);
+  };
+  const rewritten = nextAutopilotStep(decidedUpToImages([{ round: 1, at: "2026-10-23T18:22:00.000Z", candidates: [{ id: "c1" }] }, { round: 2, at: "2026-10-23T18:24:00.000Z", candidates: [{ id: "c1.2" }] }]), Date.now());
+  assert.deepEqual(rewritten, { step: "images" });
+  const followed = nextAutopilotStep(decidedUpToImages([{ round: 2, at: "2026-10-23T17:38:00.000Z", candidates: [{ id: "c1.2" }] }]), Date.now());
+  assert.notDeepEqual(followed, { step: "images" }, "the script the images were made from: they stand");
+});

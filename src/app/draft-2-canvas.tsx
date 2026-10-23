@@ -26,7 +26,7 @@ import { DECK_GATE, DECK_MAX_ROUNDS, type Draft2Deck, type Draft2DeckCandidate, 
 import { REVIEW_CRITERIA, proposedPatches, reviewCurrent, type Draft2Review } from "@/app/modules/draft2/draft2-review.types";
 import { INVENTORY_CHARACTER_CHOICES, awaitsConfirmation, type Draft2CharacterChoice, type Draft2Inventory, type Draft2InventoryEntity, type Draft2InventoryStoryPhoto } from "@/app/modules/draft2/draft2-inventory.types";
 import { VISUAL_GATE, VISUAL_MAX_ROUNDS, deckCarousel, sameCarouselWords, visualPlan, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCriterion, type Draft2VisualRecurring, type Draft2VisualShot } from "@/app/modules/draft2/draft2-visual.types";
-import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, cutSections, imageCleared, standingScene, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
+import { CUT_MIN_SCALE, IMAGES_MAX_REQUESTS, cutSections, imageCleared, imagesScript, standingScene, draft2ImageDownloads, latestAttempt, shownAttempt, slideSettled, slidesWithChangedWords, type Draft2CutOffset, type Draft2Images, type Draft2SlideImage } from "@/app/modules/draft2/draft2-images.types";
 import { CAPTION_GATE, CAPTION_MAX_CHARACTERS, CAPTION_MAX_ROUNDS, COMMENT_MAX_WORDS, captionPostText, shownComment, shownCredits, shownSource, type Draft2Caption, type Draft2CaptionCandidate, type Draft2CaptionCriterion } from "@/app/modules/draft2/draft2-caption.types";
 import { confirmedMentions, mentionEntities, sameMentions, type Draft2MentionAccount, type Draft2MentionStatus, type Draft2Mentions } from "@/app/modules/draft2/draft2-mentions.types";
 import { publicationCurrent, publicationTarget, targetPostText, type Draft2Publication, type Draft2PublicationTarget } from "@/app/modules/draft2/draft2-publication.types";
@@ -976,7 +976,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const chosenVisualId = visual?.editorChoiceId ?? visual?.winnerId;
   const visualFinished = Boolean(visual && chosenVisualId && visual.status !== "running" && visual.status !== "paused");
   const imagesReady = visualFinished && !visualChanged;
-  const imagesChanged = Boolean(images && chosenVisualId && images.visualId !== chosenVisualId);
+  // A script written again reuses its ids: the images follow the one written before them (imagesScript).
+  const imagesChanged = Boolean(images && chosenVisualId && (images.visualId !== chosenVisualId || !imagesScript(images, visual?.rounds ?? [])));
   // Slides whose words the program set and the carousel has changed since: set again on the same images, for free.
   const wordsChanged = imagesChanged ? [] : slidesWithChangedWords(images, session?.visual?.carousel);
   // The accounts the caption may tag: proposed for the people, places and organizations, checked on Instagram, tagged only once the editor confirms them.
@@ -990,7 +991,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const captionStalled = !running && caption?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   const captionStatus = running === "caption" ? OPENING_STATUS.running : captionStalled ? { label: "Stopped", tone: "warning" as const } : funnelStatusOf(caption);
   const imagesFinished = Boolean(images && images.status !== "running" && images.status !== "paused" && images.slides.every((slide) => slideSettled(slide) && shownAttempt(slide)));
-  const imagesScriptGone = Boolean(images && !funnelVersions(visual?.rounds ?? []).some((version) => version.candidate.id === images.visualId));
+  const imagesScriptGone = Boolean(images && !imagesScript(images, visual?.rounds ?? []));
   const captionReady = imagesFinished && !imagesScriptGone;
   const captionResumable = caption && (caption.status === "paused" || captionStalled) && funnelResumeRound(caption) <= continuableUpTo(caption, planRounds(caption, CAPTION_MAX_ROUNDS));
   const captionResumeRound = captionResumable && caption ? funnelResumeRound(caption) : undefined;
@@ -1406,7 +1407,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
       how: <p>GPT Image makes each slide from the chosen visual script and the brand’s identity, and letters the slide’s words itself, unless the focus has the program set them: then each image is made without words, with a calm band where the program sets them, and a panorama is one wide scene cut into the slides. The page number and the logo are added afterwards where the brand puts them, and a verified photo or map is pasted unchanged. {imageReviewer} reviews each image: the words as they appear, what covers them, real people, other brands’ logos, what the brand avoids and the facts. A slide it flags is corrected once, from its image before the logo and the page number. Low quality, three calls a slide at most.</p>,
       body: <>
         {factsVerified && !imagesReady && !running ? needs("visual", !visualFinished ? "The images picture the visual script; finish it first." : "The carousel’s words, the deck or the people and places changed since the visual script; write the visual script again first.") : null}
-        {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}. Make the images again to follow it.</InlineNotice> : null}
+        {imagesChanged && running !== "images" ? <InlineNotice tone="info" title="The visual script changed">{images?.visualId === chosenVisualId ? <>These images picture an earlier visual script; the one written since reuses the id {chosenVisualId}.</> : <>These images picture {images?.visualId}; the visual script chosen now is {chosenVisualId}.</>} Make the images again to follow it.</InlineNotice> : null}
         {running === "images" ? <LoadingState>{following ? `${following} Following the run on the server…` : images?.status === "paused" ? "Continuing in a new request while fal works…" : `GPT Image makes the slides; ${imageReviewer} reviews each one. This can take a few minutes.`}</LoadingState> : null}
         {imagesStalled && session ? <InlineNotice tone="warning" title="This run stopped">It has not answered since {stoppedAt}: its request or the server ended. Continue picks it up; an image already asked for is not asked for again.</InlineNotice> : null}
         {runError?.step === "images" ? <InlineNotice tone="error" title="The images stopped">{runError.message}</InlineNotice> : null}
