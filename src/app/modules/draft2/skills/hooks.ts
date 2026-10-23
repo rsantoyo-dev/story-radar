@@ -37,7 +37,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "12",
+  version: "13",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -84,6 +84,13 @@ claim of its own. A guard the headline cannot hold goes in the subheadline
 or slide 2, never later. The program refuses an opening that cites none of a
 guard's facts; the judge names one whose words leave the misreading open
 (MISLEADS).
+In a list or a procedure this is different: the items differ by nature, and
+each item's slide states its own days, price and reservation; that is what
+prevents a reader from generalizing the first item. Slide 2 is the first
+item and says what it is and where, never "les autres ont leurs jours et
+conditions" or "chaque sortie a son détail"; the cover sells the five
+things, never their conditions ("billets, météo, réservation"). The judge
+scores a list's opening on its items, not on a sentence about the others.
 
 ## Cover headline
 - At most 8 words is the aim, 10 at the very most: a complete thought with a

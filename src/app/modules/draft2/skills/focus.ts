@@ -28,7 +28,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const FOCUS_SKILL: Draft2Skill = {
   name: "focus",
-  version: "17",
+  version: "18",
   text: `# The focus of a story
 
 The focus is the brief every later step follows: which editorial line the
@@ -211,6 +211,13 @@ follows the telling.
   prevents it on its own, never the facts that state the news itself. The
   opening states each guard in plain words on the cover or slide 2, citing
   one of its facts; the program checks the citation.
+  In a list or a procedure, the items differ by nature (their days, their
+  price, their reservation), and that difference is never a guard ("les
+  cinq sorties sont gratuites", "chaque sortie est offerte les trois
+  jours"): each item's slide carries its own details, which is what prevents
+  it. A list's guard, if any, concerns the cover's own claim (a theme the
+  items do not all share, a place that is not the publication's); the
+  program checks it on the deck, not on slide 2.
 - spine: the story in beats, one per slide, written after the concept and
   the form and before the directions (the spine skill says the roles, the
   fields and the rules): beats, each with slide, role, scene, words, image,
