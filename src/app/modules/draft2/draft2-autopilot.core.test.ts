@@ -129,3 +129,21 @@ test("a fresh job starts over from the facts whatever the story's latest session
   const continued = harness(["opening"], { fresh: true, steps: [{ step: "facts", status: "ready", ms: 1, startedAt: "2026-10-23T09:00:00.000Z" }], stepRuns: 1 });
   assert.deepEqual((await runAutopilotPass(continued.deps)).steps.map((entry) => entry.step), ["facts", "opening"], "a later pass of a fresh job goes on, it does not start over again");
 });
+
+test("a plan the program refuses is written again once from its findings before the job stops; refused again, it is the editor's (2026-10-23)", async () => {
+  let spineRuns = 0;
+  const findings = "Fix the spine first: The spine plans conditions instead of what the reader does or sees: middle 1 (\"billetterie\").";
+  const h = harness([], { next: () => spineRuns ? { done: true } : { blocked: findings } });
+  const notes: string[] = [];
+  h.deps.runStep = async (step, options) => { if (step === "spine") { spineRuns++; notes.push(options.notes ?? ""); } return session(); };
+  const { end, steps } = await runAutopilotPass(h.deps);
+  assert.deepEqual([end, steps.map((entry) => [entry.step, entry.reason])], [{ kind: "done" }, [["spine", "the program's findings on it"]]]);
+  assert.deepEqual(notes, ["The spine plans conditions instead of what the reader does or sees: middle 1 (\"billetterie\")."], "the findings are the planner's notes");
+  const stubborn = harness([], { next: () => ({ blocked: findings }) });
+  stubborn.deps.runStep = async () => session();
+  const again = await runAutopilotPass(stubborn.deps);
+  assert.deepEqual(again.end, { kind: "blocked", reason: findings }, "rewritten once; the second refusal stops the job");
+  assert.equal(again.steps.length, 1);
+  const other = harness([], { next: () => ({ blocked: "2 people wait for you in People and places." }) });
+  assert.deepEqual((await runAutopilotPass(other.deps)).end, { kind: "blocked", reason: "2 people wait for you in People and places." }, "only a spine's findings are repaired");
+});

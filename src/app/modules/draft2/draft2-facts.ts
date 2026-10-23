@@ -10,7 +10,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import {
   DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, Draft2BusyError, Draft2InputError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts,
   parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
-  type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry, editedFacts } from "./draft2-facts.types";
+  type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry, editedFacts, applyFactsRepair, factsRepairable, repairRequest } from "./draft2-facts.types";
 import { draft2SolModel } from "./draft2-models";
 import { traceCost } from "./draft2-trace-cost";
 import { composeInstructions } from "./skills/draft2-skills";
@@ -124,7 +124,30 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline, deadl
           return;
         }
         if (round === DRAFT2_FACTS_MAX_ROUNDS) {
-          await checkpoint({ status: "needs-review", facts, evaluation, error: `The reviewer did not accept the facts after ${DRAFT2_FACTS_MAX_ROUNDS} extractions. Review the remaining issues.` });
+          // The repair (2026-10-23): the reviewer names a few facts; one call fixes those, and the program accepts the list when every one is addressed and grounded.
+          const timeLeft = (deadline ?? startedAt + TIME_BUDGET_MS) - Date.now();
+          let remaining = "Review the remaining issues.";
+          if (factsRepairable(mechanical, evaluation) && timeLeft >= 60_000) {
+            const issues = [...mechanical, ...evaluation.issues];
+            const repairContents = repairRequest(facts, mechanical, evaluation);
+            const repairedAnswer = await traced(round + 1, "openai", extractorModel, "draft2_facts_repair", "medium", { instructions: EXTRACTOR.instructions, contents: repairContents, previousResponseId: threads.openai?.responseId }, () => generateOpenAiStructuredResponse({
+              apiKey: openAiApiKey, model: extractorModel, instructions: EXTRACTOR.instructions, contents: repairContents,
+              schema: DRAFT2_FACTS_SCHEMA, schemaName: "draft2_facts", maxOutputTokens: EXTRACTOR_MAX_OUTPUT_TOKENS, reasoningEffort: "medium",
+              store: true, previousResponseId: threads.openai?.responseId, auditContext,
+            }), (value) => JSON.parse(value.text));
+            if (repairedAnswer.responseId) threads.openai = { model: extractorModel, responseId: repairedAnswer.responseId };
+            const applied = applyFactsRepair(facts, parseDraft2Facts(repairedAnswer.text), issues);
+            const repairedMechanical = mechanicalFactIssues(applied.facts, articleText, content.title);
+            if (!applied.unaddressed.length && !repairedMechanical.length) {
+              facts = applied.facts;
+              const accepted: Draft2FactsEvaluation = { ...evaluation, accepted: { by: "program", at: new Date().toISOString(), repaired: applied.repair } };
+              rounds.push({ round: round + 1, facts, mechanical: [], repair: applied.repair, evaluation: accepted, at: new Date().toISOString() });
+              await checkpoint({ status: "ready", facts, evaluation: accepted, error: null });
+              return;
+            }
+            remaining = `The program's repair left ${[...applied.unaddressed, ...repairedMechanical.map((issue) => `${issue.code}${issue.factId ? ` (${issue.factId})` : ""}`)].join(", ")}: review the remaining issues.`;
+          }
+          await checkpoint({ status: "needs-review", facts, evaluation, error: `The reviewer did not accept the facts after ${DRAFT2_FACTS_MAX_ROUNDS} extractions. ${remaining}` });
           return;
         }
         await checkpoint({ evaluation });

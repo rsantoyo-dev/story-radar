@@ -15,10 +15,14 @@ const article = "The program reviews product videos no longer than five minutes.
 type Call = { provider: "openai" | "anthropic"; input: Record<string, unknown> };
 
 /** The orchestrator with both providers and the database replaced; `answers` decide each round. */
-function harness({ reviews, extractions, failExtractionAt, title = "Story" }: {
+function harness({ reviews, extractions, failExtractionAt, title = "Story", reviseScore = 60, repairAnswer }: {
   reviews: ("valid" | "revise")[];
   extractions?: string[];
   failExtractionAt?: number;
+  /** The reviewer's score on a "revise": 60 keeps the list for a human; 70 or more lets the program repair it. */
+  reviseScore?: number;
+  /** What the extractor answers to the repair task (the fourth extraction call). */
+  repairAnswer?: string;
   /** The story's headline, part of the article the program and the models read. */
   title?: string;
 }) {
@@ -45,12 +49,13 @@ function harness({ reviews, extractions, failExtractionAt, title = "Story" }: {
       calls.push({ provider: "openai", input });
       const index = extraction++;
       if (failExtractionAt === index + 1) throw Object.assign(new Error("Claude? no: OpenAI gpt-6.1-sol failed (HTTP 529: overloaded)"), { status: 529 });
-      return { text: facts(evidenceByRound[index]), provider: "openai", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, responseId: `resp_${index + 1}` };
+      const text = (input.contents as { task?: string }).task === "repair" && repairAnswer ? repairAnswer : facts(evidenceByRound[index] ?? evidenceByRound[0]);
+      return { text, provider: "openai", model: input.model, usage: { promptTokens: 100, outputTokens: 50, thoughtsTokens: 0, totalTokens: 150 }, responseId: `resp_${index + 1}` };
     } },
     "../stories/anthropic-structured-response": { generateAnthropicStructuredResponse: async (input: Record<string, unknown>) => {
       calls.push({ provider: "anthropic", input });
       const verdict = reviews[review++] ?? "revise";
-      return { text: JSON.stringify({ verdict, score: verdict === "valid" ? 95 : 60, issues: verdict === "valid" ? [] : [{ code: "VAGUE", factId: "f1", detail: "Say which program." }], suggestions: verdict === "valid" ? [] : ["Name the program."], summary: "Reviewed." }), provider: "anthropic", model: input.model, usage: { promptTokens: 200, outputTokens: 40, thoughtsTokens: 0, totalTokens: 240 }, cachedInputTokens: review > 1 ? 150 : 0 };
+      return { text: JSON.stringify({ verdict, score: verdict === "valid" ? 95 : reviseScore, issues: verdict === "valid" ? [] : [{ code: "VAGUE", factId: "f1", detail: "Say which program." }], suggestions: verdict === "valid" ? [] : ["Name the program."], summary: "Reviewed." }), provider: "anthropic", model: input.model, usage: { promptTokens: 200, outputTokens: 40, thoughtsTokens: 0, totalTokens: 240 }, cachedInputTokens: review > 1 ? 150 : 0 };
     } },
     "./draft2-session.repository": {
       activeDraft2Session: async () => undefined,
@@ -159,4 +164,25 @@ test("the editor takes a list the reviewer did not accept: the session is ready,
   running.sessions.push({ id: "session-1", topicId, storyId, step: "facts", status: "running", facts: [], evaluation: null, rounds: [], trace: [] });
   await assert.rejects(running.accept(), /not waiting for you/);
   await assert.rejects(running.accept("session-9"), /was not found/);
+});
+
+test("after three extractions with a close verdict, the program repairs the facts the reviewer names in one call and accepts the list itself; a repair that changes nothing leaves it for a human (2026-10-23)", async () => {
+  const repaired = JSON.stringify({ facts: [{ id: "f1", claim: "The Pentagon program reviews videos within five minutes.", evidence: "reviews product videos no longer than five minutes", kind: "event", status: "established", attribution: null, qualifier: null, importance: 90 }] });
+  const h = harness({ reviews: ["revise", "revise", "revise"], reviseScore: 82, repairAnswer: repaired });
+  const session = await h.run();
+  assert.equal(session.status, "ready");
+  assert.equal(h.calls.length, 7, "three extractions, three reviews, one repair");
+  assert.equal((h.calls[6].input.contents as { task: string }).task, "repair");
+  assert.deepEqual((h.calls[6].input.contents as { facts: { id: string }[] }).facts.map((fact) => fact.id), ["f1"], "only the fact the reviewer named");
+  const evaluation = session.evaluation as types.Draft2FactsEvaluation;
+  assert.equal(JSON.stringify(evaluation.accepted), JSON.stringify({ by: "program", at: evaluation.accepted!.at, repaired: { changed: ["f1"], removed: [], added: [] } }));
+  assert.equal((session.facts as types.Draft2Fact[]).find((fact) => fact.id === "f1")!.claim, "The Pentagon program reviews videos within five minutes.");
+  assert.equal((session.rounds as types.Draft2FactsRound[]).length, 4, "the repair is a round of its own");
+  const unchanged = harness({ reviews: ["revise", "revise", "revise"], reviseScore: 82 });
+  const stuck = await unchanged.run();
+  assert.equal(stuck.status, "needs-review");
+  assert.match(String(stuck.error), /The program's repair left f1/u);
+  const low = harness({ reviews: ["revise", "revise", "revise"] });
+  await low.run();
+  assert.equal(low.calls.length, 6, "a verdict of 60 is not repaired: the list is the editor's");
 });

@@ -118,7 +118,7 @@ export async function stopDraft2Autopilot({ topicId, storyId, jobId }: { topicId
 }
 
 /** Runs one step on the server, as the step's route would, to the pass's deadline. */
-async function runStepOnServer(step: Draft2AutopilotStep, { topicId, storyId, session, continuing, deadline }: { topicId: string; storyId: string; session: AutopilotSession | null; continuing: boolean; deadline: number }): Promise<Draft2SessionRow> {
+async function runStepOnServer(step: Draft2AutopilotStep, { topicId, storyId, session, continuing, deadline, notes }: { topicId: string; storyId: string; session: AutopilotSession | null; continuing: boolean; deadline: number; notes?: string }): Promise<Draft2SessionRow> {
   const row = session as unknown as Draft2SessionRow | null;
   if (step === "facts") return runDraft2Facts({ topicId, storyId, models: row?.models ?? undefined, pipeline: row?.pipeline ?? undefined, deadline });
   if (!session) throw new Draft2InputError(`The ${AUTOPILOT_STEP_TITLE[step].toLowerCase()} needs a session; the facts come first.`);
@@ -126,7 +126,7 @@ async function runStepOnServer(step: Draft2AutopilotStep, { topicId, storyId, se
   switch (step) {
     case "inventory": return findDraft2Inventory(input);
     case "focus": return decideDraft2Focus(input);
-    case "spine": return planDraft2Spine(input);
+    case "spine": return planDraft2Spine({ ...input, ...(notes ? { notes } : {}) });
     case "mentions": return findDraft2Mentions(input);
     case "review": return reviewDraft2Carousel(input);
     case "opening": return runDraft2Opening({ ...input, resume: continuing, deadline });

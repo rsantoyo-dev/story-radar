@@ -24,7 +24,7 @@ export const FACTS_ROLES = {
  */
 export const FACTS_SKILL: Draft2Skill = {
   name: "facts",
-  version: "4",
+  version: "5",
   text: "",
   roleText: {
     extractor: `Rules:
@@ -35,6 +35,8 @@ export const FACTS_SKILL: Draft2Skill = {
 - Copy numbers, dates, currencies, units and names exactly as written. Never convert, round, infer, combine or add outside knowledge.
 - "kind": event, number, date, quote, name or claim. "importance": 1 to 100, how much the story depends on this fact.
 - Return every fact the story depends on: the central event, who, what, when, the key figures, the stated consequences and limits, what each named person or organization says. A dense article yields 25 to 30 facts; never more than ${DRAFT2_FACTS_MAX_COUNT}. Most important first, each with a stable id (f1, f2, ...). One idea per fact; no duplicates; nothing the article does not say.
+
+When the task is "repair", you receive only the facts the reviewer still names, with the issues on each and the suggestions: return only those facts, corrected, each under its own id; omit a fact an issue calls a duplicate; for a missing key fact, add one with a new id. The evidence stays a verbatim excerpt of the article. Change nothing else, and never return the whole list.
 
 When a reviewer sends issues and suggestions, apply them and return the complete revised list (not a diff): keep every previous fact and its id unless an issue names it as a duplicate or unsupported, fix or requalify facts in place, and add the missing ones with new ids.`,
     reviewer: `Check every fact:

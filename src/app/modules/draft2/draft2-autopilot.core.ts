@@ -38,6 +38,9 @@ export const AUTOPILOT_STEP_TITLE: Record<Draft2Step, string> = {
 
 /** The reason the autopilot writes again a funnel step whose last run ended with nothing that may win. */
 export const NO_CLEAN_VERSION = "its last run ended with no clean version";
+/** The reason a plan is written again: the program's findings on it (a list's beats that ordered conditions, a guard over the items). */
+export const FROM_FINDINGS = "the program's findings on it";
+const SPINE_BLOCK = "Fix the spine first: ";
 
 /** The session as the decisions read it: the row, or the canvas's view of it (its dates as strings). */
 export type AutopilotSession = {
@@ -234,7 +237,7 @@ export type AutopilotPassDependencies = {
   /** The session as it stands now (the latest of the story). */
   loadSession: () => Promise<AutopilotSession | null>;
   /** Runs one step on the session to a deadline (epoch ms) and returns the session it ended on; a step that pauses returns it paused. */
-  runStep: (step: Draft2AutopilotStep, options: { session: AutopilotSession | null; continuing: boolean; deadline: number }) => Promise<AutopilotSession>;
+  runStep: (step: Draft2AutopilotStep, options: { session: AutopilotSession | null; continuing: boolean; deadline: number; /** The program's findings, for a plan rewritten from them. */ notes?: string }) => Promise<AutopilotSession>;
   /** Applies the review's necessary patches the way the autopilot does, and returns the session. */
   applyReviewPatches: (session: AutopilotSession) => Promise<AutopilotSession>;
   /** Whether the editor asked the job to stop; read between steps. */
@@ -274,7 +277,28 @@ export async function runAutopilotPass(deps: AutopilotPassDependencies): Promise
     // A fresh job's first step is the facts: a new session, whatever the story's latest one says; from then on the decisions read that session.
     const next: AutopilotNext = deps.fresh && steps.length === 0 && runs === 0 ? { step: "facts" } : (deps.next ?? nextAutopilotStep)(session, deps.now());
     if ("done" in next) return { end: { kind: "done" }, steps };
-    if ("blocked" in next) return { end: { kind: "blocked", reason: next.blocked }, steps };
+    if ("blocked" in next) {
+      // A plan the program refuses is written again once from its findings (2026-10-23: "debería ser una llamada simple para arreglarse"); refused again, it is the editor's.
+      const repairable = next.blocked.startsWith(SPINE_BLOCK) && !steps.some((entry) => entry.step === "spine" && entry.reason === FROM_FINDINGS);
+      if (!repairable) return { end: { kind: "blocked", reason: next.blocked }, steps };
+      const left = deps.deadline - deps.now();
+      if (left < (AUTOPILOT_STEP_ESTIMATE_MS.spine ?? AUTOPILOT_MIN_STEP_MS)) return { end: { kind: "out-of-time", next: "spine" }, steps };
+      runs += 1;
+      await deps.progress({ currentStep: "spine", steps, ...(session ? { sessionId: session.id } : {}) });
+      const begin = deps.now();
+      try {
+        session = await deps.runStep("spine", { session, continuing: false, deadline: deps.deadline, notes: next.blocked.slice(SPINE_BLOCK.length) });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "The spine step failed.";
+        steps.push({ step: "spine", status: "failed", ms: deps.now() - begin, startedAt: new Date(begin).toISOString(), reason: FROM_FINDINGS });
+        await deps.progress({ currentStep: null, steps });
+        return { end: { kind: "failed", reason: `The spine step failed: ${reason}` }, steps };
+      }
+      steps.push({ step: "spine", status: stepOutcome(session, "spine"), ms: deps.now() - begin, startedAt: new Date(begin).toISOString(), reason: FROM_FINDINGS });
+      await deps.progress({ currentStep: null, steps, sessionId: session.id });
+      previous = undefined;
+      continue;
+    }
     if (!autopilotStepRuns(next.step, deps.until)) return { end: { kind: "done" }, steps };
     if (next.step === previous) {
       return { end: { kind: "blocked", reason: next.reason === NO_CLEAN_VERSION

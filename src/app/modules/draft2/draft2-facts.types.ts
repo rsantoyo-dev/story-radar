@@ -75,9 +75,12 @@ export type Draft2FactsEvaluation = {
   /** Concrete instructions for the extractor's next pass. */
   suggestions: string[];
   summary: string;
-  /** The editor took the list as it stands after the reviewer's last "revise" (acceptDraft2Facts): its issues stay in view, the next steps build on these facts. */
-  accepted?: { by: "editor"; at: string };
+  /** The editor took the list as it stands after the reviewer's last "revise" (acceptDraft2Facts), or the program repaired the facts the reviewer named and accepted the list (repairDraft2Facts): the issues stay in view, the next steps build on these facts. */
+  accepted?: { by: "editor" | "program"; at: string; repaired?: Draft2FactsRepair };
 };
+
+/** What the program's repair changed: the facts rewritten, the duplicates removed, the key facts added. */
+export type Draft2FactsRepair = { changed: string[]; removed: string[]; added: string[] };
 
 export type Draft2FactsRound = {
   round: number;
@@ -87,6 +90,8 @@ export type Draft2FactsRound = {
   /** Facts of the previous round the extractor dropped without a reason; the program put them back. */
   restored?: string[];
   evaluation?: Draft2FactsEvaluation;
+  /** The program's repair round (2026-10-23): one call that rewrote the facts the reviewer named, then the program's own checks. */
+  repair?: Draft2FactsRepair;
   at: string;
 };
 
@@ -322,4 +327,67 @@ export function mergeRevisedFacts(previous: readonly Draft2Fact[], revised: read
   const restored = previous.filter((fact) =>
     !ids.has(fact.id) && !removable.has(fact.id) && !claims.has(comparableText(fact.claim)) && !evidence.has(comparableText(fact.evidence)));
   return { facts: [...revised, ...restored].slice(0, DRAFT2_FACTS_MAX_COUNT), restored: restored.map((fact) => fact.id) };
+}
+
+/**
+ * The repair (2026-10-23, the editor: "si vemos que necesita review, ya
+ * sabemos el punto específico; debería ser una llamada simple para
+ * arreglarse"). After the last extraction the reviewer still names a few
+ * facts (a typo the article carried, a duplicate, an inferred attribution):
+ * instead of a fourth rewrite of the whole list, or a human, one call fixes
+ * the named facts only, and the program decides: every named fact changed or
+ * removed, every key fact asked for added, every evidence found verbatim in
+ * the article. Below a score of FACTS_REPAIR_MIN_SCORE, or with an issue that
+ * names no fact, the list is the editor's to read.
+ */
+export const FACTS_REPAIR_MIN_SCORE = 70;
+
+/** Whether the reviewer's last verdict is one the program can repair: every issue names a fact or asks for a missing one, and the list is close. */
+export function factsRepairable(mechanical: readonly Draft2FactsIssue[], evaluation: Draft2FactsEvaluation): boolean {
+  const issues = [...mechanical, ...evaluation.issues];
+  return evaluation.verdict === "revise" && evaluation.score >= FACTS_REPAIR_MIN_SCORE && issues.length > 0
+    && issues.every((issue) => Boolean(issue.factId) || issue.code === "MISSING_KEY_FACT");
+}
+
+/** The extractor's repair task: the facts named, the findings on each, and the reviewer's suggestions; it returns those facts corrected. */
+export function repairRequest(facts: readonly Draft2Fact[], mechanical: readonly Draft2FactsIssue[], evaluation: Draft2FactsEvaluation) {
+  const issues = [...mechanical, ...evaluation.issues];
+  const named = new Set(issues.flatMap((issue) => issue.factId ? [issue.factId] : []));
+  return {
+    task: "repair",
+    facts: facts.filter((fact) => named.has(fact.id)),
+    issues,
+    suggestions: evaluation.suggestions,
+    instruction: "Return only the facts listed here, corrected as the issues and suggestions say, each with its id; omit a fact an issue calls a duplicate; for a missing key fact, add one with a new id. The evidence stays a verbatim excerpt of the article. Change nothing else.",
+  };
+}
+
+/**
+ * The repaired facts applied to the list: a named fact returned replaces its
+ * own; a named fact omitted is removed only when an issue called it a
+ * duplicate, else it is unaddressed; a new fact is added only when a key fact
+ * was asked for; anything else the model returned is ignored.
+ */
+export function applyFactsRepair(facts: readonly Draft2Fact[], repaired: readonly Draft2Fact[], issues: readonly Draft2FactsIssue[]): { facts: Draft2Fact[]; repair: Draft2FactsRepair; unaddressed: string[] } {
+  const named = [...new Set(issues.flatMap((issue) => issue.factId ? [issue.factId] : []))];
+  const duplicates = new Set(issues.filter((issue) => issue.code === "DUPLICATE" && issue.factId).map((issue) => issue.factId));
+  const missingKey = issues.some((issue) => issue.code === "MISSING_KEY_FACT");
+  const byId = new Map(repaired.map((fact) => [fact.id, fact]));
+  const known = new Set(facts.map((fact) => fact.id));
+  const changed: string[] = [], removed: string[] = [], unaddressed: string[] = [];
+  const next: Draft2Fact[] = [];
+  for (const fact of facts) {
+    if (!named.includes(fact.id)) { next.push(fact); continue; }
+    const fixed = byId.get(fact.id);
+    if (fixed) {
+      const same = comparableText(fixed.claim) === comparableText(fact.claim) && (fixed.attribution ?? "") === (fact.attribution ?? "") && fixed.status === fact.status && (fixed.qualifier ?? "") === (fact.qualifier ?? "") && comparableText(fixed.evidence) === comparableText(fact.evidence);
+      if (same) unaddressed.push(fact.id); else changed.push(fact.id);
+      next.push(same ? fact : fixed);
+    } else if (duplicates.has(fact.id)) removed.push(fact.id);
+    else { unaddressed.push(fact.id); next.push(fact); }
+  }
+  const added = missingKey ? repaired.filter((fact) => !known.has(fact.id)).map((fact) => fact.id) : [];
+  for (const fact of repaired) if (added.includes(fact.id)) next.push(fact);
+  if (missingKey && !added.length) unaddressed.push("a missing key fact");
+  return { facts: next, repair: { changed, removed, added }, unaddressed };
 }

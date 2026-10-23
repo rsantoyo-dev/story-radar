@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Draft2ResponseError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts, parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest, editedFacts, type Draft2Fact } from "./draft2-facts.types";
+  Draft2ResponseError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts, parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest, editedFacts, applyFactsRepair, factsRepairable, repairRequest, type Draft2Fact } from "./draft2-facts.types";
 
 const article = "The Pentagon’s program reviews product videos “no longer than five minutes”. A DOD official says awards took less than a week in several instances.\nOpenAI, Anthropic, and Google are all listed as participants.";
 
@@ -91,4 +91,38 @@ test("the editor changes a fact's claim or attribution by hand: the evidence sta
   assert.throws(() => editedFacts(facts, "f7", { claim: "  " }, now), /cannot be left empty/u);
   assert.throws(() => editedFacts(facts, "f7", { claim: facts[1].claim }, now), /already says that/u);
   assert.equal("attribution" in editedFacts(facts, "f6", { attribution: "" }, now)[0], false, "an emptied attribution goes");
+});
+
+test("the repair's rules: repairable only when every issue names a fact or asks for one and the list is close; a named fact replaced, a duplicate omitted removed, a key fact added, anything else ignored or unaddressed", () => {
+  const facts: Draft2Fact[] = [
+    { id: "f1", claim: "Le tribunal a suspendu le permis.", evidence: "le tribunal", kind: "event", status: "established", importance: 90 },
+    { id: "f6", claim: "Selon le tribunal de la RAJC, la présence peut constituer une nuisance.", evidence: "RAJC", kind: "event", status: "attributed", attribution: "le tribunal de la RAJC", importance: 70 },
+    { id: "f24", claim: "Le début de la suspension est laissé à la discrétion des policiers.", evidence: "le tribunal", kind: "event", status: "established", importance: 60 },
+  ];
+  const issues = [
+    { code: "INEXACT_VALUE" as const, factId: "f6", detail: "RAJC is the article's typo for RACJ." },
+    { code: "DUPLICATE" as const, factId: "f24", detail: "Reuses f1's evidence." },
+    { code: "MISSING_KEY_FACT" as const, detail: "The date of the decision is missing." },
+  ];
+  const evaluation = { verdict: "revise" as const, score: 82, issues, suggestions: [], summary: "" };
+  assert.equal(factsRepairable([], evaluation), true);
+  assert.equal(factsRepairable([], { ...evaluation, score: 65 }), false, "too far from accepted");
+  assert.equal(factsRepairable([], { ...evaluation, issues: [{ code: "VAGUE", detail: "Several facts are vague." }] }), false, "an issue that names no fact is the editor's");
+  assert.equal(factsRepairable([], { ...evaluation, verdict: "valid", issues: [] }), false);
+  assert.deepEqual(repairRequest(facts, [], evaluation).facts.map((fact) => fact.id), ["f6", "f24"], "only the facts named travel");
+  const repaired: Draft2Fact[] = [
+    { ...facts[1], claim: "Selon le tribunal de la RACJ, la présence peut constituer une nuisance.", attribution: "le tribunal de la RACJ" },
+    { id: "f30", claim: "La décision date du 10 octobre 2026.", evidence: "10 octobre 2026", kind: "date", status: "established", importance: 50 },
+    { id: "f1", claim: "Le tribunal a suspendu le permis.", evidence: "le tribunal", kind: "event", status: "established", importance: 90 },
+  ];
+  const applied = applyFactsRepair(facts, repaired, issues);
+  assert.deepEqual(applied.repair, { changed: ["f6"], removed: ["f24"], added: ["f30"] });
+  assert.deepEqual(applied.unaddressed, []);
+  assert.deepEqual(applied.facts.map((fact) => fact.id), ["f1", "f6", "f30"], "f1 was not named: the model's copy of it is ignored");
+  assert.equal(applied.facts[1].attribution, "le tribunal de la RACJ");
+  const partial = applyFactsRepair(facts, [facts[1]], issues);
+  assert.deepEqual(partial.unaddressed, ["f6", "a missing key fact"], "returned unchanged, and no key fact added");
+  assert.deepEqual(partial.repair, { changed: [], removed: ["f24"], added: [] });
+  const noDuplicateRule = applyFactsRepair(facts, [], [{ code: "VAGUE", factId: "f24", detail: "Vague." }]);
+  assert.deepEqual(noDuplicateRule.unaddressed, ["f24"], "an omitted fact is removed only when called a duplicate");
 });

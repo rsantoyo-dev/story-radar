@@ -1621,7 +1621,7 @@ function FactsSessionView({ session, verified, onEdit }: { session: Draft2Sessio
       </li>)}
     </ol> : null}
     {session.facts?.length ? <div>
-      <SectionHeader level={3} title={`${session.facts.length} facts`} description={verified ? (session.evaluation?.accepted ? "Taken as they stand by you: the next steps build only on these; what the reviewer still wanted is above." : "Verified: the next steps build only on these.") : "The latest list; not verified yet."} />
+      <SectionHeader level={3} title={`${session.facts.length} facts`} description={verified ? (session.evaluation?.accepted?.by === "program" ? `Repaired by the program after the reviewer's last verdict (${[session.evaluation.accepted.repaired?.changed.length ? `${session.evaluation.accepted.repaired.changed.join(", ")} rewritten` : "", session.evaluation.accepted.repaired?.removed.length ? `${session.evaluation.accepted.repaired.removed.join(", ")} removed` : "", session.evaluation.accepted.repaired?.added.length ? `${session.evaluation.accepted.repaired.added.join(", ")} added` : ""].filter(Boolean).join("; ")}); every evidence found in the article. The next steps build only on these; the reviewer's verdict is above.` : session.evaluation?.accepted ? "Taken as they stand by you: the next steps build only on these; what the reviewer still wanted is above." : "Verified: the next steps build only on these.") : "The latest list; not verified yet."} />
       <ol className={styles.factList}>
         {session.facts.map((fact) => <li key={fact.id} className={styles.factItem}>
           <div className={styles.factHead}>
