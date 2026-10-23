@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
+  FOCUS_BEAT_WORDS_MAX_CHARACTERS, CLASSIC_CONCEPT, CLASSIC_NARRATIVE, DRAFT2_FOCUS_PLAN_SCHEMA, DRAFT2_FOCUS_SCHEMA, focusConcept, FOCUS_FIELDS, applyFocusEdit, decidedFocus, editorChoicesOf, focusDecisionRequest, focusFindings, focusForModels, focusItemCount, focusLine,
   anchorNoun, beatFactsFinding, beatFactsMissing, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineBeatFactIds, spineMiddleFactIds, spineShapeProblem,
   spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus, focusPresentation, FOCUS_DECISION_FIELDS,
   focusNarrative, spineLimitsForModels, focusPlanSchema, PANORAMA_DEFAULT_ANCHOR, PANORAMA_WORLD_MAX_CHARACTERS,
@@ -649,14 +649,14 @@ test("how the carousel is made is the editor's: a panorama always takes the prog
 });
 
 test("the last plan answer's beat over a character limit is cut at a word instead of failing the step", () => {
-  const long = "Cuenta que el almidón líquido sale por la cáscara y se vuelve sólido en unas centésimas de segundo, y que por eso no hay dos palomitas iguales; además, que el sonido viene de las cavidades vacías que vibran al caer la presión.";
-  assert.ok(long.length > 200);
+  const long = "Cuenta que el almidón líquido sale por la cáscara y se vuelve sólido en unas centésimas de segundo, y que por eso no hay dos palomitas iguales; además, que el sonido viene de las cavidades vacías que vibran al caer la presión. ".repeat(2).trim();
+  assert.ok(long.length > FOCUS_BEAT_WORDS_MAX_CHARACTERS);
   const answerWith = (words: string) => JSON.stringify({ levers: { primary: "free", alternatives: [], factIds: [], paidBy: "last" }, spine: { beats: ARC_SPINE.beats.map((entry, index) => index === 2 ? { ...entry, words } : entry) }, direction: "d", visualDirection: "v", reasons: {} });
   const known = new Set(["f1", "f2", "f3"]);
   const arc = { kind: "arc" as const, itemFactIds: [] };
-  assert.throws(() => parseFocusPlan(answerWith(long), { known, structure: arc }), /Beat 3 needs the words' job, in 1 to 200 characters/, "a first answer is asked again");
+  assert.throws(() => parseFocusPlan(answerWith(long), { known, structure: arc }), new RegExp(`Beat 3 needs the words' job, in 1 to ${FOCUS_BEAT_WORDS_MAX_CHARACTERS} characters`), "a first answer is asked again");
   const cut = parseFocusPlan(answerWith(long), { known, structure: arc, clip: true }).spine.beats[2].words;
-  assert.ok(cut.length <= 200 && long.startsWith(cut), "the last one keeps its beat, cut at a word");
+  assert.ok(cut.length <= FOCUS_BEAT_WORDS_MAX_CHARACTERS && long.startsWith(cut), "the last one keeps its beat, cut at a word");
   assert.match(cut, /[\p{L}]$/u, "never on a comma or a space");
 });
 

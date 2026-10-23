@@ -229,7 +229,8 @@ export const FOCUS_SPINE_MAX_BEATS = 10;
 export const FOCUS_SPINE_ARC_MIDDLE_MIN = 1;
 export const FOCUS_SPINE_ARC_MIDDLE_MAX = 5;
 export const FOCUS_BEAT_SCENE_MAX_CHARACTERS = 240;
-export const FOCUS_BEAT_WORDS_MAX_CHARACTERS = 200;
+/** A list's item beat names what the reader does, where, and its practical details: 200 characters made the planner compress them into conditions and fail the limit three times in a row (2026-10-23). */
+export const FOCUS_BEAT_WORDS_MAX_CHARACTERS = 280;
 export const FOCUS_BEAT_IMAGE_MAX_CHARACTERS = 240;
 export const FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS = 160;
 /** The image's dominant subject, in a few words: the program compares consecutive beats' subjects. */
@@ -1568,7 +1569,7 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
       const caveat = caveatsIn(beat.words)[0] ?? (beat.slide === "cover" ? choreIn(beat.words) : undefined);
       return caveat ? [`${name} ("${caveat}")`] : [];
     });
-    if (planned.length) findings.push({ field: "spine", code: "SPINE_CAVEATS", detail: `The spine plans conditions instead of what the reader does or sees: ${planned.join(", ")}. In a ${values.structure.kind === "list" ? "list" : "procedure"} each item's practical line carries its own days, price and reservation; the cover sells the items and the closing ends on the choice. Rewrite the plan, or edit these beats.` });
+    if (planned.length) findings.push({ field: "spine", code: "SPINE_CAVEATS", detail: `The spine plans conditions instead of what the reader does or sees: ${planned.join(", ")}. In a ${values.structure.kind === "list" ? "list" : "procedure"} each item's beat says what the reader does or sees and where, then its practical line as plain data ("Ligne pratique : samedi 24 en soirée, réservation en ligne"), never as a warning ("à confirmer", "vérifie", "selon la météo", "exige un achat", "avant de partir"); the cover sells the items and the closing ends on the choice, with no checks. Rewrite the plan, or edit these beats.` });
     // A guard that generalizes over the items ("les cinq sorties sont gratuites", "chaque sortie…") names the items' differences, which their own slides carry: it is no guard.
     const generalizing = (values.guards ?? []).filter((guard) => /(?<![\p{L}])(chaque|chacune?|toutes?|tous|les (?:cinq|quatre|trois|six|sept|huit|neuf|dix)|every|each|all|cada|tod[oa]s|las (?:cinco|cuatro|tres|seis|siete|ocho|nueve|diez))(?![\p{L}])/iu.test(guard.misreading));
     if (generalizing.length) findings.push({ field: "spine", code: "SPINE_GUARD_ITEMS", detail: `${generalizing.map((guard) => `"${guard.misreading}"`).join(" and ")} ${generalizing.length === 1 ? "generalizes" : "generalize"} over the items: their differences are no guard, each item's slide carries its own details. Rewrite the plan without ${generalizing.length === 1 ? "it" : "them"}.` });

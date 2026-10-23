@@ -56,7 +56,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "12",
+  version: "13",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -93,7 +93,7 @@ story takes the ones it needs, in this order, and may repeat rising:
   narrative form when there is one (the guide arrives, the object crosses,
   the next section of the scene) and through the concept (the next reveal,
   the next link of the chain); at most 240 characters.
-- words: the words' job on this slide, at most 200 characters: what they
+- words: the words' job on this slide, at most 280 characters: what they
   state, ask or promise; never the words themselves.
 - image: what the image adds that the words cannot say, at most 240
   characters: the scale, the consequence, the moment before or after, the
