@@ -89,3 +89,20 @@ line the finding had asked for. Now:
   refusal when the step failed on two refused answers (in the job, or when
   the job finds the session failed that way), as it does for "Fix the spine
   first". A provider's failure is not rewritten from: it names nothing to fix.
+
+## Addendum, 2026-10-23: a judgment the program refuses
+
+Fogón Lab's salt-and-water Opening failed after two rounds and eight minutes
+on "The judge scored c3.2 twice": one malformed line in the judge's answer
+threw away the round. Now, in every funnel step (Opening, Closing, Deck,
+Visual script, Caption):
+
+- A candidate scored twice keeps its lower score, in its first place, and the
+  round's summary says so (`funnelParseEvaluation`). The program decides; it
+  never accepts on the kinder of two readings.
+- Any other refused judgment (a candidate left unscored, an unknown id, a
+  score that is no integer, an incomplete verdict) is asked for again once,
+  with what it broke and the round's candidate ids, if the request still has
+  the time a judgment takes (else the round pauses and a new request judges
+  it). The refusal stays on the call in the trace. Refused again, the step
+  fails as before: never a third judgment.

@@ -659,23 +659,30 @@ export function funnelParseEvaluation<C extends FunnelCandidate, S extends Funne
     .slice(0, maxProposals);
   const proposed = new Set([...proposals.map((proposal) => proposal.id), ...offered.map((_, index) => `p${index + 1}`)]);
   const known = new Set(candidateIds);
-  const scored = new Set<string>();
-  const scores = body.scores.flatMap((raw): S[] => {
+  // A candidate scored twice keeps its lower score, in its first place: the program decides, and never accepts on the kinder of two readings
+  // (2026-10-23, Fogón Lab's salt-and-water Opening: "The judge scored c3.2 twice" failed the step after two rounds and eight minutes).
+  const byCandidate = new Map<string, S>();
+  const twice = new Set<string>();
+  for (const raw of body.scores) {
     const item = funnelRecord(raw);
     const candidateId = funnelText(item.candidateId, 24);
     // A score the judge gave its own proposal is dropped: the proposal is judged blind in the next round.
-    if (candidateId && !known.has(candidateId) && proposed.has(candidateId)) return [];
+    if (candidateId && !known.has(candidateId) && proposed.has(candidateId)) continue;
     if (!candidateId || !known.has(candidateId)) throw new Draft2ResponseError(`The judge scored an unknown candidate (${String(item.candidateId)})`);
-    if (scored.has(candidateId)) throw new Draft2ResponseError(`The judge scored ${candidateId} twice`);
-    scored.add(candidateId);
     const value = (key: string) => {
       const number = item[key];
       if (typeof number !== "number" || !Number.isInteger(number)) throw new Draft2ResponseError(`The judge's ${key} score for ${candidateId} is not an integer`);
       return Math.min(100, Math.max(1, number));
     };
     const keep = funnelText(item.keep, 300);
-    return [{ candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "", ...(keep ? { keep } : {}) } as unknown as S];
-  });
+    const score = { candidateId, ...Object.fromEntries(criteria.map((criterion) => [criterion, value(criterion)])), overall: value("overall"), note: funnelText(item.note, 600) ?? "", ...(keep ? { keep } : {}) } as unknown as S;
+    const earlier = byCandidate.get(candidateId);
+    if (earlier) twice.add(candidateId);
+    if (!earlier || score.overall < earlier.overall) byCandidate.set(candidateId, score);
+  }
+  const scored = new Set(byCandidate.keys());
+  const scores = [...byCandidate.values()];
+  if (twice.size) summary = `${summary} (The judge scored ${[...twice].join(", ")} twice; the lower score stands.)`.slice(0, 1_200);
   const unscored = candidateIds.filter((id) => !scored.has(id));
   if (unscored.length) throw new Draft2ResponseError(`The judge did not score ${unscored.join(", ")}`);
   if (!scored.has(winnerId)) {

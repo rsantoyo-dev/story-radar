@@ -77,7 +77,9 @@ test("the judge's answer is parsed strictly: every candidate scored once with in
   assert.throws(() => parseOpeningEvaluation(answer({ scores: [score("c1", 90), score("c2", 90.5)] }), ids), /not an integer/);
   assert.throws(() => parseOpeningEvaluation(answer({ scores: [score("c1", 90)] }), ids), /did not score c2/);
   assert.throws(() => parseOpeningEvaluation(answer({ scores: [score("c1", 90), score("c2", 90), score("c3", 90)] }), ids), /unknown candidate/);
-  assert.throws(() => parseOpeningEvaluation(answer({ scores: [score("c1", 90), score("c1", 90)] }), ids), /twice/);
+  assert.throws(() => parseOpeningEvaluation(answer({ scores: [score("c1", 90), score("c1", 90)] }), ids), /did not score c2/, "a score twice never stands for another candidate");
+  const doubled = parseOpeningEvaluation(answer({ scores: [score("c1", 90), score("c2", 88), score("c2", 71)] }), ids);
+  assert.deepEqual([doubled.scores.map((entry) => [entry.candidateId, entry.overall]), / \(The judge scored c2 twice; the lower score stands\.\)$/.test(doubled.summary)], [[["c1", 90], ["c2", 71]], true], "a candidate scored twice keeps its lower score; the summary says so (2026-10-23)");
   assert.throws(() => parseOpeningEvaluation(answer({ verdict: "maybe" }), ids), /incomplete/);
   assert.throws(() => parseOpeningEvaluation(answer({ summary: "" }), ids), /incomplete/);
   assert.throws(() => parseOpeningEvaluation("[1]", ids), /not an object/);

@@ -194,6 +194,23 @@ const json = (value: unknown) => JSON.stringify(value);
 const solContextOf = (input: Record<string, unknown>) => JSON.parse(String(input.instructions).split("\n# Context\n")[1].split("\n").slice(1).join("\n")) as Record<string, unknown>;
 const ROUND_ONE = HEADLINES.map((_, index) => `c${index + 1}`);
 
+test("a judgment the program refuses is asked for again once with what it broke; the second decides, and a second refusal fails the step as before (2026-10-23)", async () => {
+  // The judge leaves c2 unscored: asked again, with the round's candidates named, it scores them all.
+  const unscored = (contents: JudgeContents) => ({ ...judge("accept", "c1", { c1: 96 })(contents), scores: [score("c1", 96)] });
+  const h = harness({ writes: [writer()], judgments: [unscored, judge("accept", "c1", { c1: 96 })] });
+  const session = await h.run();
+  assert.equal(json([session.opening?.status, session.opening?.winnerId, h.judgeCalls().length]), json(["ready", "c1", 2]));
+  const [first, second] = h.judgeCalls();
+  assert.equal("correction" in (first.contents as object), false, "the first judgment carries none");
+  assert.match(String((second.contents as { correction: string }).correction), /^The judge did not score c2, c3[^]*\. Return the whole judgment again, every candidate \(c1, c2[^)]*\) scored once, with this fixed and nothing else changed\.$/);
+  const notes = session.trace.filter((entry) => entry.operation === "draft2_opening_review").map((entry) => entry.note ?? "");
+  assert.match(notes[0], /^Refused by the program: The judge did not score c2/);
+  assert.equal(notes[1], "", "the second judgment stands");
+  const stubborn = harness({ writes: [writer()], judgments: [unscored, unscored] });
+  await assert.rejects(stubborn.run(), (error: Error) => error instanceof types.Draft2ResponseError && /did not score c2/.test(error.message));
+  assert.equal(json([stubborn.row().opening?.status, stubborn.judgeCalls().length]), json(["failed", 2]), "never a third judgment");
+});
+
 test("Claude writes and Sol judges; both read the focus and the facts snapshot where their provider caches it, never a conversation", async () => {
   const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 96 })] });
   const session = await h.run();
@@ -494,8 +511,9 @@ test("a provider failure marks the opening failed, keeps the trace and the best 
   assert.equal(`${last.step} ${last.provider} ${last.operation} ${last.outcome}`, "opening anthropic draft2_opening error", "Claude's writing call failed");
 });
 
-test("a malformed judgment fails the step", async () => {
-  const h = harness({ writes: [writer()], judgments: [() => ({ verdict: "accept", winnerId: "c99", summary: "x", scores: [], issues: [], suggestions: [], proposals: [] })] });
+test("a malformed judgment, asked for again and malformed again, fails the step", async () => {
+  const malformed = () => ({ verdict: "accept", winnerId: "c99", summary: "x", scores: [], issues: [], suggestions: [], proposals: [] });
+  const h = harness({ writes: [writer()], judgments: [malformed, malformed] });
   await assert.rejects(h.run(), (error: Error) => error instanceof types.Draft2ResponseError);
   assert.equal(h.row().status, "failed");
 });

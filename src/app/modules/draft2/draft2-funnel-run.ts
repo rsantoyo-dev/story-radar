@@ -8,7 +8,7 @@ import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2S
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2SolModel, draft2StepChoice, type Draft2Effort, type Draft2Pipeline, type Draft2Provider } from "./draft2-models";
 import { traceCostMicros } from "./draft2-trace-cost";
-import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
+import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
   FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
   funnelRenumberedProposals, funnelResumeRound, funnelSchemaWithoutArrayEnums, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
@@ -415,7 +415,29 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
         const judgeRequest = { ...setup.judge, contents: setup.judgeRequest(round, candidates, mechanical, targets), schema: roles.judge.provider === "anthropic" ? funnelSchemaWithoutArrayEnums(setup.schemas.judge) : setup.schemas.judge };
         const ids = candidates.map((candidate) => candidate.id);
         const judged = await ask(roles.judge, round, def.operations.judge, judgeRequest);
-        const judgment = setup.parseEvaluation(judged.text, ids);
+        let judgment: ReturnType<typeof setup.parseEvaluation>;
+        try {
+          judgment = setup.parseEvaluation(judged.text, ids);
+        } catch (error) {
+          // A judgment the program refuses (a candidate left unscored, an unknown id, a score that is no integer) is asked for again once,
+          // with what it broke; refused again, the step fails as before. Why stays on the call, so a failed step can be read afterwards.
+          if (!(error instanceof Draft2ResponseError)) throw error;
+          const call = trace[trace.length - 1];
+          if (call) call.note = `Refused by the program: ${error.message}`.slice(0, 600);
+          if (Date.now() + expectedJudgeMs(judgeEffort) > limitAt - 15_000) {
+            await pause(round, true);
+            return;
+          }
+          const correction = `${error.message}. Return the whole judgment again, every candidate (${ids.join(", ")}) scored once, with this fixed and nothing else changed.`;
+          const again = await ask(roles.judge, round, def.operations.judge, { ...judgeRequest, contents: { ...judgeRequest.contents, correction } });
+          try {
+            judgment = setup.parseEvaluation(again.text, ids);
+          } catch (refused) {
+            const last = trace[trace.length - 1];
+            if (last && refused instanceof Draft2ResponseError) last.note = `Refused by the program: ${refused.message}`.slice(0, 600);
+            throw refused;
+          }
+        }
         const evaluation = judgment.proposals ? { ...judgment, proposals: funnelRenumberedProposals(judgment.proposals, run.rounds) } : judgment;
         const index = run.rounds.findIndex((entry) => entry.round === round);
         run.rounds[index] = { ...run.rounds[index], evaluation };
