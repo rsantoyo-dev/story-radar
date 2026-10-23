@@ -10,8 +10,7 @@ import { draft2DevTrace } from "./draft2-dev-trace";
 import {
   DRAFT2_FACTS_MAX_ROUNDS, DRAFT2_FACTS_REVIEW_SCHEMA, DRAFT2_FACTS_SCHEMA, Draft2BusyError, Draft2InputError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts,
   parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
-  type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry,
-} from "./draft2-facts.types";
+  type Draft2Fact, type Draft2FactsEvaluation, type Draft2FactsRound, type Draft2Threads, type Draft2TraceEntry, editedFacts } from "./draft2-facts.types";
 import { draft2SolModel } from "./draft2-models";
 import { traceCost } from "./draft2-trace-cost";
 import { composeInstructions } from "./skills/draft2-skills";
@@ -146,6 +145,23 @@ export async function runDraft2Facts({ topicId, storyId, models, pipeline, deadl
  * duplicate, a qualifier) stays in view on the Facts screen. A Saint-Jean
  * fraud story looped three times on an outcome its body never states.
  */
+/**
+ * The editor changes one fact's claim or attribution by hand (no provider
+ * call): while the facts are the session's step and no run is on, so every
+ * later step reads the fact as corrected. The reviewer's last verdict stays
+ * in view; the edit is recorded on the fact.
+ */
+export async function editDraft2Fact({ topicId, sessionId, factId, claim, attribution }: { topicId: string; sessionId: string; factId: string; claim?: string; attribution?: string }): Promise<Draft2SessionRow> {
+  const session = await getDraft2Session(topicId, sessionId);
+  if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  if (session.step !== "facts" || session.status === "running") throw new Draft2InputError("A fact is edited while the facts wait for you: before a later step runs on them. Start over from the facts to change one now.");
+  if (!session.facts?.length) throw new Draft2InputError("There is no fact to edit: extract the facts first.");
+  const facts = editedFacts(session.facts, factId, { claim, attribution }, new Date());
+  const updated = await updateDraft2Session(session.id, { facts });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
+}
+
 export async function acceptDraft2Facts({ topicId, sessionId }: { topicId: string; sessionId: string }): Promise<Draft2SessionRow> {
   const session = await getDraft2Session(topicId, sessionId);
   if (!session) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");

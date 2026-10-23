@@ -553,6 +553,29 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     }
   }
 
+  /** The editor changes a fact's claim or attribution by hand, while the facts wait for them (2026-10-23: the reviewer left the article's typo "RAJC"). No provider call. */
+  async function editFacts(changes: HandEditChange[]): Promise<boolean> {
+    if (!session || running) return false;
+    setRunError(undefined);
+    try {
+      let next: Draft2SessionView | undefined;
+      for (const change of changes) {
+        const response = await fetch(`/api/radar/draft2/facts?topicId=${encodeURIComponent(topicId)}`, {
+          method: "PATCH", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: session.id, action: "edit", factId: change.slide, [change.field === "attribution" ? "attribution" : "claim"]: change.text }),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Could not edit the fact.");
+        next = body.session as Draft2SessionView;
+      }
+      if (next) setSession(next);
+      return true;
+    } catch (cause) {
+      setRunError({ step: "facts", message: cause instanceof Error ? cause.message : "Could not edit the fact." });
+      return false;
+    }
+  }
+
   /** The pipeline chosen in the Models card (v2 or v3): kept on the session, or until the facts create it; remembered as the default for the next story. */
   async function choosePipeline(next: Draft2Pipeline) {
     try { window.localStorage.setItem(PIPELINE_KEY, next); } catch { /* storage unavailable */ }
@@ -1135,7 +1158,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
               : <EmptyState title="No article text yet">Prepare the content in the studio first; the canvas reads the same stored text. <Link href={studio}>Open the studio</Link></EmptyState>}
           </section>
           <section className={styles.factsResult} aria-label="The facts">
-            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} /> : null}
+            {session && running !== "facts" ? <FactsSessionView session={session} verified={factsVerified} onEdit={session.step === "facts" && session.status !== "running" ? editFacts : undefined} /> : null}
             {session === null && running !== "facts" && text.length ? <EmptyState title="No facts yet">Extract and verify the facts: {factsCast.extractor} reads the article and lists every fact the story depends on; {factsCast.reviewer} checks each one against it.</EmptyState> : null}
           </section>
         </div>
@@ -1572,7 +1595,7 @@ function TraceDetails({ entries, label }: { entries: readonly Draft2TraceEntry[]
   </details>;
 }
 
-function FactsSessionView({ session, verified }: { session: Draft2SessionView; verified: boolean }) {
+function FactsSessionView({ session, verified, onEdit }: { session: Draft2SessionView; verified: boolean; /** Present while the facts wait for the editor: a claim or an attribution changed by hand. */ onEdit?: (changes: HandEditChange[]) => Promise<boolean> }) {
   // Named by the models this session's facts ran on, not today's.
   const extractor = draft2ModelName(factsModel(session.trace, "openai"), "openai");
   const reviewer = draft2ModelName(factsModel(session.trace, "anthropic"), "anthropic");
@@ -1607,6 +1630,7 @@ function FactsSessionView({ session, verified }: { session: Draft2SessionView; v
             <span className={styles.factMeta}>{fact.kind} · importance {fact.importance}</span>
           </div>
           <p className={styles.factClaim}>{fact.claim}</p>
+          {fact.edited ? <p className={styles.factMeta}>Edited by you · was “{fact.edited.claim}”{fact.edited.attribution && fact.edited.attribution !== fact.attribution ? `, attributed to ${fact.edited.attribution}` : ""}</p> : null}
           {fact.qualifier || fact.attribution ? <p className={styles.factMeta}>{[
             fact.qualifier,
             // "according to X" already names the source; do not say it twice.
@@ -1615,6 +1639,10 @@ function FactsSessionView({ session, verified }: { session: Draft2SessionView; v
           <details><summary>Evidence</summary><blockquote>{fact.evidence}</blockquote></details>
         </li>)}
       </ol>
+      {onEdit ? <HandEdits key={`facts-${session.facts.length}-${session.updatedAt}`} fields={session.facts.flatMap((fact) => [
+        { slide: fact.id, field: "claim", label: `${fact.id} · claim`, value: fact.claim, multiline: true },
+        ...(fact.status === "attributed" || fact.attribution ? [{ slide: fact.id, field: "attribution", label: `${fact.id} · attributed to`, value: fact.attribution ?? "" }] : []),
+      ])} edits={undefined} locked={false} busy={false} onSave={onEdit} onUndo={() => undefined} /> : null}
     </div> : null}
   </>;
 }

@@ -64,3 +64,15 @@ three at most, never a disputed fact); the edit records them
 steps keep follow. The editor's other words still cite nothing: a claim
 without a figure stays theirs. Hashtags and visual directions are not read
 for numbers.
+
+## Addendum, 2026-10-23: a fact by hand
+
+While the facts wait for the editor (the reviewer did not accept them after
+three extractions), each fact's claim and attribution can be changed by hand
+on the Facts screen ("Edit by hand" under the list; `PATCH
+/api/radar/draft2/facts` with `action: "edit"`, `editedFacts`). The evidence
+is never edited; the fact records what it said before, and the list shows
+"Edited by you". The Houston facts carried the article's typo "RAJC" for
+RACJ, and the only ways out were another extraction or taking the typo. A
+fact is edited only before a later step runs on the facts: afterwards, start
+over from the facts.

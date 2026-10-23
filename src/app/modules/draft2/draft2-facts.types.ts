@@ -36,7 +36,35 @@ export type Draft2Fact = {
   /** The word that must travel with the claim: alleged, proposed, reported, expected… */
   qualifier?: string;
   importance: number;
+  /** The editor changed the claim or the attribution by hand (2026-10-23): what they were, and when. The evidence is never edited. */
+  edited?: { at: string; claim: string; attribution?: string };
 };
+
+/** A hand edit's limits: a claim is one checkable sentence or two; an attribution a name. */
+export const FACT_CLAIM_MAX_CHARACTERS = 500;
+export const FACT_ATTRIBUTION_MAX_CHARACTERS = 120;
+
+/**
+ * The facts with one fact's claim or attribution changed by hand (the
+ * reviewer left a typo the article carried, "RAJC" for RACJ, and the facts
+ * could only be taken as they stood or extracted again): the fact keeps its
+ * evidence, status, kind and importance, and records what it said before.
+ * An input error when the fact is unknown, the claim empty, or nothing changes.
+ */
+export function editedFacts(facts: readonly Draft2Fact[], factId: string, patch: { claim?: string; attribution?: string }, now: Date): Draft2Fact[] {
+  const fact = facts.find((entry) => entry.id === factId);
+  if (!fact) throw new Draft2InputError(`${factId} is not one of this session's facts.`);
+  const claim = patch.claim === undefined ? fact.claim : patch.claim.replace(/\s+/g, " ").trim();
+  const attribution = patch.attribution === undefined ? fact.attribution : patch.attribution.replace(/\s+/g, " ").trim() || undefined;
+  if (!claim) throw new Draft2InputError("A fact's claim cannot be left empty.");
+  if (claim.length > FACT_CLAIM_MAX_CHARACTERS) throw new Draft2InputError(`Keep the claim under ${FACT_CLAIM_MAX_CHARACTERS} characters.`);
+  if ((attribution ?? "").length > FACT_ATTRIBUTION_MAX_CHARACTERS) throw new Draft2InputError(`Keep the attribution under ${FACT_ATTRIBUTION_MAX_CHARACTERS} characters.`);
+  if (claim === fact.claim && attribution === fact.attribution) throw new Draft2InputError("This fact already says that.");
+  const before = fact.edited ?? { at: now.toISOString(), claim: fact.claim, ...(fact.attribution ? { attribution: fact.attribution } : {}) };
+  const next: Draft2Fact = { ...fact, claim, ...(attribution ? { attribution } : {}), edited: { ...before, at: now.toISOString() } };
+  if (!attribution) delete next.attribution;
+  return facts.map((entry) => entry.id === factId ? next : entry);
+}
 
 export type Draft2FactsIssue = { code: Draft2IssueCode; factId?: string; detail: string };
 

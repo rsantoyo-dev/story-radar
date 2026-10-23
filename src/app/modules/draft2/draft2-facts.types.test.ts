@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  Draft2ResponseError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts, parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest,
-} from "./draft2-facts.types";
+  Draft2ResponseError, draft2FactsAreValid, mechanicalFactIssues, mergeRevisedFacts, parseDraft2Facts, parseDraft2FactsEvaluation, revisionRequest, editedFacts, type Draft2Fact } from "./draft2-facts.types";
 
 const article = "The Pentagon’s program reviews product videos “no longer than five minutes”. A DOD official says awards took less than a week in several instances.\nOpenAI, Anthropic, and Google are all listed as participants.";
 
@@ -72,4 +71,24 @@ test("a revision that drops valid facts gets them back; a fact removed for a rea
   assert.deepEqual(merged.restored, ["f2"], "f1 was kept, f3 was rewritten as f9, f4 was removed for a reason");
   assert.deepEqual(merged.facts.map((entry) => entry.id), ["f1", "f9", "f10", "f2"]);
   assert.equal(merged.facts[3].attribution, "A DOD official", "the restored fact keeps its content");
+});
+
+test("the editor changes a fact's claim or attribution by hand: the evidence stays, what it said before is kept, and nothing else changes (2026-10-23)", () => {
+  const facts: Draft2Fact[] = [
+    { id: "f6", claim: "Selon le tribunal de la RAJC, la présence récurrente d'une clientèle affiliée au crime organisé peut constituer une nuisance.", evidence: "selon le tribunal de la RAJC", kind: "event", status: "attributed", attribution: "le tribunal de la RAJC", importance: 70 },
+    { id: "f7", claim: "Le 3 février 2023, des policiers sont intervenus.", evidence: "Le 3 février 2023", kind: "event", status: "established", importance: 60 },
+  ];
+  const now = new Date("2026-10-23T10:30:00Z");
+  const edited = editedFacts(facts, "f6", { claim: "Selon le tribunal de la RACJ, la présence récurrente d'une clientèle affiliée au crime organisé peut constituer une nuisance.", attribution: " le tribunal de la RACJ " }, now);
+  assert.equal(edited[0].claim.includes("RACJ"), true);
+  assert.equal(edited[0].attribution, "le tribunal de la RACJ");
+  assert.equal(edited[0].evidence, facts[0].evidence, "the evidence is never edited");
+  assert.deepEqual(edited[0].edited, { at: now.toISOString(), claim: facts[0].claim, attribution: "le tribunal de la RAJC" });
+  assert.deepEqual(edited[1], facts[1]);
+  const again = editedFacts(edited, "f6", { claim: "La RACJ juge la présence récurrente d'une clientèle du crime organisé une nuisance." }, new Date("2026-10-23T10:40:00Z"));
+  assert.equal(again[0].edited?.claim, facts[0].claim, "a second edit keeps the original as what it said before");
+  assert.throws(() => editedFacts(facts, "f9", { claim: "x" }, now), /not one of this session's facts/u);
+  assert.throws(() => editedFacts(facts, "f7", { claim: "  " }, now), /cannot be left empty/u);
+  assert.throws(() => editedFacts(facts, "f7", { claim: facts[1].claim }, now), /already says that/u);
+  assert.equal("attribution" in editedFacts(facts, "f6", { attribution: "" }, now)[0], false, "an emptied attribution goes");
 });
