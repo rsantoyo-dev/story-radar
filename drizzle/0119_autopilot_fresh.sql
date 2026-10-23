@@ -1,0 +1,1 @@
+ALTER TABLE "draft2_autopilot_jobs" ADD COLUMN "fresh" boolean DEFAULT false NOT NULL;

@@ -827,6 +827,13 @@
       "when": 1792684808290,
       "tag": "0118_draft2_autopilot_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1792762600891,
+      "tag": "0119_autopilot_fresh",
+      "breakpoints": true
     }
   ]
 }

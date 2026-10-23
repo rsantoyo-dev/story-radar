@@ -120,3 +120,12 @@ test("the decisions: no session runs the facts; facts being verified or refused 
   assert.deepEqual(runNeeds("caption", { status: "needs-review" }, false, "caption")?.hasOwnProperty("reason"), true, "no version that may win: written again");
   assert.equal(sessionCostMicros(session({ trace: [{ costMicros: 1_000 } as never, {} as never], images: { slides: [{ attempts: [{ costMicros: 500 }] }], masterPlate: { costMicros: 250 } } as never })), 1_750);
 });
+
+test("a fresh job starts over from the facts whatever the story's latest session says, then follows the new session (2026-10-23)", async () => {
+  // The decision would say "done": the story's latest session is finished. Fresh: the facts run first, and only once.
+  const h = harness(["facts", "inventory"], { fresh: true, next: () => ({ done: true }) });
+  const { end, steps } = await runAutopilotPass(h.deps);
+  assert.deepEqual([end, steps.map((entry) => entry.step)], [{ kind: "done" }, ["facts"]], "the facts open the new session; the scripted decision then ends the job");
+  const continued = harness(["opening"], { fresh: true, steps: [{ step: "facts", status: "ready", ms: 1, startedAt: "2026-10-23T09:00:00.000Z" }], stepRuns: 1 });
+  assert.deepEqual((await runAutopilotPass(continued.deps)).steps.map((entry) => entry.step), ["facts", "opening"], "a later pass of a fresh job goes on, it does not start over again");
+});

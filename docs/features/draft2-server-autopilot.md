@@ -91,3 +91,11 @@ The plan of 2026-10-21, in order: the hour per brand (Prepare my day
 headless, then this job), a blocker's email, the rules that turn the
 remaining stops into decisions (confirmations by exact match, a second image
 try), and the authorized autopost with a cancellation window.
+
+## Addendum, 2026-10-23: start over
+
+"Start over from the facts" on the Autopilot card (`fresh` on the job,
+migration 0119): the job's first step is the facts, which open a new session
+whatever the story's latest one says, and the steps then follow from it. The
+earlier session stays as history, with its approval and its runs. The top
+bar's buttons keep going on from where the story stands.

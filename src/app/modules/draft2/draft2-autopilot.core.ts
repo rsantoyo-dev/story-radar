@@ -199,6 +199,8 @@ export type AutopilotJobView = {
   outcome: string | null;
   passes: number;
   startedBy: string;
+  /** The job started over from the facts, in a new session. */
+  fresh: boolean;
   /** The editor asked it to stop; the step running finishes first. */
   stopRequested: boolean;
   createdAt: string;
@@ -248,6 +250,8 @@ export type AutopilotPassDependencies = {
   now: () => number;
   /** The decision itself; the tests give their own. */
   next?: (session: AutopilotSession | null, now: number) => AutopilotNext;
+  /** Start over: the job's first step is the facts, which open a new session; the steps then follow from it. */
+  fresh?: boolean;
 };
 
 /**
@@ -267,7 +271,8 @@ export async function runAutopilotPass(deps: AutopilotPassDependencies): Promise
   let runs = deps.stepRuns;
   for (;;) {
     if (await deps.stopRequested()) return { end: { kind: "stopped" }, steps };
-    const next = (deps.next ?? nextAutopilotStep)(session, deps.now());
+    // A fresh job's first step is the facts: a new session, whatever the story's latest one says; from then on the decisions read that session.
+    const next: AutopilotNext = deps.fresh && steps.length === 0 && runs === 0 ? { step: "facts" } : (deps.next ?? nextAutopilotStep)(session, deps.now());
     if ("done" in next) return { end: { kind: "done" }, steps };
     if ("blocked" in next) return { end: { kind: "blocked", reason: next.blocked }, steps };
     if (!autopilotStepRuns(next.step, deps.until)) return { end: { kind: "done" }, steps };

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { draft2Sessions } from "./draft2-sessions";
 import { stories } from "./stories";
 import { topics } from "./topics";
@@ -29,6 +29,8 @@ export const draft2AutopilotJobs = pgTable("draft2_autopilot_jobs", {
   passes: integer("passes").notNull().default(0),
   /** Who started it: the editor, or a schedule. */
   startedBy: text("started_by").notNull().default("editor"),
+  /** Start over from the facts (a new session; the earlier one stays as history) instead of going on from where the story stands (2026-10-23). */
+  fresh: boolean("fresh").notNull().default(false),
   /** Set by the editor; the pass running reads it between steps and stops. */
   stopRequestedAt: timestamp("stop_requested_at", { withTimezone: true, mode: "date" }),
   leaseOwner: text("lease_owner"),

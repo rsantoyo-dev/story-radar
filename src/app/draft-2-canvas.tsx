@@ -324,6 +324,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // The autopilot on the server (2026-10-22): the story's latest job, read with the session and followed while it runs.
   const [serverJob, setServerJob] = useState<AutopilotJobView | null>();
   const [serverUntil, setServerUntil] = useState<Draft2AutopilotStep>("caption");
+  const [serverFresh, setServerFresh] = useState(false);
   const [serverJobBusy, setServerJobBusy] = useState(false);
   const [serverJobError, setServerJobError] = useState<string>();
   const [focusError, setFocusError] = useState<string>();
@@ -390,16 +391,17 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   }, [serverJobRunning, loadSession]);
 
   /** Starts the autopilot on the server, to a step: the first pass starts at once and the job goes on with this page closed. */
-  async function startServerAutopilot(until: Draft2AutopilotStep = serverUntil) {
+  async function startServerAutopilot(until: Draft2AutopilotStep = serverUntil, fresh = false) {
     if (serverJobBusy || running) return;
     setServerJobBusy(true); setServerJobError(undefined);
     try {
       const response = await fetch(`/api/radar/draft2/autopilot?topicId=${encodeURIComponent(topicId)}`, {
-        method: "POST", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ storyId, until }),
+        method: "POST", cache: "no-store", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ storyId, until, fresh }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Could not start the autopilot on the server.");
       setServerJob(body.job as AutopilotJobView);
+      setServerFresh(false);
     } catch (cause) {
       setServerJobError(cause instanceof Error ? cause.message : "Could not start the autopilot on the server.");
     } finally {
@@ -1535,7 +1537,8 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
                     {AUTOPILOT_STEPS.map((step) => <option key={step} value={step}>{STEP_TITLE[step].toLowerCase()}</option>)}
                   </select>
                 </label>}
-                {serverJobRunning ? autopilotButtons : <Button variant="primary" size="compact" busy={serverJobBusy} disabled={serverButtonsLocked} onClick={() => { void startServerAutopilot(); }}>Run on the server</Button>}
+                {serverJobRunning ? null : <label className={styles.factMeta}><input type="checkbox" checked={serverFresh} disabled={serverJobBusy} onChange={(event) => setServerFresh(event.currentTarget.checked)} /> Start over from the facts (a new session; this one stays as history)</label>}
+                {serverJobRunning ? autopilotButtons : <Button variant="primary" size="compact" busy={serverJobBusy} disabled={serverButtonsLocked} onClick={() => { void startServerAutopilot(serverUntil, serverFresh); }}>{serverFresh ? "Start over on the server" : "Run on the server"}</Button>}
               </ActionRow>
             </div>
             {serverJobError ? <InlineNotice tone="error" title="The autopilot did not answer">{serverJobError}</InlineNotice> : null}

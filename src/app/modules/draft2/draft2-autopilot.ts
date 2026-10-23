@@ -44,7 +44,7 @@ export function autopilotJobView(row: Draft2AutopilotJobRow): AutopilotJobView {
   return {
     id: row.id, storyId: row.storyId, sessionId: row.sessionId, status: row.status as AutopilotJobStatus, until: row.until as Draft2AutopilotStep,
     currentStep: (row.currentStep as Draft2AutopilotStep | null) ?? null, steps: Array.isArray(row.steps) ? row.steps : [], outcome: row.outcome, passes: row.passes, startedBy: row.startedBy,
-    stopRequested: Boolean(row.stopRequestedAt),
+    stopRequested: Boolean(row.stopRequestedAt), fresh: Boolean(row.fresh),
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
   };
 }
@@ -67,7 +67,7 @@ export async function latestDraft2AutopilotJobs(topicId: string): Promise<Map<st
     const row: Draft2AutopilotJobRow = {
       id: String(raw.id), topicId: String(raw.topic_id), storyId: String(raw.story_id), sessionId: raw.session_id ? String(raw.session_id) : null, status: String(raw.status), until: String(raw.until),
       currentStep: raw.current_step ? String(raw.current_step) : null, steps: (raw.steps as AutopilotJobEntry[]) ?? [], outcome: raw.outcome ? String(raw.outcome) : null, passes: Number(raw.passes ?? 0), startedBy: String(raw.started_by ?? "editor"),
-      stopRequestedAt: raw.stop_requested_at ? new Date(raw.stop_requested_at as string) : null, leaseOwner: raw.lease_owner ? String(raw.lease_owner) : null, leaseUntil: raw.lease_until ? new Date(raw.lease_until as string) : null,
+      stopRequestedAt: raw.stop_requested_at ? new Date(raw.stop_requested_at as string) : null, leaseOwner: raw.lease_owner ? String(raw.lease_owner) : null, leaseUntil: raw.lease_until ? new Date(raw.lease_until as string) : null, fresh: raw.fresh === true,
       createdAt: new Date(raw.created_at as string), updatedAt: new Date(raw.updated_at as string), finishedAt: raw.finished_at ? new Date(raw.finished_at as string) : null,
     };
     jobs.set(row.storyId, autopilotJobView(row));
@@ -82,21 +82,21 @@ export async function latestDraft2AutopilotJobs(topicId: string): Promise<Map<st
  * (`after()`), so the job moves at once; later passes chain through the
  * resume route.
  */
-export async function startDraft2Autopilot({ topicId, storyId, until, by = "editor", origin }: { topicId: string; storyId: string; until: Draft2AutopilotStep; by?: string; origin: string }): Promise<AutopilotJobView> {
+export async function startDraft2Autopilot({ topicId, storyId, until, by = "editor", origin, fresh = false }: { topicId: string; storyId: string; until: Draft2AutopilotStep; by?: string; origin: string; /** Start over from the facts: a new session, the earlier one kept as history. */ fresh?: boolean }): Promise<AutopilotJobView> {
   const [running] = await db.select().from(draft2AutopilotJobs)
     .where(and(eq(draft2AutopilotJobs.storyId, storyId), eq(draft2AutopilotJobs.status, "running"))).limit(1);
   if (running) return autopilotJobView(running);
   if (await activeDraft2Session(topicId, storyId)) throw new Draft2BusyError("A Draft 2 run is in progress for this story; start the autopilot when it finishes.");
   const session = await latestDraft2Session(topicId, storyId);
   const [job] = await db.insert(draft2AutopilotJobs)
-    .values({ topicId, storyId, sessionId: session?.id ?? null, until, startedBy: by })
+    .values({ topicId, storyId, sessionId: fresh ? null : session?.id ?? null, until, startedBy: by, fresh })
     .onConflictDoNothing().returning();
   if (!job) {
     const [existing] = await db.select().from(draft2AutopilotJobs).where(and(eq(draft2AutopilotJobs.storyId, storyId), eq(draft2AutopilotJobs.status, "running"))).limit(1);
     if (existing) return autopilotJobView(existing);
     throw new Draft2InputError("The autopilot could not start; try again.");
   }
-  log.info("Autopilot job started", { jobId: job.id, topicId, storyId, until, by });
+  log.info("Autopilot job started", { jobId: job.id, topicId, storyId, until, by, fresh });
   after(() => driveDraft2AutopilotJob(job.id, origin));
   return autopilotJobView(job);
 }
@@ -179,6 +179,7 @@ export async function driveDraft2AutopilotJob(jobId: string, origin: string): Pr
       deadline,
       maxCostMicros: maxCostMicros(),
       now: () => Date.now(),
+      fresh: claimed.fresh,
     });
     const final = autopilotJobEnd(end, claimed.until as Draft2AutopilotStep);
     if (final) {
