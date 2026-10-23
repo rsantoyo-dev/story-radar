@@ -423,7 +423,8 @@ test("a real person's portrait and a verified map are pasted after generation, u
   const h = harness({ session: { visual, inventory } });
   const session = await h.run();
   const [cover, s1] = session.images!.slides;
-  assert.equal(json([stored(h, "cover-v1.png"), stored(h, "s1-v1.png")]), json([`raw:${cover.attempts[0].requestId}|portrait|1/3|logo`, `raw:${s1.attempts[0].requestId}|map|2/3`]));
+  // A slide with a pasted photo gets the program's words, whatever the presentation (2026-10-22): the photo never covers them.
+  assert.equal(json([stored(h, "cover-v1.png"), stored(h, "s1-v1.png")]), json([`raw:${cover.attempts[0].requestId}|portrait|words|1/3|logo`, `raw:${s1.attempts[0].requestId}|map|2/3`]));
   assert.equal(stored(h, "s1-map.png"), "map-png", "the map is fetched once and stored beside the slide's images");
   const prompt = (order: number) => h.calls.submits.find((submit) => submit.prompt.startsWith(`PROMPT ${order}:`))!.prompt;
   assert.match(prompt(1), /<DOCUMENTARY_PHOTO_ZONE>/);

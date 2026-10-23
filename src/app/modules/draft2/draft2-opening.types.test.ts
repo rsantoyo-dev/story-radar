@@ -400,3 +400,16 @@ test("the cover and slide 2 carry the facts their spine beats rest on: half of t
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { factIds: ["f2", "f3"] } })], facts, { beats })), []);
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { beats: { cover: [] } })), [], "a beat without facts, or no spine, asks nothing");
 });
+
+test("caveats are not content (2026-10-22): a cover that gives the reader a chore is refused; a list's slide 2 never opens with a condition; a list's guards are the deck's", () => {
+  assert.deepEqual(findings({ cover: { headline: "Cinq sorties d'Halloween: vérifie billets ou météo" } }), ["COVER_IS_CHORE c1 cover"]);
+  assert.match(mechanicalOpeningIssues([candidate("c1", { cover: { subheadline: "Confirme l'heure à la billetterie." } })], facts)[0].detail, /gives the reader a chore \("Confirme"\)/u);
+  const list = { itemCount: 5 };
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover: { headline: "5 idées pour sortir ce week-end" } })], facts, list)), []);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: "Vérifie la météo avant de partir. Le ciel du Domaine Trinity, en cinq courts métrages." } })], facts, list)), ["BODY_IS_CAVEAT c1 slide2"]);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: "Cinq courts métrages sous dôme au Domaine Trinity. Vérifie la météo avant de partir." } })], facts, list)), [], "the condition after the experience");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: "Vérifie la météo avant de partir. Then the review." } })], facts)), [], "no item count: no slide-2 check");
+  const guards = [{ misreading: "Every outing is free", factIds: ["f3"] }];
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards })), ["GUARD_LATE c1 slide2"], "an arc's guard is the opening's");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards, itemCount: 5 })), [], "a list's guards are discharged by each item's slide in the deck");
+});

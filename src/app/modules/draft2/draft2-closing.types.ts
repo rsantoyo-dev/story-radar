@@ -1,4 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
+import { isChecklist } from "./draft2-caveats.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { leverForModels } from "./draft2-levers.types";
@@ -56,6 +57,7 @@ export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity"
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
   "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
+  "CLOSING_IS_CHECKLIST",
 ] as const;
 export const CLOSING_JUDGE_CODES = ["UNRESOLVED", "RECAP", "WEAK_MEANING", "OFF_GOAL", "BREAKS_CONTINUITY", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const CLOSING_ISSUE_CODES = [...CLOSING_MECHANICAL_CODES, ...CLOSING_JUDGE_CODES] as const;
@@ -263,6 +265,11 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline} ${penultimate.body}`] as const] : []), ["last", `${last.headline} ${last.body}`] as const]) {
       const recap = RECAP.exec(value);
       if (recap) add("RECAP_LABEL", part, `"${recap[0]}" sums up instead of ending the story.`);
+    }
+    // Caveats are not content (2026-10-22): a closing that is a list of checks ends nothing; the checks go in the caption, once.
+    for (const [part, slide] of [...(penultimate ? [["penultimate", penultimate] as const] : []), ["last", last] as const]) {
+      const checklist = isChecklist(slide.headline, slide.body);
+      if (checklist) add("CLOSING_IS_CHECKLIST", part, `The ${part === "last" ? "last slide" : "penultimate slide"} reads as a checklist ("${checklist}"): the closing ends the story, on what it means for the reader or the choice it leaves them; the checks go in the caption, once.`);
     }
     for (const [part, value] of [...(penultimate ? [["penultimate", `${penultimate.headline} ${penultimate.body}`] as const] : []), ["last", `${last.headline} ${last.body}`] as const]) {
       const words = longWords(value);

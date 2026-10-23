@@ -16,7 +16,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const CLOSINGS_SKILL: Draft2Skill = {
   name: "closings",
-  version: "4",
+  version: "5",
   text: `# Closings for social carousels
 
 A closing is how the story ends. The opening made a promise (the cover) and
@@ -58,6 +58,10 @@ opening it ends: a closing that could end any story is weak.
   fairness skill).
   Never a recap, a summary label ("In summary", "En bref", "En resumen") or
   a list of what the slides said.
+- Never a checklist ("Ta liste de vérifs avant de partir") or two conditions
+  in its body (the program refuses them): the closing ends on what the story
+  means for the reader or on the choice it leaves them ("Étoiles, légendes
+  ou citrouilles?"); the checks go in the caption, once.
 - cta: the one call to action, at most 14 words, in its own field.
 
 ## Call to action

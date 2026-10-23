@@ -1,4 +1,7 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
+import { caveatIn } from "./draft2-caveats.types";
+import { dayPeriodIn, daysOutsidePeriod } from "./draft2-data-marks";
+import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { beatFactsFinding, beatFactsMissing, type Draft2FocusSnapshot, type Draft2FocusStructureKind } from "./draft2-focus.types";
@@ -64,6 +67,7 @@ export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "groundin
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
   "RESTATES_SLIDE", "RESTATES_FIGURE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
+  "ITEM_PLACE_MISSING", "DATE_OUTSIDE_PERIOD", "BODY_IS_CAVEAT", "GUARD_UNCARRIED",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -213,6 +217,14 @@ export function figuresIn(value: string): string[] {
 const RECAP = /\b(in summary|to sum up|in short|to recap|the bottom line|en résumé|en bref|pour résumer|en somme|en resumen|en conclusión|en conclusion|para resumir|resumiendo|en síntesis)\b/iu;
 const EMOJI = /\p{Extended_Pictographic}/gu;
 
+/** Whether a text names an entity: its whole name, or every capitalized word of it ("Ferme Reid" is not named by "la ferme"; "Musée du Haut-Richelieu" by "Musée" and "Haut-Richelieu"). */
+function namesEntity(text: string, name: string): boolean {
+  const haystack = comparableText(text);
+  if (haystack.includes(comparableText(name))) return true;
+  const proper = name.split(/\s+/u).filter((word) => /^\p{Lu}/u.test(word) && word.replace(/[^\p{L}]/gu, "").length >= 3).map(comparableText);
+  return proper.length > 0 && proper.every((word) => haystack.includes(word));
+}
+
 /**
  * The program's findings on each deck, before the judge; any one keeps the
  * deck from winning. Each slide keeps its limits and cites known facts with
@@ -220,13 +232,19 @@ const EMOJI = /\p{Extended_Pictographic}/gu;
  * steps' items in order, one per slide); no slide repeats another slide of
  * the carousel or sums up; emojis stay within the publication's allowance.
  */
-export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis, reader, beats }: {
+export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[], facts: readonly Draft2Fact[], { opening, closing, shape, itemCount, emojis, reader, beats, entities, guards }: {
   opening: Draft2ClosingOpening; closing: Draft2DeckClosing; shape: Draft2DeckShape; itemCount?: number; emojis: number; reader?: Draft2Reader;
   /** The facts the spine's middle beats rest on, in order (slide 1, 2…): each slide cites enough of its own (BEAT_FACTS_MISSING). */
   beats?: readonly (readonly string[] | undefined)[];
+  /** People and places' entities with the facts they appear in: a list's item names its place or organizer on its slide (ITEM_PLACE_MISSING). */
+  entities?: readonly Pick<Draft2InventoryEntity, "name" | "kind" | "factIds">[];
+  /** The focus's guards: in a list or a procedure, each item's own details discharge them, so some slide of the carousel must carry each guard's facts (GUARD_UNCARRIED). */
+  guards?: readonly { misreading: string; factIds: readonly string[] }[];
 }): Draft2DeckIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
+  // The period the cover announces ("du 23 au 25 octobre"): a list's slide names no day outside it (2026-10-22).
+  const period = shape.kind === "list" ? dayPeriodIn(`${opening.cover.headline} ${opening.cover.subheadline}`) : undefined;
   const fixed = [
     ["the cover", `${opening.cover.headline} ${opening.cover.subheadline}`],
     ["slide 2", `${opening.slide2.headline} ${opening.slide2.body}`],
@@ -273,6 +291,18 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       if (abbreviations.length) add("ABBREVIATION", part, `${label}: ${abbreviationFinding(abbreviations, explained)}`);
       const item = shape.items[index];
       if (item && !slide.factIds.includes(item)) add("ITEM_OUT_OF_PLACE", part, `${label} should carry the ${shape.kind === "list" ? "item" : "step"} that starts with ${item}, in order.`);
+      // A list's item (2026-10-22, the Saint-Jean weekend carousel): it names where it happens, keeps to the days the story announces, and spends its one sentence on what the reader does, never on a condition.
+      if (isList) {
+        const text = `${slide.headline} ${slide.body} ${slide.practical}`;
+        const places = item ? (entities ?? []).filter((entity) => (entity.kind === "place" || entity.kind === "organization") && entity.factIds.includes(item)) : [];
+        if (places.length && !places.some((entity) => namesEntity(text, entity.name))) {
+          add("ITEM_PLACE_MISSING", part, `${label} names no place or organizer of its item: ${places.map((entity) => entity.name).join(" or ")} (from ${item}). A reader must know where it happens; name it in the headline, the body or the practical line.`);
+        }
+        const outside = period ? daysOutsidePeriod(text, period) : [];
+        if (outside.length) add("DATE_OUTSIDE_PERIOD", part, `${label} names ${outside.map((date) => `the ${date.day}`).join(", ")}, outside the ${period!.from}–${period!.to} the cover announces: keep each slide to the story's days (other dates may go in the caption).`);
+        const caveat = caveatIn(slide.body);
+        if (caveat) add("BODY_IS_CAVEAT", part, `${label}'s sentence carries a condition ("${caveat}") instead of what the reader does or sees; a condition goes in the practical line or in the caption.`);
+      }
       const recap = RECAP.exec(`${slide.headline} ${slide.body}`);
       if (recap) add("RECAP_LABEL", part, `"${recap[0]}" sums up instead of moving the story on.`);
       // A figure already on two other slides of the carousel: a third mention repeats it.
@@ -293,6 +323,13 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
     });
     const used = slides.map((slide) => `${slide.headline} ${slide.body} ${slide.practical}`).join(" ").match(EMOJI)?.length ?? 0;
     if (used > emojis) add("TOO_MANY_EMOJIS", undefined, emojis ? `The deck uses ${used} emojis; the publication allows ${emojis}.` : "The publication allows no emoji.");
+    // A list's or a procedure's guards are discharged by each item's details on its slide, not by a sentence on slide 2: some slide carries each guard's facts.
+    if (shape.kind !== "arc") {
+      const carried = new Set([...opening.cover.factIds, ...opening.slide2.factIds, ...slides.flatMap((slide) => slide.factIds)]);
+      for (const guard of guards ?? []) {
+        if (!guard.factIds.some((id) => carried.has(id))) add("GUARD_UNCARRIED", undefined, `A reader could believe "${guard.misreading}": no slide carries what prevents it (${guard.factIds.join(" or ")}). The item it concerns states its own days, price or reservation in its practical line.`);
+      }
+    }
     // A proposal's original and the writer's edit may share their headlines on purpose: the edit kept what worked.
     const key = headlineKey(slides.map((slide) => slide.headline).join(" "));
     const earlier = keys.get(key);

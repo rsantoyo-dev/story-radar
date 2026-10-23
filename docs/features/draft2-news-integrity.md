@@ -223,3 +223,46 @@ must say that AREQ is…".
 
 Run over the 31 latest reviewed sessions, the change finds only this
 carousel.
+
+## Caveats are not content, and a list's item stands on its own (2026-10-22)
+
+An auditor read the Salut Saint-Jean weekend carousel (five outings, 23–25
+October) and scored it 8/10 on looks and poor on use: the cover said "vérifie
+billets ou météo", slide 2 explained nothing of the Trinity experience and
+ended on "Les autres sorties n'ont pas toutes les mêmes jours", the legends'
+slide named the 17th and the 31st, the Relais hanté's pasted photo covered the
+practical line, the pumpkin slide named no farm, Carrefour's one sentence was
+"la roue de prix exige un achat", and the last slide was "Ta liste de vérifs
+avant de partir". The Review had scored it 65 and the editor went on. One
+cause: the Focus's two guards were discharged with warnings on every slide
+instead of with each item's own details.
+
+The program now refuses, in the same pass (`draft2-caveats.types.ts`,
+`draft2-data-marks.ts`):
+
+- **Opening:** `COVER_IS_CHORE`, a verification imperative on the cover
+  ("vérifie", "confirme", "check", "verifica"); `BODY_IS_CAVEAT`, a list's
+  slide 2 that opens with a condition. `GUARD_LATE` no longer applies to a
+  list or a procedure: their guards are the Deck's.
+- **Deck, for a list's items:** `ITEM_PLACE_MISSING`, a slide that names none
+  of the places or organizers People and places found in its item's fact
+  (the whole name or every capitalized word of it: "Ferme Reid" is not named
+  by "la ferme"); `DATE_OUTSIDE_PERIOD`, a day outside the period the cover
+  announces ("du 23 au 25 octobre", one month, a week at most; the days are
+  read in the three languages, a year is never a day); `BODY_IS_CAVEAT`, a
+  condition anywhere in the item's one sentence; `GUARD_UNCARRIED`, a guard
+  whose facts no slide of the carousel carries.
+- **Closing:** `CLOSING_IS_CHECKLIST`, a headline that names a checklist or
+  a body with two sentences that carry a condition.
+- **Images:** a slide that pastes a verified photo gets the program's words,
+  whatever the presentation says (`programWordsOn`), on a band that ends
+  above a photo starting in the lower half (`textBandFor`): the photo can no
+  longer cover words the model lettered. Sol's "words covered" finding
+  already asked for a new image; it now has nothing to find.
+
+Skills: hooks v12 (the cover sells the experience; a list's cover names only a
+theme every item shares), decks v6 (an item says what the reader does first,
+names its place, keeps to the cover's days, carries no condition), closings v5
+(never a checklist), spine v12 (a list's guards are discharged by each item's
+practical line, never by a sentence on slide 2). Left to the judges: whether
+each item's first line says what one does or sees before the logistics.

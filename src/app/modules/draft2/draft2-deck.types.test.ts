@@ -185,3 +185,37 @@ test("a figure is said on two slides of the carousel at most: a deck slide stati
   assert.deepEqual(twice, [], "on two slides, where it lands and where it pays off, it stands");
   void second;
 });
+
+test("a list's item names its place, keeps to the cover's days, and carries no condition in its sentence; a list's guards are carried by some slide (the Saint-Jean weekend carousel, 2026-10-22)", () => {
+  const weekend: Draft2Fact[] = [
+    ...facts,
+    { id: "f6", claim: "Les cinq idées de sorties concernent Saint-Jean et les environs du 23 au 25 octobre 2026.", evidence: "", kind: "event", status: "established", importance: 80 },
+    { id: "f7", claim: "Une visite sur les légendes est annoncée le samedi 24 octobre, dans une série présentée les 17, 24 et 31 octobre.", evidence: "", kind: "event", status: "established", importance: 60 },
+    { id: "f8", claim: "La Grande Fête de la citrouille de la Ferme Reid se poursuit les 23, 24 et 25 octobre à Sainte-Anne-de-Sabrevois.", evidence: "", kind: "event", status: "established", importance: 60 },
+    { id: "f9", claim: "Le Carrefour Richelieu propose une célébration d'Halloween le dimanche 25 octobre, un atelier de 13 h à 15 h et une chasse aux bonbons de 15 h à 17 h; la roue de prix exige un achat.", evidence: "", kind: "event", status: "established", importance: 60 },
+  ];
+  const cover: Draft2ClosingOpening = { ...opening, cover: { headline: "5 idées pour sortir ce week-end", subheadline: "Saint-Jean et environs, du 23 au 25 octobre 2026", factIds: ["f6"] } };
+  const shape = deckShape({ kind: "list", itemFactIds: ["f2", "f7", "f8", "f9"] }, opening.slide2.factIds);
+  const entities = [
+    { name: "Musée du Haut-Richelieu", kind: "organization" as const, factIds: ["f7"] },
+    { name: "Ferme Reid", kind: "place" as const, factIds: ["f8"] },
+    { name: "Sainte-Anne-de-Sabrevois", kind: "place" as const, factIds: ["f8"] },
+    { name: "Carrefour Richelieu", kind: "place" as const, factIds: ["f9"] },
+    { name: "Pascale Hébert", kind: "person" as const, factIds: ["f9"] },
+  ];
+  const good = [
+    slide("Les légendes du Vieux-Saint-Jean", "Une visite guidée avec le Musée du Haut-Richelieu.", ["f7"], "Samedi 24 octobre, en soirée · réservation en ligne"),
+    slide("Cueille ta citrouille à la Ferme Reid", "Autocueillette, labyrinthe et fermette à Sainte-Anne-de-Sabrevois.", ["f8"], "23, 24 et 25 octobre · selon la météo"),
+    slide("Chapeau et bonbons au Carrefour Richelieu", "Fabrique ton chapeau, puis pars à la chasse aux bonbons!", ["f9"], "Dimanche 25 octobre · 13 h–17 h · roue de prix avec achat"),
+  ];
+  const check = (slides: Draft2DeckSlide[], options: Partial<Parameters<typeof mechanicalDeckIssues>[2]> = {}) => codes(mechanicalDeckIssues([deck("c1", slides)], weekend, { opening: cover, closing, shape, emojis: 2, entities, ...options }));
+  assert.deepEqual(check(good), []);
+  assert.deepEqual(check([good[0], slide("Cueille ta citrouille, puis explore le labyrinthe", "Autocueillette, labyrinthe et fermette.", ["f8"], "23, 24 et 25 octobre"), good[2]]), ["ITEM_PLACE_MISSING c1 s2"], "neither Ferme Reid nor Sainte-Anne-de-Sabrevois");
+  assert.match(mechanicalDeckIssues([deck("c1", [good[0], slide("Cueille ta citrouille", "Autocueillette à la ferme.", ["f8"]), good[2]])], weekend, { opening: cover, closing, shape, emojis: 2, entities })[0].detail, /names no place or organizer of its item: Ferme Reid or Sainte-Anne-de-Sabrevois/u);
+  assert.deepEqual(check([slide("Légendes locales au Musée du Haut-Richelieu", "Une série de visites: les 17, 24 et 31 octobre.", ["f7"], "Samedi 24 octobre · soirée"), good[1], good[2]]), ["DATE_OUTSIDE_PERIOD c1 s1"], "the 17th and the 31st are outside the 23–25");
+  assert.deepEqual(check([good[0], good[1], slide("Au Carrefour Richelieu, costume et bonbons", "Viens costumé; la roue de prix, elle, exige un achat.", ["f9"], "Dimanche 25 octobre")]), ["BODY_IS_CAVEAT c1 s3"]);
+  const guards = [{ misreading: "Chaque sortie est offerte les trois jours", factIds: ["f7"] }, { misreading: "Tout est gratuit", factIds: ["f1"] }];
+  assert.deepEqual(check(good, { guards }), ["GUARD_UNCARRIED c1"], "f1 is on no slide; f7's guard is carried by the legends' slide");
+  assert.deepEqual(codes(mechanicalDeckIssues([deck("c1")], facts, { opening, closing, shape: arc, emojis: 2, guards })), [], "an arc's guards are the opening's");
+  assert.deepEqual(codes(mechanicalDeckIssues([deck("c1", good)], weekend, { opening: cover, closing, shape, emojis: 2 })), [], "without entities, no place check");
+});

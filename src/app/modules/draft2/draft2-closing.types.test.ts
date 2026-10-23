@@ -178,3 +178,10 @@ test("the penultimate and the last slide carry the facts their spine beats rest 
   assert.deepEqual(findings({ last: { factIds: ["f2", "f3"] } }, { beats }), []);
   assert.deepEqual(findings({}, { beats: { last: [] } }), [], "a beat without facts asks nothing");
 });
+
+test("a closing that is a checklist is refused: a headline that names one, or two conditions in a body (2026-10-22)", () => {
+  assert.deepEqual(findings({ last: { headline: "Ta liste de vérifs avant de partir", body: "Musée: billetterie pour l'heure et les places." } }), ["CLOSING_IS_CHECKLIST c1 last"]);
+  assert.deepEqual(findings({ last: { headline: "Avant de partir", body: "Musée: billetterie pour l'heure. Ferme Reid: la météo décide des activités." } }), ["CLOSING_IS_CHECKLIST c1 last"]);
+  assert.deepEqual(findings({ penultimate: { headline: "Checklist for Saturday", body: "Tickets, weather and parking." } }), ["CLOSING_IS_CHECKLIST c1 penultimate"]);
+  assert.deepEqual(findings({ last: { headline: "Étoiles, légendes ou citrouilles?", body: "Tu choisis quoi ce week-end? Vérifie la météo avant de partir." } }), [], "one condition at the end is no checklist");
+});

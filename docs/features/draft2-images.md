@@ -493,3 +493,13 @@ shipped as they came. The causes, read in the judges' own findings:
 What stays: the beat is the spine's, truth is material, the brand's avoid
 list is absolute. The judge's findings remain visible to the editor whatever
 the score.
+
+## 2026-10-22: a pasted photo never covers words
+
+On the Saint-Jean weekend carousel the verified photo of mont Saint-Grégoire,
+pasted in the lower half, covered the practical line the model had lettered;
+the review said "renseignements pratiques tronqués" and the carousel waited
+for an acknowledgement. A slide with a pasted photo now gets the program's
+words whatever the presentation (`programWordsOn`), and the band the words
+take ends above a photo that starts in the lower half (`textBandFor`, the
+photo's own layout box). See draft2-news-integrity.md.

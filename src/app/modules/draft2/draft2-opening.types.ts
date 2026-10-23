@@ -1,4 +1,5 @@
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
+import { choreIn, opensWithCaveat } from "./draft2-caveats.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { beatFactsFinding, beatFactsMissing, type Draft2FocusGuard, type Draft2FocusSnapshot } from "./draft2-focus.types";
@@ -110,6 +111,7 @@ export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
   "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION", "SIMILAR_CANDIDATE", "BEAT_FACTS_MISSING",
+  "COVER_IS_CHORE", "BODY_IS_CAVEAT",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
 export const OPENING_ISSUE_CODES = [...OPENING_MECHANICAL_CODES, ...OPENING_JUDGE_CODES] as const;
@@ -301,6 +303,13 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     }
     const stock = stockPhraseIn(`${cover.headline} ${cover.subheadline}`);
     if (stock) add("STOCK_PHRASE", "cover", `The cover uses the stock formula "${stock}": write the lever's mechanism in the story's own words.`);
+    // Caveats are not content (2026-10-22): the cover sells the experience; a check goes in a practical line or the caption.
+    const chore = choreIn(`${cover.headline} ${cover.subheadline}`);
+    if (chore) add("COVER_IS_CHORE", "cover", `The cover gives the reader a chore ("${chore}"): the cover sells the experience; a check or a condition goes in its item's practical line or in the caption.`);
+    if (itemCount !== undefined) {
+      const caveat = opensWithCaveat(slide2.body);
+      if (caveat) add("BODY_IS_CAVEAT", "slide2", `Slide 2 opens with a condition ("${caveat}") instead of what the reader does or sees; the condition goes at the end, in the practical details, or in the caption.`);
+    }
     for (const [part, value] of [["cover", `${cover.headline}\n${cover.subheadline}`], ["slide2", `${slide2.headline}\n${slide2.body}`]] as const) {
       const words = addressBreaches(value, reader);
       if (words.length && reader) add("WRONG_ADDRESS", part, addressFinding(words, reader));
@@ -317,8 +326,10 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
       if (missing.length && beat) add("BEAT_FACTS_MISSING", part, beatFactsFinding(label, missing, beat, facts));
     }
     // What the cover alone could make a reader wrongly believe is prevented before the reader can stop: on the cover or slide 2, by one of the guard's facts.
+    // A list's or a procedure's guards are discharged by each item's own details on its slide (the Deck's GUARD_UNCARRIED), never by a general
+    // sentence on slide 2 ("Les autres sorties n'ont pas toutes les mêmes jours", 2026-10-22).
     const carried = new Set([...cover.factIds, ...slide2.factIds]);
-    for (const guard of guards) {
+    for (const guard of itemCount === undefined ? guards : []) {
       if (!guard.factIds.some((id) => carried.has(id))) add("GUARD_LATE", "slide2", `A reader who stops here could believe "${guard.misreading}": the cover or slide 2 must state what prevents it, citing ${guard.factIds.join(" or ")}.`);
     }
     // A proposal's original and the writer's edit may share a headline on purpose: the edit kept what worked.

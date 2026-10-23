@@ -56,7 +56,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "11",
+  version: "12",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -160,6 +160,11 @@ story takes the ones it needs, in this order, and may repeat rising:
   headline itself would make the claim the guard prevents (a suspension that
   reads as a closure). A cover that spends its subheadline on a qualifier
   gives up its pull.
+- In a list or a procedure, a guard is discharged by each item's own details
+  on its slide (its days, its price, its reservation in the practical line),
+  never by a general sentence on slide 2 ("Les autres sorties n'ont pas
+  toutes les mêmes jours"): the slide2 beat is the first item's, and its
+  words say what that item is and where.
 - The images are a sequence, not a series: from beat to beat the dominant
   subject moves with the story (the place, the tool, the people's trace, a
   comparison, the consequence), within what the facts hold. The story's

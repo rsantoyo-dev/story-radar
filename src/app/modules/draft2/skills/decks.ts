@@ -15,7 +15,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const DECKS_SKILL: Draft2Skill = {
   name: "decks",
-  version: "5",
+  version: "6",
   text: `# Decks for social carousels
 
 The deck is the middle of the carousel: the slides after slide 2 and before
@@ -55,6 +55,14 @@ judged against the opening and the closing it connects.
   number, the consequence), so a reader who reads only the headlines follows
   the story: never a comment on the facts ("The nuance is in the 'may'"), a
   comparison without its terms ("Incidents go beyond drugs") or a riddle.
+- A list's item: its one sentence says what the reader does or sees there,
+  first. It names the place or the organizer (the program refuses an item
+  that names none of its facts' places). Its practical line carries its own
+  days, price and reservation, and that is what discharges the story's
+  guards. It names no day outside the period the cover announces (other
+  dates go in the caption). And its sentence carries no condition ("exige un
+  achat", "la météo décide", "vérifie"): a condition goes in the practical
+  line or in the caption, once.
 
 ## Facts
 - Every sentence rests on the verified facts cited by id. Numbers, names,

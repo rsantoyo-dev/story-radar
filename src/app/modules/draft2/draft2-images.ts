@@ -223,6 +223,15 @@ function chromeFor(ctx: Context, order: number) {
 
 const logoApplies = (ctx: Context, order: number) => Boolean(ctx.brandSnapshot && shouldApplyCreativeBrandOverlay(ctx.brandSnapshot, order));
 
+/**
+ * Whether the program letters a slide's words: when the presentation says so,
+ * and always on a slide that pastes a verified photo (2026-10-22: on the
+ * Saint-Jean weekend carousel the pasted photo of mont Saint-Grégoire covered
+ * the practical line the model had lettered; the program's band keeps clear
+ * of the photo's layout).
+ */
+const programWordsOn = (ctx: Pick<Context, "presentation">, slide: Pick<Draft2SlideImage, "material">) => ctx.presentation.text === "program" || slide.material.some(isPasted);
+
 /** Where the program sets a slide's words: below the logo where the logo sits on top, above the page number when a real photo or the map card takes the top. */
 function textBandOf(ctx: Context, slide: Draft2SlideImage, attempt: Pick<Draft2ImageAttempt, "portrait">): Draft2TextBand {
   const overlay = overlayFor(ctx, slide.order);
@@ -358,9 +367,9 @@ async function imageRequest(ctx: Context, slide: Draft2SlideImage, attempt: Draf
     profileVisual: { name: ctx.profile.name, visualGuidance: ctx.profile.visualGuidance, creativeIdentity: ctx.profile.creativeIdentity, brandPalette: ctx.profile.brandPalette },
     verifiedImagery: Boolean(pasted || panel || placeFile || storyRefs.some((reference) => reference.purpose !== "style")),
     // The program sets the words afterwards: the image carries none, and keeps the band calm for them.
-    wordsSetAfterwards: ctx.presentation.text === "program",
+    wordsSetAfterwards: programWordsOn(ctx, slide),
   });
-  const program = ctx.presentation.text === "program";
+  const program = programWordsOn(ctx, slide);
   const characterImages = characters.flatMap((character) => character.referenceImages);
   // The narrative's anchor, drawn once before the slides, goes right after the characters: the slide shows it as the plate does.
   const plateFile = ctx.run.anchorPlate?.status === "generated" && slideCarriesAnchor(slide) ? await anchorPlateFile(ctx, slide) : undefined;
@@ -708,7 +717,7 @@ async function finish(ctx: Context, slide: Draft2SlideImage, attempt: Draft2Imag
     out = await compositeMapPanel({ image: out, map, matColor: color ?? "#1f2933", layout: panel.layout, ...(panel.position ? { position: panel.position } : {}), ...(panel.label ? { label: panel.label } : {}), ...(color ? { ink: color } : {}) });
   }
   // The program's words, before the page number and the logo, in the band the prompt kept calm.
-  if (ctx.presentation.text === "program" || attempt.own) {
+  if (programWordsOn(ctx, slide) || attempt.own) {
     const words = wordsFor(ctx, slide);
     // A layout the attempt already carries (the editor's, or the one its words are set again with) is kept; otherwise the program chooses one.
     // A kept layout whose marked data no longer keeps the slide's words (they changed) marks them again.
@@ -1071,7 +1080,7 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
           const image = finished.get(attempt) ?? new Uint8Array(await (await readPrivateR2ImageFile({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), contentType: "image/png", fileName: imageFile(slide.slide, attempt.version) })).arrayBuffer());
           await reviewAttempt(ctx, slide, attempt, image);
           // A first image the review flags is corrected once, from that image before its overlays.
-          const correction = correctionFor(slide, attempt, new Date(), { program: ctx.presentation.text === "program" });
+          const correction = correctionFor(slide, attempt, new Date(), { program: programWordsOn(ctx, slide) });
           if (correction) slide.attempts.push(correction);
           await checkpoint();
         });

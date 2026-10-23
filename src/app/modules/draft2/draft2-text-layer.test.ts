@@ -169,3 +169,10 @@ test("a calm band still takes a card when a thin line crosses where the words go
   const crossed = new Uint8Array(await sharp({ create: { width: 1080, height: 1350, channels: 3, background: "#E9DFC8" } }).composite([{ input: Buffer.from(line) }]).png().toBuffer());
   assert.equal((await autoWordsLayout({ image: crossed, words, band: textBandFor({}), palette })).background.kind, "card", "a dashed line and a chain through the words");
 });
+
+test("the band keeps clear of a pasted photo that starts in the lower half: it ends above the photo, with its gap (2026-10-22)", () => {
+  assert.deepEqual(textBandFor({ photoLayout: "offset-block-right" }), { edge: "top", left: 72, top: 64, width: 936, height: 570 - 28 - 64 }, "the photo's top is at 570");
+  assert.equal(textBandFor({ photoLayout: "rounded-left" }).height, 560 - 28 - 64);
+  assert.deepEqual(textBandFor({ photoLayout: "top-bleed" }).edge, "bottom", "a photo across the top sends the words below it");
+  assert.equal(textBandFor({}).height, 540, "no photo: the full band");
+});

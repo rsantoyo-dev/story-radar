@@ -41,7 +41,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(composeInstructions("visual-writer", [skill], "# Brand").instructions, `${VISUAL_ROLES["visual-writer"]}\n\n${VISUAL_WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "the visual writer reads its own standard: it writes no headline to count and cites no fact");
   assert.match(VISUAL_WRITER_STANDARD, /every direction under 700 characters[^]*a corner or a band kept free for the logo is fine/);
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@11", "levers@1", "fairness@2", "reader@3", "hooks@11", "closings@4", "decks@5", "review@8", "visuals@16", "images@6", "captions@4"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@4", "focus@17", "narratives@4", "discovery@1", "arcs@1", "spine@12", "levers@1", "fairness@2", "reader@3", "hooks@12", "closings@5", "decks@6", "review@8", "visuals@16", "images@6", "captions@4"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -154,7 +154,7 @@ test("closings: one action the goal decides and the publication words, a grave s
   const { instructions, skillVersions } = composeInstructions("closing-writer", [CLOSINGS_SKILL], `${brandBrief(profile)}\n\n${callToActionBrief({ style: "Warm.", emojis: 0 })}`);
   assert.ok(instructions.startsWith(CLOSING_ROLES["closing-writer"]));
   assert.ok(instructions.endsWith("# Calls to action\n- The publication's style (its voice and wording; the focus's goal decides the action): Warm.\n- Emojis: none."));
-  assert.deepEqual(skillVersions, { closings: "4" });
+  assert.deepEqual(skillVersions, { closings: "5" });
 });
 
 test("the decks rubric states the shapes, limits and thresholds the program enforces", () => {
@@ -166,7 +166,7 @@ test("the decks rubric states the shapes, limits and thresholds the program enfo
   assert.match(DECKS_SKILL.text, /never\s+a recap or a summary label/);
   assert.match(DECK_ROLES["deck-writer"], /each a different path from slide 2 to the closing/);
   assert.match(DECK_ROLES["deck-judge"], /"part": "s1" for the first deck slide/);
-  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "5" });
+  assert.deepEqual(composeInstructions("deck-judge", [DECKS_SKILL], brandBrief(profile)).skillVersions, { decks: "6" });
 });
 
 test("the visual scripts rubric states the limits and thresholds the program enforces, and v1's rules on people, places and characters", () => {

@@ -57,6 +57,76 @@ const DATA = new RegExp(`${BEFORE}(?:${[
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&").replace(/['’]/gu, "['’]");
 
+/** A month's number from its name in any of the three languages (1–12), or undefined. */
+export function monthNumber(name: string): number | undefined {
+  const key = name.toLowerCase();
+  const lists = [
+    ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
+    ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"],
+    ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+  ];
+  if (key === "setiembre") return 9;
+  for (const list of lists) { const at = list.indexOf(key); if (at >= 0) return at + 1; }
+  return undefined;
+}
+
+export type Draft2DayDate = { day: number; month: number };
+
+/**
+ * The calendar days a text names, month by month: "du 23 au 25 octobre" is
+ * three days, "les 17, 24 et 31 octobre" three, "samedi 24 octobre" one, in
+ * the three languages ("October 24", "24 de octubre"). A month without a day
+ * ("octobre 2026") names none. (2026-10-22: a list's slide named dates
+ * outside the weekend the story announced.)
+ */
+export function dayDatesIn(text: string): Draft2DayDate[] {
+  const dates: Draft2DayDate[] = [];
+  const seen = new Set<string>();
+  const push = (day: number, month: number) => { const key = `${month}-${day}`; if (day >= 1 && day <= 31 && !seen.has(key)) { seen.add(key); dates.push({ day, month }); } };
+  const range = (from: number, to: number, month: number) => { if (to >= from && to - from <= 31) for (let day = from; day <= to; day += 1) push(day, month); else { push(from, month); push(to, month); } };
+  // Days before the month: a list and ranges of day numbers ("17, 24 et 31", "23 au 25", "vendredi 16"), then the month.
+  // A day is a whole one- or two-digit number: never the "20" of "2026".
+  const DAY = `(?<!\\d)${DAY_NUMBER}(?!\\d)`;
+  const before = new RegExp(`((?:${DAY}(?:${RANGE}${DAY})?(?:\\s*(?:,|et|and|y|&)\\s*)?)+)\\s+(?:de\\s+)?(${MONTHS})(?![\\p{L}])`, "giu");
+  for (const match of text.matchAll(before)) {
+    const month = monthNumber(match[2]); if (!month) continue;
+    for (const part of match[1].split(/\s*(?:,|et|and|y|&)\s*/u).map((entry) => entry.trim()).filter(Boolean)) {
+      const bounds = part.match(/\d{1,2}/gu)?.map(Number) ?? [];
+      if (bounds.length >= 2) range(bounds[0], bounds[1], month); else if (bounds.length === 1) push(bounds[0], month);
+    }
+  }
+  // The month before the days: "October 24", "October 24–25", "October 17, 24 and 31".
+  const after = new RegExp(`(?<![\\p{L}])(${MONTHS})\\s+((?:${DAY}(?:${RANGE}${DAY})?(?:\\s*(?:,|et|and|y|&)\\s*)?)+)(?!\\s?h\\b|:)`, "giu");
+  for (const match of text.matchAll(after)) {
+    const month = monthNumber(match[1]); if (!month) continue;
+    for (const part of match[2].split(/\s*(?:,|et|and|y|&)\s*/u).map((entry) => entry.trim()).filter(Boolean)) {
+      const bounds = part.match(/\d{1,2}/gu)?.map(Number) ?? [];
+      if (bounds.length >= 2) range(bounds[0], bounds[1], month); else if (bounds.length === 1) push(bounds[0], month);
+    }
+  }
+  return dates;
+}
+
+export type Draft2DayPeriod = { month: number; from: number; to: number };
+
+/**
+ * The period a text announces: its days when they fall in one month and span
+ * a week at most ("du 23 au 25 octobre 2026"); undefined otherwise, so a
+ * check never rests on a period it is not sure of.
+ */
+export function dayPeriodIn(text: string): Draft2DayPeriod | undefined {
+  const dates = dayDatesIn(text);
+  if (!dates.length || dates.some((date) => date.month !== dates[0].month)) return undefined;
+  const days = dates.map((date) => date.day);
+  const from = Math.min(...days), to = Math.max(...days);
+  return to - from <= 7 ? { month: dates[0].month, from, to } : undefined;
+}
+
+/** The days a text names outside a period, as "17 octobre" in the text's own month name. */
+export function daysOutsidePeriod(text: string, period: Draft2DayPeriod): Draft2DayDate[] {
+  return dayDatesIn(text).filter((date) => date.month !== period.month || date.day < period.from || date.day > period.to);
+}
+
 /** The story's places, by the names People and places found, without the brand's own city (its region's names): it is in every post. */
 export function storyPlaces(entities: readonly Pick<Draft2InventoryEntity, "name" | "kind">[], region?: string | null): string[] {
   const home = new Set((region ?? "").split(",").map((part) => part.trim().toLocaleLowerCase()).filter(Boolean));

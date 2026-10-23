@@ -37,7 +37,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const HOOKS_SKILL: Draft2Skill = {
   name: "hooks",
-  version: "11",
+  version: "12",
   text: `# Openings for social carousels
 
 An opening is the cover (headline + subheadline) and slide 2 (headline + body).
@@ -109,6 +109,11 @@ guard's facts; the judge names one whose words leave the misreading open
   blurs what is at stake misleads.
 - Name the place this audience recognizes (the neighbourhood, the area, the
   venue) when the facts give it: a local reader places the story at once.
+- The cover sells the experience, never a chore: no "vérifie", "confirme",
+  "check" or "renseigne-toi" on it (the program refuses them). A check or a
+  condition goes in its item's practical line, or in the caption, once.
+- A list's cover names only a theme every item shares: five outings of
+  which one is a night under the stars are not "cinq sorties d'Halloween".
 
 ## Cover subheadline
 - At most 12 words is the aim, 16 at the very most, one short line: the one concrete draw that makes the

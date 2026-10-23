@@ -14,10 +14,11 @@ import { brandBrief, composeInstructions, creativeSkills } from "./skills/draft2
 import { DECKS_SKILL } from "./skills/decks";
 import { FAIRNESS_SKILL } from "./skills/fairness";
 import { READER_SKILL } from "./skills/reader";
+import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** What a deck run connects and follows: the opening and the closing as the editor chose them, the focus they followed, and the deck's shape. */
-type DeckSnapshot = { opening: Draft2ClosingOpening; closing: Draft2DeckClosing; focus: Draft2FocusSnapshot; shape: Draft2DeckShape };
+type DeckSnapshot = { opening: Draft2ClosingOpening; closing: Draft2DeckClosing; focus: Draft2FocusSnapshot; shape: Draft2DeckShape; /** People and places' entities with their facts, for the list's place check; read from the session on every run. */ entities?: Pick<Draft2InventoryEntity, "name" | "kind" | "factIds">[] };
 
 /**
  * What a run connects: a continued run keeps what it started with; a new run
@@ -44,6 +45,7 @@ function deckTarget(session: Draft2SessionRow, stopped: Draft2Deck | undefined):
     closing: { id, ...(penultimate ? { penultimate } : {}), last },
     focus: closing.focus,
     shape: deckShape(closing.focus.values.structure, closing.opening.slide2.factIds, closing.focus.values.spine),
+    entities: (session.inventory?.entities ?? []).map(({ name, kind, factIds }) => ({ name, kind, factIds })),
   };
 }
 
@@ -59,7 +61,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
   roles: DRAFT2_DECK_ROLES,
   snapshot: deckTarget,
   newRun: ({ opening, closing, focus, shape }) => ({ opening, closing, focus, shape }),
-  setup: ({ snapshot: { opening, closing, focus, shape }, profile, facts, plan }) => {
+  setup: ({ snapshot: { opening, closing, focus, shape, entities }, profile, facts, plan }) => {
     const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
     const brief = brandBrief(profile);
     const values = focus.values;
@@ -70,7 +72,7 @@ const DECK_STEP: FunnelStep<Draft2DeckCandidate, Draft2DeckScore, Draft2DeckIssu
       schemas: { writer: DRAFT2_DECK_SCHEMA, judge: DRAFT2_DECK_EVALUATION_SCHEMA },
       parseCandidates: parseDeckCandidates,
       parseEvaluation: parseDeckEvaluation,
-      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language }, beats: spineMiddleFactIds(values.spine) }),
+      mechanical: (candidates) => mechanicalDeckIssues(candidates, facts, { opening, closing, shape, itemCount: focusItemCount(values), emojis, reader: { address: profile.readerAddress, language: profile.language }, entities, guards: values.guards, beats: spineMiddleFactIds(values.spine) }),
       explore: deckExploreRequest,
       refine: deckRefineRequest,
       fix: deckFixRequest,

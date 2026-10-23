@@ -5,7 +5,7 @@ import { DEFAULT_WORDS_STYLE, brandFontById, brandFontChoice, type CreativeWords
 import { canvasFont, registerBrandFonts } from "../stories/brand-fonts.server";
 import { lightness } from "../stories/creative-brand-logo-versions";
 import type { CreativeBrandPaletteColor } from "../stories/creative-content.types";
-import type { PortraitLayoutId } from "../stories/creative-portrait-composite";
+import { PORTRAIT_LAYOUTS, type PortraitLayoutId } from "../stories/creative-portrait-composite";
 import type { MapPanelPosition } from "../stories/map-panel-position";
 import { markData } from "./draft2-data-marks";
 import { funnelWordCount } from "./draft2-funnel";
@@ -51,7 +51,10 @@ export function textBandFor({ logo, photoLayout, mapPosition }: { logo?: Box; ph
   const bottom = photoLayout === "top-bleed" || mapPosition === "top-right";
   if (!bottom) {
     const top = logoOnTop ? Math.round(logo.top + logo.height + GAP) : EDGE;
-    return { edge: "top", left: SIDE, top, width: TEXT_CANVAS.width - SIDE * 2, height: BAND_HEIGHT };
+    // A pasted photo that starts in the lower half: the band ends above it, so the words never run under the photo (2026-10-22).
+    const photo = photoLayout ? PORTRAIT_LAYOUTS.find((layout) => layout.id === photoLayout)?.photo : undefined;
+    const height = photo && photo.top > top ? Math.min(BAND_HEIGHT, photo.top - GAP - top) : BAND_HEIGHT;
+    return { edge: "top", left: SIDE, top, width: TEXT_CANVAS.width - SIDE * 2, height };
   }
   const end = logo && !logoOnTop ? Math.round(logo.top - GAP) : TEXT_CANVAS.height - BOTTOM_RESERVE;
   return { edge: "bottom", left: SIDE, top: end - BAND_HEIGHT, width: TEXT_CANVAS.width - SIDE * 2, height: BAND_HEIGHT };
