@@ -1,14 +1,15 @@
 import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { caveatIn, withoutPlanningLabels } from "./draft2-caveats.types";
-import { dayPeriodIn, daysOutsidePeriod } from "./draft2-data-marks";
+import { dayPeriodIn, daysOutsidePeriod, nameCollisionsIn } from "./draft2-data-marks";
+import { quoteFinding, quotesNotInFacts } from "./draft2-quotes.types";
 import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import { beatFactsFinding, beatFactsMissing, type Draft2FocusSnapshot, type Draft2FocusStructureKind } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
-  funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
+  funnelRefineRequest, funnelSlideText, funnelText, tidyTypography, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
@@ -68,7 +69,7 @@ export const DECK_CRITERIA = ["flow", "coverage", "pacing", "clarity", "groundin
 export const DECK_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "HEADLINE_TOO_LONG", "BODY_TOO_LONG", "PRACTICAL_TOO_LONG", "PRACTICAL_OUTSIDE_LIST", "SLIDE_COUNT", "ITEM_OUT_OF_PLACE",
   "RESTATES_SLIDE", "RESTATES_FIGURE", "RECAP_LABEL", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
-  "ITEM_PLACE_MISSING", "DATE_OUTSIDE_PERIOD", "BODY_IS_CAVEAT", "GUARD_UNCARRIED",
+  "ITEM_PLACE_MISSING", "DATE_OUTSIDE_PERIOD", "BODY_IS_CAVEAT", "GUARD_UNCARRIED", "QUOTE_NOT_VERBATIM", "NAME_COLLISION",
 ] as const;
 export const DECK_JUDGE_CODES = ["BREAKS_FLOW", "GAP", "OVERLOADED", "REPEATS", "WRONG_LENGTH", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const DECK_ISSUE_CODES = [...DECK_MECHANICAL_CODES, ...DECK_JUDGE_CODES] as const;
@@ -179,10 +180,10 @@ function deckFrom(raw: unknown, fallbackId: string): Draft2DeckCandidate | undef
   const slides: Draft2DeckSlide[] = [];
   for (const entry of item.slides.slice(0, DECK_MAX_SLIDES)) {
     const slide = funnelRecord(entry);
-    const headline = funnelText(slide.headline, 300);
+    const headline = funnelSlideText(slide.headline, 300);
     // The spine's "Ligne pratique :" is a planning label, never the reader's words.
-    const body = funnelText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
-    const practical = typeof slide.practical === "string" && slide.practical.trim().length <= 300 ? withoutPlanningLabels(slide.practical.trim()) : undefined;
+    const body = funnelSlideText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
+    const practical = typeof slide.practical === "string" && slide.practical.trim().length <= 300 ? tidyTypography(withoutPlanningLabels(slide.practical.trim())) : undefined;
     const ids = funnelFactIds(slide.factIds);
     if (!headline || !body || practical === undefined || !ids) return undefined;
     slides.push({ headline, body, practical, factIds: ids });
@@ -307,6 +308,10 @@ export function mechanicalDeckIssues(candidates: readonly Draft2DeckCandidate[],
       }
       const recap = RECAP.exec(`${slide.headline} ${slide.body}`);
       if (recap) add("RECAP_LABEL", part, `"${recap[0]}" sums up instead of moving the story on.`);
+      const slideText = `${slide.headline} ${slide.body} ${slide.practical}`;
+      const quotes = quotesNotInFacts(slideText, facts);
+      if (quotes.length) add("QUOTE_NOT_VERBATIM", part, `${label}: ${quoteFinding(quotes)}`);
+      for (const { short, long } of nameCollisionsIn(slideText, entities ?? [])) add("NAME_COLLISION", part, `${label} names "${short.name}" (${short.kind}) and "${long.name}" (${long.kind}), which read alike: name one, or say what each is.`);
       // A figure already on two other slides of the carousel: a third mention repeats it.
       const restated = figures[index].flatMap((figure) => {
         const elsewhere = [...fixedFigures.filter(([, list]) => list.includes(figure)).map(([name]) => name),

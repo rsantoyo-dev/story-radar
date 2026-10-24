@@ -3,7 +3,9 @@ import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInpu
 import { getDraft2Session } from "./draft2-session.repository";
 import { DRAFT2_OPENING_EARLIER_ROLES, DRAFT2_OPENING_ROLES } from "./draft2-models";
 import { Draft2InputError } from "./draft2-facts.types";
-import { focusFindings, focusForModels, focusItemCount, focusMaterial, spineBeatFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusFindings, focusForModels, focusItemCount, focusMaterial, focusToday, spineBeatFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { storyDeadline } from "./draft2-data-marks";
+import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 import { eligibleLevers, leverSpread } from "./draft2-levers.types";
 import {
   DRAFT2_OPENING_EVALUATION_SCHEMA, DRAFT2_OPENING_SCHEMA, OPENING_DISTINCT_INSTRUCTION, OPENING_GATE, openingPlan, mechanicalOpeningIssues, OPENING_WORD_LIMITS, openingExploreRequest, openingFixRequest,
@@ -24,7 +26,10 @@ export type Draft2OpeningInput = FunnelStepInput;
  * new run takes the session's focus as it stands, which must be decided, not
  * being decided, and free of program findings.
  */
-function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefined): Draft2FocusSnapshot {
+/** The focus a run follows and, for a new run, People and places' names (two that read alike on one slide are a finding). */
+type OpeningSnapshot = Draft2FocusSnapshot & { entities?: Pick<Draft2InventoryEntity, "name" | "kind">[] };
+
+function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefined): OpeningSnapshot {
   if (stopped) {
     if (!stopped.focus) throw new Draft2InputError("This run started before the Focus step and cannot continue. Write the opening again.");
     return stopped.focus;
@@ -35,11 +40,11 @@ function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefi
   // The narrative's anchor is checked against People and places as they stand now.
   const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined);
   if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
-  return { version: focus.version, values: focus.values };
+  return { version: focus.version, values: focus.values, entities: (session.inventory?.entities ?? []).map(({ name, kind }) => ({ name, kind })) };
 }
 
 /** The Opening on the shared funnel: its plan, gate, roles, prompts and contract. */
-const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft2OpeningIssue, Draft2Opening, Draft2FocusSnapshot> = {
+const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft2OpeningIssue, Draft2Opening, OpeningSnapshot> = {
   step: "opening",
   noun: "opening",
   article: "an opening",
@@ -50,9 +55,11 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
   roles: DRAFT2_OPENING_ROLES,
   earlierRoles: DRAFT2_OPENING_EARLIER_ROLES,
   snapshot: openingFocus,
-  newRun: (focus) => ({ focus }),
+  newRun: ({ version, values }) => ({ focus: { version, values } }),
   setup: ({ snapshot: focus, profile, facts, plan, pipeline }) => {
     const brief = brandBrief(profile);
+    // The end of the story's event, against the day of writing (UTC: the window of three days tolerates the publication's offset).
+    const deadline = storyDeadline(facts, focusToday(undefined, new Date()));
     const itemCount = focusItemCount(focus.values);
     // The levers this story can carry; the plan's choice spreads the new openings over them, and a free hook always competes.
     const levers = eligibleLevers(facts, focus.values);
@@ -65,7 +72,7 @@ const OPENING_STEP: FunnelStep<Draft2OpeningCandidate, Draft2OpeningScore, Draft
       schemas: { writer: DRAFT2_OPENING_SCHEMA, judge: DRAFT2_OPENING_EVALUATION_SCHEMA },
       parseCandidates: parseOpeningCandidates,
       parseEvaluation: parseOpeningEvaluation,
-      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language }, distinct, beats: { cover: spineBeatFactIds(focus.values.spine, "cover"), slide2: spineBeatFactIds(focus.values.spine, "slide2") } }),
+      mechanical: (candidates) => mechanicalOpeningIssues(candidates, facts, { itemCount, eligibleLevers: levers, guards: focus.values.guards, reader: { address: profile.readerAddress, language: profile.language }, distinct, beats: { cover: spineBeatFactIds(focus.values.spine, "cover"), slide2: spineBeatFactIds(focus.values.spine, "slide2") }, deadline, entities: focus.entities }),
       explore: (wanted, last, versions) => ({ ...openingExploreRequest(wanted, last, versions), levers: { spread: leverSpread(focus.values.levers, wanted) }, ...(distinct ? { instruction: OPENING_DISTINCT_INSTRUCTION } : {}) }),
       refine: openingRefineRequest,
       fix: openingFixRequest,

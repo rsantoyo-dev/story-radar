@@ -1,3 +1,6 @@
+import { scheduledPastDeadline } from "./publish-publication-package.core";
+import { draft2FactsByPublicationDraft } from "../draft2/draft2-session.repository";
+import { storyDeadline } from "../draft2/draft2-data-marks";
 import "server-only";
 
 import { createHash, randomUUID } from "node:crypto";
@@ -311,6 +314,12 @@ export async function requestPublishNow(
     throw new PublicationJobConflictError("The package is stale, consumed or expired. Validate and freeze again.");
   }
   const publishAt = schedulePublishAt(requestedPublishAt, { now: new Date(), frozenAt: pkg.createdAt });
+  // A Draft 2 story with an end date is never scheduled after it.
+  if (publishAt) {
+    const facts = await draft2FactsByPublicationDraft(topicId, draftId);
+    const refusal = facts ? scheduledPastDeadline(publishAt, storyDeadline(facts, publishAt.toISOString().slice(0, 10))) : undefined;
+    if (refusal) throw new PublicationJobConflictError(refusal);
+  }
   const destination = await getChannelPublicationDestination(topicId, channel);
   if (destination.igUserId !== pkg.igUserId || (destination.pageId ?? null) !== (channel === "instagram-direct" ? null : pkg.pageId) ||
       destination.connectionVersion !== pkg.connectionVersion) {

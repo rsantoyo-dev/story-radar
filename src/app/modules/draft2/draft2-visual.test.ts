@@ -301,3 +301,15 @@ test("v4: the draft's image intents, written with the words, are the script's be
   await v3.run();
   assert.equal((v3.calls[0].input.context as { spineBeats?: Record<string, string> }).spineBeats?.cover, undefined, "v3 reads no draft");
 });
+
+test("the story's thing the words name and no verified photo shows is flagged for the writer, the judge and the editor, never blocking (2026-10-24, the ART[O] faces)", async () => {
+  const inventory = { ...INVENTORY, entities: [...INVENTORY.entities, { id: "e2", name: "Tall windows", kind: "thing", role: "subject", description: "The hall's windows", factIds: ["f2"] }] } as unknown as Draft2Inventory;
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { inventory } });
+  const session = await h.run();
+  assert.deepEqual((h.calls[0].input.context as { subjectsUnseen?: { names: string[] } }).subjectsUnseen?.names, ["Tall windows"]);
+  assert.deepEqual(session.visual?.subjectsUnseen, ["Tall windows"]);
+  assert.equal(session.visual?.status, "ready", "a flag, not a finding");
+  const seen = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e2" ? { ...entity, storyPhoto: { id: "p1", name: "windows.jpg" } } : entity) } as unknown as Draft2Inventory;
+  const withPhoto = await harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { inventory: seen } }).run();
+  assert.equal(withPhoto.visual?.subjectsUnseen, undefined, "a photo exists: nothing to flag");
+});

@@ -660,3 +660,14 @@ function classifyPublishError(error: unknown, platform = "Instagram"): {
       "The publish attempt failed unexpectedly and no confirmation was received.",
   };
 }
+
+/**
+ * A scheduled order after the day the story's event ends (2026-10-24, from
+ * the ART[O] review: "si la fecha ya pasó, bloquear la programación"). The
+ * deadline is read from the Draft 2 facts against the publication day, so a
+ * negative `daysLeft` means the event ended before the post would go out.
+ */
+export function scheduledPastDeadline(publishAt: Date, deadline: { date: string; daysLeft: number } | undefined): string | undefined {
+  if (!deadline || deadline.daysLeft >= 0) return undefined;
+  return `The story's event ends on ${deadline.date}, and this order is scheduled for ${publishAt.toISOString().slice(0, 10)}: schedule it on or before that day.`;
+}

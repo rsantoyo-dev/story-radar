@@ -1,6 +1,7 @@
 import { closingShape, closingWordLimits, mechanicalClosingIssues, parseClosingCandidates, type Draft2Closing, type Draft2ClosingCandidate, type Draft2ClosingIssue, type Draft2ClosingOpening, type Draft2ClosingShape } from "./draft2-closing.types";
 import { deckShape, deckWordLimits, mechanicalDeckIssues, parseDeckCandidates, shapeForModels, type Draft2Deck, type Draft2DeckCandidate, type Draft2DeckClosing, type Draft2DeckIssue, type Draft2DeckShape } from "./draft2-deck.types";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
+import { DEADLINE_URGENT_DAYS, type Draft2Deadline } from "./draft2-data-marks";
 import { focusItemCount, spineBeatFactIds, spineMiddleFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import type { FunnelRole } from "./draft2-funnel";
 import type { Draft2InventoryEntity } from "./draft2-inventory.types";
@@ -42,6 +43,8 @@ export const DRAFT2_DRAFT_SCHEMA = {
 /** What the draft follows: the focus as decided, its shapes and the program's numbers. */
 export type DraftPlan = {
   focus: Draft2FocusSnapshot;
+  /** The end of the story's event, when the facts name one. */
+  deadline?: Draft2Deadline;
   closingShape: Draft2ClosingShape;
   /** The deck's shape as the spine plans it (slide 2 covering the spine's slide 2 facts); the deck's own is computed from the answer's slide 2. */
   plannedDeck: Draft2DeckShape;
@@ -49,10 +52,11 @@ export type DraftPlan = {
   emojis: number;
 };
 
-export function draftPlan(focus: Draft2FocusSnapshot, levers: readonly string[], emojis: number): DraftPlan {
+export function draftPlan(focus: Draft2FocusSnapshot, levers: readonly string[], emojis: number, deadline?: Draft2Deadline): DraftPlan {
   const values = focus.values;
   return {
     focus,
+    ...(deadline ? { deadline } : {}),
     closingShape: closingShape(values.structure.kind),
     plannedDeck: deckShape(values.structure, spineBeatFactIds(values.spine, "slide2") ?? [], values.spine),
     levers,
@@ -69,6 +73,8 @@ export function draftRequest(plan: DraftPlan): Record<string, unknown> {
     closingShape: plan.closingShape,
     emojis: plan.emojis,
     wordLimits: { opening: OPENING_WORD_LIMITS, deck: deckWordLimits(plan.plannedDeck), closing: closingWordLimits(plan.closingShape) },
+    // The event's end within days: the cover carries it (DEADLINE_OFF_COVER), so the writer knows before the program checks.
+    ...(plan.deadline && plan.deadline.daysLeft >= 0 && plan.deadline.daysLeft <= DEADLINE_URGENT_DAYS ? { eventEnd: { date: plan.deadline.date, daysLeft: plan.deadline.daysLeft, rule: "the cover names the last day or the time left" } } : {}),
   };
 }
 
@@ -164,7 +170,7 @@ export type DraftFindings = {
 export function draftFindings(draft: Draft, plan: DraftPlan, checks: DraftChecks): DraftFindings {
   const values = plan.focus.values;
   const itemCount = focusItemCount(values);
-  const opening = mechanicalOpeningIssues(draft.openings, checks.facts, { itemCount, eligibleLevers: plan.levers, guards: values.guards, reader: checks.reader, beats: { cover: spineBeatFactIds(values.spine, "cover"), slide2: spineBeatFactIds(values.spine, "slide2") } });
+  const opening = mechanicalOpeningIssues(draft.openings, checks.facts, { itemCount, eligibleLevers: plan.levers, guards: values.guards, reader: checks.reader, beats: { cover: spineBeatFactIds(values.spine, "cover"), slide2: spineBeatFactIds(values.spine, "slide2") }, deadline: plan.deadline, entities: checks.entities });
   const clean = draft.openings.find((candidate) => !opening.some((issue) => issue.candidateId === candidate.id));
   const chosen = clean ?? draft.openings[0];
   const openingSnapshot: Draft2ClosingOpening = { id: chosen.id, cover: chosen.cover, slide2: chosen.slide2, ...(chosen.lever ? { lever: chosen.lever } : {}) };

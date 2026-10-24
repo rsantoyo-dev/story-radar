@@ -216,7 +216,7 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const limits = { patches: REVIEW_MAX_PATCHES, words: reviewWordLimits(carousel, { deck: chosen.deck.shape ?? undefined, closing: chosen.closing.shape ?? undefined }) };
       const editorAnswer = await call(editorBy, "draft2_review", {
         instructions: editorInstructions,
-        contents: { task: "review", slides, ...(script ? { images: script.images } : {}), focus: focusForModels(chosen.focus.values), reader: read, limits },
+        contents: { task: "review", slides, ...(script ? { images: script.images, ...(session.visual?.subjectsUnseen?.length ? { subjectsUnseen: session.visual.subjectsUnseen } : {}) } : {}), focus: focusForModels(chosen.focus.values), reader: read, limits },
         schema: script ? DRAFT2_REVIEW_V4_SCHEMA : DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: script ? "high" : "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editorSkills,
       });
       const answer = parseReviewAnswer(editorAnswer, carousel);

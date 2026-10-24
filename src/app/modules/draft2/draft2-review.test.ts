@@ -272,7 +272,7 @@ test("v4: the review reads the words beside the visual script's image directions
   const review = session.review!;
   assert.equal(json([review.visualId, review.images?.length]), json(["v1", 6]));
   assert.equal(json(review.editor?.patches.map((patch) => [patch.id, patch.owner, patch.field, patch.kind, patch.status])), json([["p1", "visual", "direction", "truth", "proposed"]]));
-  assert.equal(json(session.trace.find((entry) => entry.operation === "draft2_review")?.skillVersions?.["review-v4"]), json("1"));
+  assert.equal(json(session.trace.find((entry) => entry.operation === "draft2_review")?.skillVersions?.["review-v4"]), json("2"));
   const applied = await h.decide("apply-all", undefined, "autopilot");
   const direction = (row: Row) => ((row.visual as typeof visual).rounds[0].candidates[0].slides.find((slide) => slide.slide === "s1")!).direction;
   assert.equal(direction(applied), "A reading room with quiet tables by tall windows.", "a truth patch on a direction is one the autopilot applies");

@@ -1,3 +1,4 @@
+import { quoteFinding, quotesNotInFacts } from "./draft2-quotes.types";
 import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { isChecklist, withoutPlanningLabels } from "./draft2-caveats.types";
@@ -7,7 +8,7 @@ import { leverForModels } from "./draft2-levers.types";
 import { beatFactsFinding, beatFactsMissing, type Draft2FocusSnapshot, type Draft2FocusStructureKind } from "./draft2-focus.types";
 import { type FunnelPlanRound,
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
-  funnelRefineRequest, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
+  funnelRefineRequest, funnelSlideText, funnelText, funnelWordCount, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelRegression, type FunnelRole, type FunnelRound,
   type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
@@ -58,7 +59,7 @@ export const CLOSING_CRITERIA = ["resolution", "meaning", "action", "continuity"
 export const CLOSING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "PENULTIMATE_HEADLINE_TOO_LONG", "PENULTIMATE_BODY_TOO_LONG", "LAST_HEADLINE_TOO_LONG", "LAST_BODY_TOO_LONG",
   "CTA_TOO_LONG", "CTA_MISSING", "RECAP_LABEL", "RESTATES_OPENING", "UNSUPPORTED_NUMBER", "TOO_MANY_EMOJIS", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION", "BEAT_FACTS_MISSING",
-  "CLOSING_IS_CHECKLIST",
+  "CLOSING_IS_CHECKLIST", "QUOTE_NOT_VERBATIM",
 ] as const;
 export const CLOSING_JUDGE_CODES = ["UNRESOLVED", "RECAP", "WEAK_MEANING", "OFF_GOAL", "BREAKS_CONTINUITY", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "OTHER"] as const;
 export const CLOSING_ISSUE_CODES = [...CLOSING_MECHANICAL_CODES, ...CLOSING_JUDGE_CODES] as const;
@@ -167,17 +168,17 @@ function closingFrom(shape: Draft2ClosingShape) {
   return (raw: unknown, fallbackId: string): Draft2ClosingCandidate | undefined => {
     const item = funnelRecord(raw);
     const last = funnelRecord(item.last);
-    const lastHeadline = funnelText(last.headline, 300);
+    const lastHeadline = funnelSlideText(last.headline, 300);
     // The spine's "Ligne pratique :" is a planning label, never the reader's words.
-    const lastBody = funnelText(typeof last.body === "string" ? withoutPlanningLabels(last.body) : last.body, 1_000);
+    const lastBody = funnelSlideText(typeof last.body === "string" ? withoutPlanningLabels(last.body) : last.body, 1_000);
     const cta = typeof last.cta === "string" && last.cta.trim().length <= 300 ? last.cta.trim() : undefined;
     const lastFacts = funnelFactIds(last.factIds);
     if (!lastHeadline || !lastBody || cta === undefined || !lastFacts) return undefined;
     let penultimate: Draft2ClosingCandidate["penultimate"];
     if (shape === "two-slides") {
       const slide = funnelRecord(item.penultimate);
-      const headline = funnelText(slide.headline, 300);
-      const body = funnelText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
+      const headline = funnelSlideText(slide.headline, 300);
+      const body = funnelSlideText(typeof slide.body === "string" ? withoutPlanningLabels(slide.body) : slide.body, 1_000);
       const slideFacts = funnelFactIds(slide.factIds);
       if (!headline || !body || !slideFacts) return undefined;
       penultimate = { headline, body, factIds: slideFacts };
@@ -234,6 +235,10 @@ export function mechanicalClosingIssues(candidates: readonly Draft2ClosingCandid
       if (!ids.length) add("NO_FACTS", part, `The ${part === "last" ? "last slide" : "penultimate slide"} cites no fact; every sentence rests on verified facts.`);
       const unknown = ids.filter((id) => !byId.has(id));
       if (unknown.length) add("FACT_UNKNOWN", part, `Cites ${unknown.join(", ")}, which ${unknown.length === 1 ? "is not a verified fact" : "are not verified facts"}.`);
+    }
+    for (const [part, label, text] of [...(penultimate ? [["penultimate", "The penultimate slide", `${penultimate.headline} ${penultimate.body}`] as const] : []), ["last", "The last slide", `${last.headline} ${last.body} ${last.cta}`] as const]) {
+      const quotes = quotesNotInFacts(text, facts);
+      if (quotes.length) add("QUOTE_NOT_VERBATIM", part, `${label}: ${quoteFinding(quotes)}`);
     }
     const lengths = [
       ...(penultimate ? [

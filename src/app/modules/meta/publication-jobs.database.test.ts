@@ -11,6 +11,7 @@ import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import * as schema from "../../../db/schema";
 import * as core from "./publish-publication-package.core";
 import * as commentCore from "./publication-first-comment.core";
+import * as dataMarks from "../draft2/draft2-data-marks";
 import * as access from "./instagram-publishing-access";
 import * as channelModule from "./publication-channel";
 import { MetaGraphApiError } from "./meta-token-response";
@@ -77,6 +78,9 @@ async function setup(options: { channel?: "facebook-page"; comment?: string } = 
     "../stories/manage-creative-content": { CreativeContentConflictError: class extends Error {}, CreativeContentNotFoundError: class extends Error {} },
     "./publish-publication-package.core": core,
     "./publication-first-comment.core": commentCore,
+    // The story's end date: these orders come from no Draft 2 session.
+    "../draft2/draft2-session.repository": { draft2FactsByPublicationDraft: async () => undefined },
+    "../draft2/draft2-data-marks": dataMarks,
     "../stories/storage-maintenance": { preservePublishedPackage: async (packageId: string) => { calls.preservedPackages.push(packageId); } },
     "./instagram-publishing-access": access,
     "./get-publication-candidate": { getPublicationCandidate: async () => ({ state: "ready", snapshotHash: "snapshot" }) },

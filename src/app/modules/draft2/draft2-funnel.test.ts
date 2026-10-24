@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { criterionFloor, lengthHint, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
+import { tidyTypography, criterionFloor, lengthHint, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
 import { DECK_GATE } from "./draft2-deck.types";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 
@@ -105,4 +105,10 @@ test("a length finding says how many words to remove, at least: one more than th
   assert.equal(lengthHint("Slide 3's headline has 10 words; the limit is 8."), "Slide 3's headline has 10 words; the limit is 8. Remove at least 3 words.");
   assert.equal(lengthHint("Slide 3's direction has 740 characters; the limit is 700."), "Slide 3's direction has 740 characters; the limit is 700. Remove at least 41 characters.", "a visual direction's limit is in characters");
   assert.equal(lengthHint("The cover cites f9, which is not a verified fact."), "The cover cites f9, which is not a verified fact.", "any other finding stays as it is");
+});
+
+test("a slide's typography settled at parse: an opening single quote used as an apostrophe becomes the apostrophe, « » take their narrow space; straight apostrophes stay (2026-10-24)", () => {
+  assert.equal(tidyTypography("L‘artiste et l’œuvre, «émerveilleurs» et « les Veilleurs »"), "L’artiste et l’œuvre, «\u202fémerveilleurs\u202f» et «\u202fles Veilleurs\u202f»");
+  assert.equal(tidyTypography("The Pentagon's new shortcut"), "The Pentagon's new shortcut");
+  assert.equal(tidyTypography("‘Quoted’ at the start"), "‘Quoted’ at the start", "a real opening quote at a word's start is kept");
 });

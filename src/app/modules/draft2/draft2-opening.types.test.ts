@@ -415,3 +415,18 @@ test("caveats are not content (2026-10-22): a cover that gives the reader a chor
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards })), ["GUARD_LATE c1 slide2"], "an arc's guard is the opening's");
   assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { guards, itemCount: 5 })), [], "a list's guards are discharged by each item's slide in the deck");
 });
+
+test("the cover names the story's end when it is within three days; a quote no fact gives, and two names that read alike on one slide, are findings (2026-10-24, ART[O])", () => {
+  const soon = { date: "2026-10-25", day: 25, month: 10, daysLeft: 2 };
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { deadline: soon })), ["DEADLINE_OFF_COVER c1 cover"]);
+  assert.match(mechanicalOpeningIssues([candidate("c1")], facts, { deadline: soon })[0].detail, /^The story ends in 2 days \(the 25\), and the cover says nothing of it/);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { cover: { subheadline: "Last weekend to see it, free, in the new buying program." } })], facts, { deadline: soon })), [], "the cover names the last day");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { deadline: { ...soon, daysLeft: 9 } })), [], "nine days away, no urgency owed");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1")], facts, { deadline: { ...soon, daysLeft: -1 } })), [], "ended: the publication's check, not the cover's");
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: 'The official said "awards took less than a week in most cases".' } })], facts)), ["QUOTE_NOT_VERBATIM c1 slide2"]);
+  assert.deepEqual(codes(mechanicalOpeningIssues([candidate("c1", { slide2: { body: 'The official said "awards took less than a week in several instances".' } })], facts)), [], "one fact's words, verbatim");
+  const entities = [{ name: "Symbiose", kind: "thing" as const }, { name: "Symbiose Haut-Richelieu", kind: "organization" as const }];
+  const alike = mechanicalOpeningIssues([candidate("c1", { slide2: { body: "Les Veilleurs et Symbiose, via Symbiose Haut-Richelieu." } })], facts, { entities });
+  assert.deepEqual(codes(alike), ["NAME_COLLISION c1 slide2"]);
+  assert.match(alike[0].detail, /names "Symbiose" \(thing\) and "Symbiose Haut-Richelieu" \(organization\), which read alike/);
+});

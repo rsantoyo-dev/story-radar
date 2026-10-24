@@ -1,12 +1,13 @@
 import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { isChecklist } from "./draft2-caveats.types";
+import { quoteFinding, quotesNotInFacts } from "./draft2-quotes.types";
 import { addressBreaches, addressFinding, type Draft2Reader } from "./draft2-address.types";
 import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2FocusSnapshot } from "./draft2-focus.types";
 import {
   funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord,
-  funnelRefineRequest, funnelText, funnelWordCount, headlineKey, numbersIn, statedNumbers,
+  funnelRefineRequest, funnelText, tidyTypography, funnelWordCount, headlineKey, numbersIn, statedNumbers,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
 } from "./draft2-funnel";
@@ -61,7 +62,7 @@ export const CAPTION_CRITERIA = ["hook", "scan", "grounding", "voice", "action",
 export const CAPTION_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "TEXT_TOO_LONG", "TOO_MANY_EMOJIS", "HASHTAG_COUNT", "HASHTAG_FORMAT", "HASHTAG_IN_TEXT", "UNVERIFIED_MENTION", "MENTION_MISSING",
   "UNSUPPORTED_NUMBER", "NARRATES_CAROUSEL", "NO_SPACING", "CREDIT_IN_TEXT", "DUPLICATE_CANDIDATE", "WRONG_ADDRESS", "ABBREVIATION",
-  "COMMENT_MISSING", "COMMENT_ON_GRAVE", "COMMENT_TOO_LONG", "COMMENT_NO_QUESTION", "COMMENT_TAGS", "CAVEATS",
+  "COMMENT_MISSING", "COMMENT_ON_GRAVE", "COMMENT_TOO_LONG", "COMMENT_NO_QUESTION", "COMMENT_TAGS", "CAVEATS", "QUOTE_NOT_VERBATIM",
 ] as const;
 export const CAPTION_JUDGE_CODES = ["WEAK_HOOK", "DENSE", "OVERCLAIMS", "OFF_VOICE", "CTA_MISMATCH", "WEAK_HASHTAGS", "REPEATS_SLIDES", "OFF_FOCUS", "WEAK_QUESTION", "OTHER"] as const;
 export const CAPTION_ISSUE_CODES = [...CAPTION_MECHANICAL_CODES, ...CAPTION_JUDGE_CODES] as const;
@@ -144,7 +145,7 @@ export const CAPTION_EVALUATION_SCHEMA: Record<string, unknown> = funnelEvaluati
  * writer's), at most one blank line between paragraphs, the line breaks kept.
  */
 export function captionText(value: string): string {
-  return value.replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+/gu, " ").replace(/ +(?=[,.](?!\.))/gu, "").trim()).join("\n").replace(/\n{3,}/gu, "\n\n").trim();
+  return tidyTypography(value).replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+/gu, " ").replace(/ +(?=[,.](?!\.))/gu, "").trim()).join("\n").replace(/\n{3,}/gu, "\n\n").trim();
 }
 
 /** A hashtag as posted: without the #, letters, digits and underscores. */
@@ -293,6 +294,8 @@ export function mechanicalCaptionIssues(candidates: readonly Draft2CaptionCandid
     if (CREDIT.test(candidate.text)) add("CREDIT_IN_TEXT", "The source and the photo credits are added after the text by the program; leave them out.");
     // Caveats are not content, in the caption too (2026-10-23): the Saint-Jean weekend's caption brought back "son petit piège… avant de partir" and
     // "roue de prix liée à un achat" after the auditor had them taken off the slides. Each item's conditions are on its slide.
+    const quotes = quotesNotInFacts(`${candidate.text} ${candidate.comment ?? ""}`, facts);
+    if (quotes.length) add("QUOTE_NOT_VERBATIM", quoteFinding(quotes));
     const checklist = isChecklist("", candidate.text);
     if (checklist) add("CAVEATS", `The caption reads as a list of conditions ("${checklist}"): it tells the story and what the reader gets; each item's conditions are on its slide, so name one at most, once.`);
     const address = addressBreaches(candidate.text, reader);

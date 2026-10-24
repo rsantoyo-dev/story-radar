@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dayDatesIn, dayPeriodIn, daysOutsidePeriod, markData, storyPlaces } from "./draft2-data-marks";
+import { dayDatesIn, dayPeriodIn, daysOutsidePeriod, endDatesIn, markData, nameCollisionsIn, namesDeadline, storyDeadline, storyPlaces } from "./draft2-data-marks";
 
 test("the data marked in a slide's text: days, dates, times, prices, free, figures and the story's places, the words kept", () => {
   assert.equal(markData("Le 21 octobre 2026, le secteur C du Grand parc urbain accueille la plantation de 15 h à 18 h.", ["Grand parc urbain"]),
@@ -40,4 +40,28 @@ test("the days a text names, in the three languages, and the period a cover anno
   assert.equal(dayPeriodIn("Le 30 octobre et le 2 novembre"), undefined, "two months are no period");
   assert.deepEqual(daysOutsidePeriod("Une série de visites: les 17, 24 et 31 octobre.", { month: 10, from: 23, to: 25 }).map((date) => date.day), [17, 31]);
   assert.deepEqual(daysOutsidePeriod("Les 24 et 25 octobre, sans réservation", { month: 10, from: 23, to: 25 }), []);
+});
+
+test("the end of a story's event, from the facts, in the three languages; the days left from the publication's day; whether a cover names it (2026-10-24, ART[O])", () => {
+  assert.deepEqual(endDatesIn("Deux expositions gratuites à découvrir jusqu'au 25 octobre."), [{ day: 25, month: 10 }]);
+  assert.deepEqual(endDatesIn("Du 23 au 25 octobre, la Ferme Reid."), [{ day: 25, month: 10 }]);
+  assert.deepEqual(endDatesIn("The show runs through October 25; tickets until October 24."), [{ day: 25, month: 10 }, { day: 24, month: 10 }]);
+  assert.deepEqual(endDatesIn("October 23–25 at the fairgrounds."), [{ day: 25, month: 10 }]);
+  assert.deepEqual(endDatesIn("La muestra sigue hasta el 25 de octubre, del 23 al 25 de octubre en la plaza."), [{ day: 25, month: 10 }, { day: 25, month: 10 }]);
+  assert.deepEqual(endDatesIn("Le 25 octobre, l'atelier ouvre à 10 h."), [], "a date is not an end");
+  const facts = [{ claim: "Les deux expositions sont présentées jusqu'au 25 octobre." }, { claim: "Le vernissage a eu lieu le 2 octobre." }];
+  assert.deepEqual(storyDeadline(facts, "2026-10-23"), { date: "2026-10-25", day: 25, month: 10, daysLeft: 2 });
+  assert.equal(storyDeadline(facts, "2026-10-27")?.daysLeft, -2, "past, negative");
+  assert.equal(storyDeadline(facts, "2027-01-10")?.date, "2026-10-25", "the year that keeps the date nearest");
+  assert.equal(storyDeadline([{ claim: "Rien." }], "2026-10-23"), undefined);
+  const end = { day: 25 };
+  assert.equal(namesDeadline("Dernier week-end pour voir Les Veilleurs", end), true);
+  assert.equal(namesDeadline("Jusqu'au 25 octobre, gratuit", end), true);
+  assert.equal(namesDeadline("Two free shows until Sunday", end), true);
+  assert.equal(namesDeadline("430 kg de rebuts ont pris visage", end), false);
+  assert.equal(namesDeadline("250 visiteurs attendus", end), false, "25 inside 250 is not the day");
+  const entities = [{ name: "Symbiose", kind: "thing" as const }, { name: "Symbiose Haut-Richelieu", kind: "organization" as const }, { name: "ART[O]", kind: "organization" as const }];
+  assert.deepEqual(nameCollisionsIn("Les Veilleurs et Symbiose, via Symbiose Haut-Richelieu.", entities).map(({ short, long }) => [short.name, long.name]), [["Symbiose", "Symbiose Haut-Richelieu"]]);
+  assert.deepEqual(nameCollisionsIn("Symbiose revient dans la Petite Galerie.", entities), [], "one of them alone is clear");
+  assert.deepEqual(nameCollisionsIn("Une initiative de Symbiose Haut-Richelieu.", entities), [], "the long name alone contains the short one once: no collision");
 });

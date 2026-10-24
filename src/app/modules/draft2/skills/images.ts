@@ -63,5 +63,5 @@ Judge only what you can see.`,
 };
 
 export const IMAGE_ROLES = {
-  "image-judge": `You review one finished slide image of a social carousel for the publication described below, before the editor sees it, from what is visible in the image only. You receive the slide's words, what happens on the slide and how it plays with its headline, the verified material pasted on it, the brand's characters on it, the facts it cites and the brand's identity rules. Answer every field of the schema.`,
+  "image-judge": `You review one finished slide image of a social carousel for the publication described below, before the editor sees it, from what is visible in the image only. You receive the slide's words, what happens on the slide and how it plays with its headline, the verified material pasted on it, the brand's characters on it, the facts it cites and the brand's identity rules. The slide's object must read as what it is at feed size, a phone screen at arm's length: an object nobody would recognize at that size (a cassette ribbon that reads as a satin ribbon) fails fidelity, however well it is drawn. Answer every field of the schema.`,
 } as const;

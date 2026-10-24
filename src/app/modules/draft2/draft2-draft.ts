@@ -8,7 +8,8 @@ import { callToActionBrief } from "./draft2-closing.types";
 import { DRAFT2_DRAFT_SCHEMA, draftFindings, draftFixRequest, draftPlan, draftRequest, draftRuns, findingCount, findingLines, parseDraft, type Draft, type DraftFindings } from "./draft2-draft.types";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2TraceEntry } from "./draft2-facts.types";
-import { focusFindings, focusForModels, focusMaterial, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusFindings, focusForModels, focusMaterial, focusToday, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { storyDeadline } from "./draft2-data-marks";
 import { failedCall, funnelRunSummary, type FunnelRole } from "./draft2-funnel";
 import type { FunnelStepInput } from "./draft2-funnel-run";
 import { eligibleLevers } from "./draft2-levers.types";
@@ -78,7 +79,7 @@ export async function runDraft2Draft(input: FunnelStepInput): Promise<Draft2Sess
   const profile = await getCreativeProfile(input.topicId);
   const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
   const levers = eligibleLevers(facts, focus.values);
-  const plan = draftPlan(focus, levers, emojis);
+  const plan = draftPlan(focus, levers, emojis, storyDeadline(facts, focusToday(undefined, new Date())));
   const reader = { address: profile.readerAddress, language: profile.language };
   const entities = (session.inventory?.entities ?? []).map(({ name, kind, factIds }) => ({ name, kind, factIds }));
   const brief = `${brandBrief(profile)}\n\n${callToActionBrief({ style: profile.callToActionStyle, emojis })}`;

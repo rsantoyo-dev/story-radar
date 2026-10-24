@@ -1,3 +1,6 @@
+import { DEADLINE_URGENT_DAYS, nameCollisionsIn, namesDeadline, type Draft2Deadline } from "./draft2-data-marks";
+import type { Draft2InventoryEntity } from "./draft2-inventory.types";
+import { quoteFinding, quotesNotInFacts } from "./draft2-quotes.types";
 import type { Draft2Pipeline } from "./draft2-models";
 import { abbreviationBreaches, abbreviationFinding, explainedAbbreviations } from "./draft2-abbreviations.types";
 import { choreIn, opensWithCaveat, withoutPlanningLabels } from "./draft2-caveats.types";
@@ -8,7 +11,7 @@ import { FREE_LEVER, leverName, leverSupported, stockPhraseIn } from "./draft2-l
 import {
   criterionOf, factsSnapshot, funnelAcceptedWinner, funnelBestClean, funnelBestVersions, funnelEvaluationSchema, funnelExploreRequest, funnelFixRequest, funnelFactIds,
   funnelFreshWanted, funnelJudgeRequest, funnelParseCandidates, funnelParseEvaluation, funnelRecord, funnelRefineRequest, funnelRegressions,
-  funnelRenumbered, funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelScorePasses, funnelTargets, funnelText,
+  funnelRenumbered, funnelRenumberedProposals, funnelResumeRound, funnelReviewNote, funnelRunSummary, funnelScorePasses, funnelTargets, funnelSlideText, funnelText,
   funnelVersions, funnelWordCount, funnelWrittenCandidates, hasMaterialError as funnelHasMaterialError, headlineKey, longWords, numbersIn, statedNumbers, wordOverlap,
   type FunnelCandidate, type FunnelEvaluation, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole, type FunnelRound,
   type FunnelRun, type FunnelScore, type FunnelVersion, type FunnelWords,
@@ -112,6 +115,7 @@ export const OPENING_MECHANICAL_CODES = [
   "FACT_UNKNOWN", "NO_FACTS", "COVER_TOO_LONG", "SUBHEADLINE_TOO_LONG", "SLIDE2_HEADLINE_TOO_LONG", "SLIDE2_BODY_TOO_LONG",
   "ATTRIBUTION_ON_COVER", "SLIDE2_RESTATES_COVER", "SLIDE2_NO_NEW_FACT", "UNSUPPORTED_NUMBER", "DUPLICATE_CANDIDATE",
   "LEVER_UNKNOWN", "LEVER_UNSUPPORTED", "STOCK_PHRASE", "GUARD_LATE", "WRONG_ADDRESS", "ABBREVIATION", "SIMILAR_CANDIDATE", "BEAT_FACTS_MISSING",
+  "DEADLINE_OFF_COVER", "QUOTE_NOT_VERBATIM", "NAME_COLLISION",
   "COVER_IS_CHORE", "BODY_IS_CAVEAT",
 ] as const;
 export const OPENING_JUDGE_CODES = ["WEAK_TENSION", "PROMISE_NOT_PAID", "UNCLEAR", "OVERCLAIMS", "OFF_VOICE", "OFF_FOCUS", "LABEL_NOT_HOOK", "MISLEADS", "OTHER"] as const;
@@ -223,11 +227,11 @@ function openingFrom(raw: unknown, fallbackId: string): Draft2OpeningCandidate |
   const item = funnelRecord(raw);
   const cover = funnelRecord(item.cover);
   const slide2 = funnelRecord(item.slide2);
-  const coverHeadline = funnelText(cover.headline, 300);
-  const subheadline = funnelText(cover.subheadline, 500);
-  const slideHeadline = funnelText(slide2.headline, 300);
+  const coverHeadline = funnelSlideText(cover.headline, 300);
+  const subheadline = funnelSlideText(cover.subheadline, 500);
+  const slideHeadline = funnelSlideText(slide2.headline, 300);
   // The spine's "Ligne pratique :" is a planning label, never the reader's words.
-  const slideBody = funnelText(typeof slide2.body === "string" ? withoutPlanningLabels(slide2.body) : slide2.body, 1_000);
+  const slideBody = funnelSlideText(typeof slide2.body === "string" ? withoutPlanningLabels(slide2.body) : slide2.body, 1_000);
   const coverFacts = funnelFactIds(cover.factIds);
   const slideFacts = funnelFactIds(slide2.factIds);
   if (!coverHeadline || !subheadline || !slideHeadline || !slideBody || !coverFacts || !slideFacts) return undefined;
@@ -270,7 +274,7 @@ const ATTRIBUTION = /\b(according to|says?|said|reports?|reported|claims?|selon|
  * them or free, and the facts its cover cites must carry what the program
  * can check of it (a figure). No cover uses a stock formula.
  */
-export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader, distinct = false, beats }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader; /** v3: new openings of one round must differ in angle, not only in wording (SIMILAR_CANDIDATE). */ distinct?: boolean; /** The facts the spine's cover and slide 2 beats rest on: each slide cites enough of its own (BEAT_FACTS_MISSING). */ beats?: { cover?: readonly string[]; slide2?: readonly string[] } } = {}): Draft2OpeningIssue[] {
+export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandidate[], facts: readonly Draft2Fact[], { itemCount, eligibleLevers, guards = [], reader, distinct = false, beats, deadline, entities }: { itemCount?: number; eligibleLevers?: readonly string[]; guards?: readonly Draft2FocusGuard[]; reader?: Draft2Reader; /** v3: new openings of one round must differ in angle, not only in wording (SIMILAR_CANDIDATE). */ distinct?: boolean; /** The facts the spine's cover and slide 2 beats rest on: each slide cites enough of its own (BEAT_FACTS_MISSING). */ beats?: { cover?: readonly string[]; slide2?: readonly string[] }; /** The end of the story's event, from the facts: within DEADLINE_URGENT_DAYS the cover names it (DEADLINE_OFF_COVER). */ deadline?: Draft2Deadline; /** People and places' names: two that read alike on one slide (NAME_COLLISION). */ entities?: readonly Pick<Draft2InventoryEntity, "name" | "kind">[] } = {}): Draft2OpeningIssue[] {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const explained = explainedAbbreviations(facts);
   const headlines = new Map<string, Draft2OpeningCandidate>();
@@ -298,6 +302,15 @@ export function mechanicalOpeningIssues(candidates: readonly Draft2OpeningCandid
     }
     const attribution = ATTRIBUTION.exec(cover.headline);
     if (attribution) add("ATTRIBUTION_ON_COVER", "cover", `The cover headline attributes ("${attribution[0]}"); attribution belongs on slide 2.`);
+    // The story's event ends within days: the cover says so (2026-10-24, ART[O]: "jusqu'au 25 octobre" stood on the last slide alone, two days before the end).
+    if (deadline && deadline.daysLeft >= 0 && deadline.daysLeft <= DEADLINE_URGENT_DAYS && !namesDeadline(`${cover.headline} ${cover.subheadline}`, deadline)) {
+      add("DEADLINE_OFF_COVER", "cover", `The story ends ${deadline.daysLeft === 0 ? "today" : deadline.daysLeft === 1 ? "tomorrow" : `in ${deadline.daysLeft} days`} (the ${deadline.day}), and the cover says nothing of it: name the last day or the time left on the cover.`);
+    }
+    for (const [part, label, text] of [["cover", "The cover", `${cover.headline} ${cover.subheadline}`], ["slide2", "Slide 2", `${slide2.headline} ${slide2.body}`]] as const) {
+      const quotes = quotesNotInFacts(text, facts);
+      if (quotes.length) add("QUOTE_NOT_VERBATIM", part, `${label}: ${quoteFinding(quotes)}`);
+      for (const { short, long } of nameCollisionsIn(text, entities ?? [])) add("NAME_COLLISION", part, `${label} names "${short.name}" (${short.kind}) and "${long.name}" (${long.kind}), which read alike: name one, or say what each is.`);
+    }
     if (wordOverlap(longWords(`${cover.headline} ${cover.subheadline}`), longWords(`${slide2.headline} ${slide2.body}`)) >= SLIDE2_RESTATEMENT_OVERLAP) {
       add("SLIDE2_RESTATES_COVER", "slide2", "Slide 2 repeats the cover's words instead of advancing to something new.");
     }

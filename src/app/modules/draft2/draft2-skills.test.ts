@@ -41,7 +41,7 @@ test("instructions are the role, then each skill, then the brand brief, and reco
   assert.equal(composeInstructions("visual-writer", [skill], "# Brand").instructions, `${VISUAL_ROLES["visual-writer"]}\n\n${VISUAL_WRITER_STANDARD}\n\n## Shared craft\n\n# Brand`, "the visual writer reads its own standard: it writes no headline to count and cites no fact");
   assert.match(VISUAL_WRITER_STANDARD, /every direction under 700 characters[^]*a corner or a band kept free for the logo is fine/);
   assert.deepEqual(Object.keys(DRAFT2_ROLES).sort(), ["caption-judge", "caption-writer", "carousel-editor", "carousel-reader", "closing-judge", "closing-writer", "deck-judge", "deck-writer", "draft-writer", "extractor", "focus-concept-judge", "focus-editor", "focus-narrative-judge", "focus-planner", "image-judge", "mention-finder", "opening-judge", "opening-writer", "people-finder", "reviewer", "visual-judge", "visual-writer"]);
-  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@5", "focus@18", "narratives@4", "discovery@1", "arcs@1", "spine@14", "levers@1", "fairness@2", "reader@3", "hooks@13", "closings@5", "decks@6", "drafts@2", "review@8", "visuals@16", "images@6", "captions@4"]);
+  assert.deepEqual(Object.values(DRAFT2_SKILLS).map((entry) => `${entry.name}@${entry.version}`), ["facts@5", "focus@18", "narratives@4", "discovery@1", "arcs@1", "spine@14", "levers@1", "fairness@2", "reader@3", "hooks@13", "closings@5", "decks@6", "drafts@3", "review@8", "visuals@16", "images@6", "captions@4"]);
 });
 
 test("the Facts prompts keep their words (the reviewer's say the article is context and name earlierReview since v2): the extractor reads its rules, the reviewer its checklist", () => {
@@ -233,5 +233,5 @@ test("the v4 draft writer reads what every skill tells the three writers of the 
   assert.ok(instructions.includes(DRAFT2_SKILLS.spine.roleText!["opening-writer"]!) && instructions.includes(DRAFT2_SKILLS.spine.roleText!["deck-writer"]!) && instructions.includes(DRAFT2_SKILLS.spine.roleText!["closing-writer"]!), "the spine's guidance for each writer");
   assert.ok(!instructions.includes(DRAFT2_ROLES["opening-writer"]) && !instructions.includes(DRAFT2_ROLES["deck-writer"]), "the writers' own contracts stay theirs");
   assert.match(instructions, /# Brand$/);
-  assert.equal(skillVersions.drafts, "2");
+  assert.equal(skillVersions.drafts, "3");
 });

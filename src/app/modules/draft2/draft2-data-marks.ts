@@ -1,3 +1,4 @@
+import { comparableText, type Draft2Fact } from "./draft2-facts.types";
 import type { Draft2InventoryEntity } from "./draft2-inventory.types";
 
 /**
@@ -158,4 +159,87 @@ export function markData(text: string, places: readonly string[] = []): string {
     at = end;
   }
   return out + text.slice(at);
+}
+
+/**
+ * The day a story's event ends (2026-10-24, the ART[O] exhibitions: "jusqu'au
+ * 25 octobre" stood on the last slide alone, published two days before the
+ * end). The end dates a text names, in the three languages: "jusqu'au 25
+ * octobre", "avant le 25 octobre", "du 23 au 25 octobre", "until October 25",
+ * "October 23–25", "hasta el 25 de octubre", "del 23 al 25 de octubre".
+ */
+const END_WORDS_FR = "jusqu['’]au|jusqu['’]à|avant le|se termine le|se terminent le|prend fin le|prennent fin le|dernier jour(?: le)?|dernière journée(?: le)?";
+const END_WORDS_EN = "until|through|thru|ends?|ending|closes?|closing|last day(?: on)?|final day(?: on)?";
+const END_WORDS_ES = "hasta el|termina el|terminan el|finaliza el|finalizan el|cierra el|último día(?: el)?";
+const END_DATE = new RegExp([
+  `(?:${END_WORDS_FR}|${END_WORDS_ES})\\s+(?<d1>\\d{1,2})(?:er)?\\s+(?:de\\s+)?(?<m1>${MONTHS})`,
+  `(?:${END_WORDS_EN})\\s+(?:on\\s+)?(?:(?<m2>${MONTHS})\\s+(?<d2>\\d{1,2})(?:st|nd|rd|th)?|(?<d3>\\d{1,2})(?:st|nd|rd|th)?\\s+(?<m3>${MONTHS}))`,
+  `(?<![\\p{L}\\p{N}])\\d{1,2}(?:er)?\\s*(?:au|al|à|a|to|through|–|-|—)\\s*(?<d4>\\d{1,2})(?:er|st|nd|rd|th)?\\s+(?:de\\s+)?(?<m4>${MONTHS})`,
+  `(?<m5>${MONTHS})\\s+\\d{1,2}(?:st|nd|rd|th)?\\s*(?:–|-|—|to|through)\\s*(?<d5>\\d{1,2})(?:st|nd|rd|th)?`,
+].map((part) => `(?:${part})`).join("|"), "giu");
+
+export function endDatesIn(text: string): Draft2DayDate[] {
+  const dates: Draft2DayDate[] = [];
+  for (const match of text.matchAll(END_DATE)) {
+    const groups = match.groups ?? {};
+    const day = Number(groups.d1 ?? groups.d2 ?? groups.d3 ?? groups.d4 ?? groups.d5);
+    const month = monthNumber(groups.m1 ?? groups.m2 ?? groups.m3 ?? groups.m4 ?? groups.m5 ?? "");
+    if (day >= 1 && day <= 31 && month) dates.push({ day, month });
+  }
+  return dates;
+}
+
+/** A story's deadline: the latest end date its facts name, as a calendar date, and the days left from the publication's day (negative once past). */
+export type Draft2Deadline = { date: string; day: number; month: number; daysLeft: number };
+/** Within this many days of the end, the cover names it. */
+export const DEADLINE_URGENT_DAYS = 3;
+const DAY_MS = 86_400_000;
+const utcDate = (year: number, month: number, day: number) => Date.UTC(year, month - 1, day);
+
+/** The calendar date a day and month name, in the year that keeps it within half a year of today. */
+function nearestDate(date: Draft2DayDate, today: string): number {
+  const now = Date.parse(`${today}T00:00:00Z`);
+  const year = Number(today.slice(0, 4));
+  const candidates = [year - 1, year, year + 1].map((candidate) => utcDate(candidate, date.month, date.day));
+  return candidates.reduce((best, candidate) => Math.abs(candidate - now) < Math.abs(best - now) ? candidate : best, candidates[1]);
+}
+
+export function storyDeadline(facts: readonly Pick<Draft2Fact, "claim">[], today: string): Draft2Deadline | undefined {
+  const now = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(now)) return undefined;
+  let latest: { at: number; date: Draft2DayDate } | undefined;
+  for (const fact of facts) {
+    for (const date of endDatesIn(fact.claim)) {
+      const at = nearestDate(date, today);
+      if (!latest || at > latest.at) latest = { at, date };
+    }
+  }
+  if (!latest) return undefined;
+  return { date: new Date(latest.at).toISOString().slice(0, 10), day: latest.date.day, month: latest.date.month, daysLeft: Math.round((latest.at - now) / DAY_MS) };
+}
+
+/** Whether a text names the deadline: its day as a whole number, or a word of the time left ("dernier", "ce week-end", "demain", "until", "hasta"). */
+const URGENCY = /(?<![\p{L}])(?:derni[eè]re?s?|ce week-end|cette fin de semaine|demain|aujourd['’]hui|ce soir|jusqu['’](?:au|à)|plus que|il (?:ne )?reste|last|final|this weekend|tomorrow|today|tonight|until|through|ends?|closes?|hasta|últim[oa]s?|este fin de semana|mañana|hoy|esta noche|termina|cierra|quedan?)(?![\p{L}])/iu;
+export function namesDeadline(text: string, deadline: Pick<Draft2Deadline, "day">): boolean {
+  return URGENCY.test(text) || new RegExp(`(?<!\\d)${deadline.day}(?!\\d)`, "u").test(text);
+}
+
+/**
+ * Two names that read alike on one slide (2026-10-24: "Les Veilleurs et
+ * Symbiose, via Symbiose Haut-Richelieu", the exhibition and the organization
+ * in one line): a name that is the start of another, both in the text, the
+ * shorter on its own at least once.
+ */
+export function nameCollisionsIn(text: string, entities: readonly Pick<Draft2InventoryEntity, "name" | "kind">[]): { short: Pick<Draft2InventoryEntity, "name" | "kind">; long: Pick<Draft2InventoryEntity, "name" | "kind"> }[] {
+  const haystack = comparableText(text);
+  const count = (name: string) => haystack.split(new RegExp(`(?<![\\p{L}\\p{N}])${escape(comparableText(name))}(?![\\p{L}\\p{N}])`, "u")).length - 1;
+  const collisions: { short: Pick<Draft2InventoryEntity, "name" | "kind">; long: Pick<Draft2InventoryEntity, "name" | "kind"> }[] = [];
+  for (const short of entities) {
+    for (const long of entities) {
+      if (short === long || !comparableText(long.name).startsWith(`${comparableText(short.name)} `)) continue;
+      const longCount = count(long.name);
+      if (longCount && count(short.name) > longCount) collisions.push({ short, long });
+    }
+  }
+  return collisions;
 }

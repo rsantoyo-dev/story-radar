@@ -123,3 +123,8 @@ test("a caption that reads as a list of conditions is a program finding: its con
   const one = "Cinq sorties ce week-end, du 23 au 25 octobre.\n\nLe Relais hanté se fait sur réservation, billetterie en ligne.";
   assert.deepEqual(mechanicalCaptionIssues([caption("c1", { text: one })], facts, { credits: [], mentions: [], rules: RULES }).filter((issue) => issue.code === "CAVEATS"), [], "one condition, once, is the reader's information");
 });
+
+test("a caption's quote no fact gives is a finding (2026-10-24)", () => {
+  const quoted = caption("c1", { text: `${TEXT}\n\nThe mayor said "the roof was rebuilt first and the children came back".` });
+  assert.deepEqual(mechanicalCaptionIssues([quoted], facts, { credits: [], mentions: [], rules: RULES }).filter((issue) => issue.code === "QUOTE_NOT_VERBATIM").length, 1);
+});

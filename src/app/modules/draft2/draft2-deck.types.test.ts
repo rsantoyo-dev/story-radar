@@ -222,3 +222,11 @@ test("a list's item names its place, keeps to the cover's days, and carries no c
   assert.deepEqual(codes(mechanicalDeckIssues([deck("c1")], facts, { opening, closing, shape: arc, emojis: 2, guards })), [], "an arc's guards are the opening's");
   assert.deepEqual(codes(mechanicalDeckIssues([deck("c1", good)], weekend, { opening: cover, closing, shape, emojis: 2 })), [], "without entities, no place check");
 });
+
+test("a deck slide's quote no fact gives, and two names that read alike on one slide, are findings (2026-10-24)", () => {
+  const quoted = deck("c1", [slide("Five minutes is the whole pitch", 'Reviewers said "the video does the talking for the whole bid".', ["f1"])]);
+  assert.deepEqual(findings(quoted), ["QUOTE_NOT_VERBATIM c1 s1"]);
+  const entities = [{ name: "Symbiose", kind: "thing" as const, factIds: ["f1"] }, { name: "Symbiose Haut-Richelieu", kind: "organization" as const, factIds: ["f1"] }];
+  const alike = deck("c1", [slide("Symbiose revient", "Symbiose, via Symbiose Haut-Richelieu, revient dans la Petite Galerie.", ["f1"])]);
+  assert.deepEqual(findings(alike, { entities }), ["NAME_COLLISION c1 s1"]);
+});

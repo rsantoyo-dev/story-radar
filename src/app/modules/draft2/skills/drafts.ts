@@ -10,7 +10,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const DRAFTS_SKILL: Draft2Skill = {
   name: "drafts",
-  version: "2",
+  version: "3",
   text: `# A carousel written whole
 
 You write every slide of the carousel at once: the cover, slide 2, the middle slides and the closing. It reads as one line from the first swipe to the last.
@@ -24,6 +24,10 @@ You write every slide of the carousel at once: the cover, slide 2, the middle sl
 - Conditions are data. An item's days, hours, price and booking stand in its practical line, plainly; the cover sells and the closing ends on the choice, with no checks to do.
 - Three covers, three levers. The first cover is the one you would publish; the two others take other levers the story can carry, so the editor and the review have a real choice. Slide 2 follows every one of them.
 - Each slide's image, with its words. "image" says what is seen and why, tied to what that slide says: the thing the words name (the dome and the sky projected in it, the pumpkins in the field, the hat being made), seen plainly, never a mood or a theme the facts do not give, never words or numbers in the picture, never a named place, event or person unless its verified photo exists. The visual script writes the direction from it in the brand's style; you give the subject and the reason.
+- The end of the story's event. When eventEnd says it ends within three days, the cover names the last day or the time left ("dernier week-end", "jusqu'à dimanche"): a reader who learns it on the last slide learns it too late.
+- A figure that totals several things is never given to one of them: 430 kg across two exhibitions is not 430 kg of one; say the whole, or the part the facts give.
+- The thing before its provenance: the reader meets the work, the dish or the decision before the companies, the grant or the committee behind it.
+- Two names that read alike (an exhibition and the organization named after it) never share a slide: name one, or say what each is.
 - The caption, written with the carousel. It tells the story in the publication's voice and gives the reader a reason to read and to act, with the closing's call to action; it never lists conditions as warnings or checks to do (each item's conditions are on its slide); five to eight hashtags, the facts it rests on; and the first comment: under 100 words, a view or a short summary that ends on one question to the reader, never a tag.`,
 };
 

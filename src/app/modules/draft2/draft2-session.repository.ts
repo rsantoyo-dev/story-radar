@@ -119,6 +119,14 @@ export async function draft2PublicationComment(topicId: string, draftId: string)
   return row?.publication?.draftId === draftId ? row.publication.firstComment?.trim() || undefined : undefined;
 }
 
+/** The verified facts of the Draft 2 session a publication draft came from, for the publication's own checks (the story's end date). */
+export async function draft2FactsByPublicationDraft(topicId: string, draftId: string): Promise<Draft2Fact[] | undefined> {
+  const [row] = await db.select({ facts: draft2Sessions.facts }).from(draft2Sessions)
+    .where(and(eq(draft2Sessions.topicId, topicId), sql`${draft2Sessions.publication}->>'draftId' = ${draftId}`))
+    .limit(1);
+  return row?.facts ?? undefined;
+}
+
 export async function getDraft2Session(topicId: string, id: string): Promise<Draft2SessionRow | undefined> {
   const [row] = await db.select().from(draft2Sessions)
     .where(and(eq(draft2Sessions.id, id), eq(draft2Sessions.topicId, topicId)))

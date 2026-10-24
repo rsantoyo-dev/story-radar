@@ -143,14 +143,16 @@ export const REVIEW_ROLES = {
  * auditor's findings seeded back) found what the auditor found with this
  * reading; the light judge missed the guard a crime story needed.
  */
-export const REVIEW_V4_VERSION = "1";
+export const REVIEW_V4_VERSION = "2";
 export const REVIEW_V4_SECTION = `## The whole carousel, before its images
 
 You read the finished carousel as the publication's senior editor and its auditor, after its visual script and before any image is made: each slide's words, then "images", the direction its image will be made from. Your standard is the publication's: 95 means a reader stops on the cover, understands each slide at a glance, trusts every claim, feels the pull to the next slide and gets what the cover promised.
 
 Read twice.
 - As a reader swiping: does the cover stop you with a concrete reason; does each slide open something the next pays; is anything repeated, vague, missing, jargon, or a chore (checks to do, conditions as warnings); does the closing pay the cover and leave you wanting to act.
-- As an auditor with the facts: is every claim supported and every qualifier kept; is the misreading the story invites prevented on the cover or slide 2; is the time of the facts given; is the tone neutral where people or businesses are accused; are places named where things happen; do the days stay within the period the cover announces; is a source attributed once, to the original.
+- As an auditor with the facts: is every claim supported and every qualifier kept; is the misreading the story invites prevented on the cover or slide 2; is the time of the facts given; is the tone neutral where people or businesses are accused; are places named where things happen; do the days stay within the period the cover announces; is a source attributed once, to the original; does a story that ends within three days say so on the cover; is a figure that totals several things given to one of them; is every quotation one fact's words, not two sentences joined.
+
+When subjectsUnseen names the story's subject, no verified photo of it exists: the images show what surrounds or makes it. Say so in the summary as a risk for the editor, and never ask a direction to draw it.
 
 Read each image direction beside its slide's words and facts. The image shows what the slide says (a show under a dome shows the dome or the sky projected in it, not an open daytime sky; an eighties neon show looks like one). It invents nothing the facts do not give (goods, architecture of another city, costumes, crowds). It never presents a generated scene of a named place, event or person as a photograph of it. It follows the brand's identity, whose avoid list governs decoration and rendering, never the story's subject: when the facts are about stars, the stars are the subject.
 

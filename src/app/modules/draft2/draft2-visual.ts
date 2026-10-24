@@ -1,7 +1,7 @@
 import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
-import { Draft2InputError } from "./draft2-facts.types";
+import { Draft2InputError, comparableText } from "./draft2-facts.types";
 import { focusForModels, focusNarrative, focusPresentation, narrativeUsesMaster, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { funnelVersions } from "./draft2-funnel";
 import { getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
@@ -32,7 +32,16 @@ type VisualSnapshot = {
   recentCovers: Draft2RecentCover[];
   /** v4: the draft's image intent per slide (docs/features/draft2-v4.md); the script's beats follow it. */
   imageIntents?: Record<string, string>;
+  /** The story's things the words name and no verified photo shows. */
+  subjectsUnseen?: string[];
 };
+
+/** The story's things (a work, an exhibition, a dish) the carousel names and no verified photo shows: the images will show their materials, never them (2026-10-24, the ART[O] faces). */
+function unseenSubjects(carousel: readonly Draft2CarouselSlide[], inventory: Draft2Inventory): string[] {
+  const words = comparableText(carousel.map((slide) => `${slide.headline} ${slide.text} ${slide.practical ?? ""}`).join(" "));
+  const named = (name: string) => new RegExp(`(?<![\\p{L}\\p{N}])${comparableText(name).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}])`, "u").test(words);
+  return inventory.entities.filter((entity) => entity.kind === "thing" && !entity.storyPhoto && named(entity.name)).map((entity) => entity.name);
+}
 
 /**
  * What a run pictures: a continued run keeps what it started with, while the
@@ -45,10 +54,10 @@ type VisualSnapshot = {
 function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefined): Omit<VisualSnapshot, "recentCovers"> {
   const inventory = session.inventory;
   if (stopped) {
-    const { carousel, deckId, openingId, closingId, focus, characters, characterChoice, imageIntents } = stopped;
+    const { carousel, deckId, openingId, closingId, focus, characters, characterChoice, imageIntents, subjectsUnseen } = stopped;
     if (!carousel || !deckId || !openingId || !closingId || !focus || !characters || !characterChoice) throw new Draft2InputError("This visual script run does not record what it pictures. Write the visual script again.");
     if (!inventory || inventory.version !== stopped.inventoryVersion) throw new Draft2InputError("The people and places changed since this run started. Write the visual script again.");
-    return { carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, ...(imageIntents ? { imageIntents } : {}) };
+    return { carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, ...(imageIntents ? { imageIntents } : {}), ...(subjectsUnseen ? { subjectsUnseen } : {}) };
   }
   const deck = session.deck;
   if (!deck || deck.status === "running" || deck.status === "paused") throw new Draft2InputError("The visual script pictures the whole carousel. Finish the deck first.");
@@ -64,11 +73,14 @@ function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefin
   if (!inventory || inventory.status !== "ready") throw new Draft2InputError("Find the people and places first: the visual script shows only what is verified.");
   // v4: the draft wrote each slide's image intent with its words; the script realizes it (the spine's image lines stand where the draft wrote none).
   const drafted = session.pipeline === "v4" && session.opening?.draft?.images?.length ? Object.fromEntries(session.opening.draft.images.map(({ slide, intent }) => [slide, intent])) : undefined;
+  const carousel = carouselSlides(deck.opening, chosen.candidate, deck.closing);
+  const subjectsUnseen = unseenSubjects(carousel, inventory);
   return {
-    carousel: carouselSlides(deck.opening, chosen.candidate, deck.closing),
+    carousel,
     deckId: chosen.candidate.id, openingId: deck.opening.id, closingId: deck.closing.id, focus: visualFocus(deck.focus, session.focus),
     inventory, characters: inventory.roster, characterChoice: inventory.characters,
     ...(drafted ? { imageIntents: drafted } : {}),
+    ...(subjectsUnseen.length ? { subjectsUnseen } : {}),
   };
 }
 
@@ -91,12 +103,13 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const [rows, profile] = await Promise.all([recentDraft2CoverRows(session.topicId, session.id), getCreativeProfile(session.topicId)]);
     return { ...target, recentCovers: recentCovers(rows, { palette: profile.brandPalette ?? [], roster: target.inventory.roster ?? [] }) };
   },
-  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents }, profile) => ({
+  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents, subjectsUnseen }, profile) => ({
     carousel, deckId, openingId, closingId, focus, inventoryVersion: inventory.version, characters, characterChoice, mode: profile.visualFidelityMode as Draft2VisualMode,
     ...(covers.length ? { recentCovers: covers } : {}),
     ...(imageIntents ? { imageIntents } : {}),
+    ...(subjectsUnseen?.length ? { subjectsUnseen } : {}),
   }),
-  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents }, profile, plan }) => {
+  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents, subjectsUnseen }, profile, plan }) => {
     const mode = profile.visualFidelityMode as Draft2VisualMode;
     // The identity in full (not v1's 1,400-character excerpt for text prompts): the script is where it is applied.
     const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(mode)].join("\n\n");
@@ -115,7 +128,7 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
       writer: composeInstructions("visual-writer", skills, brief),
       judge: composeInstructions("visual-judge", skills, brief),
       // The layout: who letters the words (the image model, or the program on a band), and the logo and the page number added afterwards, where the Topic puts them.
-      context: { focus: focusForModels(focus.values), carousel, ...(Object.keys(beats).length ? { spineBeats: beats } : {}), ...(Object.keys(stations).length ? { stations } : {}), ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), layout: visualLayout(profile, carousel, focusPresentation(focus.values)), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
+      context: { focus: focusForModels(focus.values), carousel, ...(subjectsUnseen?.length ? { subjectsUnseen: { names: subjectsUnseen, rule: "no verified photo exists of these: the images show what surrounds or makes them, never an invented view of them" } } : {}), ...(Object.keys(beats).length ? { spineBeats: beats } : {}), ...(Object.keys(stations).length ? { stations } : {}), ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), layout: visualLayout(profile, carousel, focusPresentation(focus.values)), peopleAndPlaces: inventoryForModels(inventory), characters, characterChoice },
       schemas: { writer: visualSchema(positions), judge: visualEvaluationSchema(positions) },
       parseCandidates: (text) => bind(parseVisualCandidates(text)),
       parseEvaluation: (text, ids) => { const evaluation = parseVisualEvaluation(text, ids, positions); return evaluation.proposals ? { ...evaluation, proposals: bind(evaluation.proposals) } : evaluation; },

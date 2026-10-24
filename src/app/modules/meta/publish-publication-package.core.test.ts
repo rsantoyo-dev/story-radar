@@ -15,6 +15,7 @@ import {
   PublicationJobLeaseLostError,
   releasedUncertainError,
   schedulePublishAt,
+  scheduledPastDeadline,
   unresolvedSendsTo,
   type ContainerStatusCode,
   type FrozenPackageForPublish,
@@ -518,4 +519,11 @@ test("the schedule window: at least 5 minutes from now, at most 6 days after the
   assert.throws(() => schedulePublishAt("2026-10-25T12:00:00.000Z", { now, frozenAt }), /at most 6 days ahead/);
   assert.throws(() => schedulePublishAt("not a date", { now, frozenAt }), /valid publication time/);
   assert.throws(() => schedulePublishAt(1_760_000_000_000, { now, frozenAt }), /valid publication time/, "an ISO string only");
+});
+
+test("a Draft 2 story with an end date is never scheduled after it (2026-10-24)", () => {
+  const at = new Date("2026-10-27T14:00:00Z");
+  assert.match(scheduledPastDeadline(at, { date: "2026-10-25", daysLeft: -2 }) ?? "", /^The story's event ends on 2026-10-25, and this order is scheduled for 2026-10-27: schedule it on or before that day\.$/);
+  assert.equal(scheduledPastDeadline(at, { date: "2026-10-27", daysLeft: 0 }), undefined, "the last day itself is fine");
+  assert.equal(scheduledPastDeadline(at, undefined), undefined, "a story with no end date");
 });

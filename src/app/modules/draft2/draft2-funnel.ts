@@ -597,6 +597,22 @@ export const funnelRecord = (value: unknown): Record<string, unknown> => value &
 export const funnelText = (value: unknown, max: number): string | undefined =>
   typeof value === "string" && value.trim() && value.trim().length <= max ? value.trim() : undefined;
 
+/**
+ * A slide's text with its typography settled (2026-10-24, the ART[O]
+ * auditor: apostrophes mixed, French quotation marks without their space): an
+ * opening single quote used as an apostrophe between letters becomes the
+ * apostrophe, and « » take the narrow no-break space inside. Nothing else
+ * changes; a straight apostrophe is left as the writer wrote it.
+ */
+export function tidyTypography(text: string): string {
+  return text
+    .replace(/(\p{L})‘(\p{L})/gu, "$1’$2")
+    .replace(/«[\s\u00a0\u202f]*/gu, "«\u202f")
+    .replace(/[\s\u00a0\u202f]*»/gu, "\u202f»");
+}
+/** A slide's text within its limit, its typography settled. */
+export const funnelSlideText = (value: unknown, max: number): string | undefined => { const text = funnelText(value, max); return text === undefined ? undefined : tidyTypography(text); };
+
 /** A list of fact ids, once each, at most ten. Whether they are verified facts is the program's check, not the parser's. */
 export function funnelFactIds(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
