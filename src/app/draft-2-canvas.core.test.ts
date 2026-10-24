@@ -92,9 +92,9 @@ test("each step has its own canvas path with the same return context, and a path
 test("the four phases hold every step once, in the pipeline's order", () => {
   assert.deepEqual(DRAFT_2_PHASES.flatMap((phase) => [...phase.steps]), DRAFT_2_STEPS.map((step) => step.key));
   assert.equal(draft2StepNumber("facts"), 1);
-  assert.equal(draft2StepNumber("publish"), 12, "the spine follows the focus, the review sits between the deck and the visual script");
+  assert.equal(draft2StepNumber("publish"), 13, "the spine follows the focus, the draft the spine, the review sits between the deck and the visual script");
   assert.equal(draft2StepPhase("spine").title, "Story");
-  assert.deepEqual(adjacentDraft2Steps("spine"), { previous: "focus", next: "opening" });
+  assert.deepEqual(adjacentDraft2Steps("spine"), { previous: "focus", next: "draft" });
   assert.equal(draft2StepPhase("deck").title, "Words");
   assert.equal(draft2StepPhase("images").title, "Visuals");
 });
@@ -111,7 +111,7 @@ test("the screens before and after one, and where a key takes the canvas", () =>
   assert.equal(draft2StepForKey("]", "publish"), undefined, "nothing past the last step");
   assert.equal(draft2StepForKey("3", undefined), "focus");
   assert.equal(draft2StepForKey("2", undefined), "inventory");
-  assert.equal(draft2StepForKey("0", "facts"), "images", "0 is the tenth step: the images, since the spine and the review are steps");
+  assert.equal(draft2StepForKey("0", "facts"), "visual", "0 is the tenth step: the visual script, since the spine, the draft and the review are steps");
   assert.equal(draft2StepForKey("a", "facts"), undefined);
 });
 

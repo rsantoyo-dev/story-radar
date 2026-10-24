@@ -1005,7 +1005,9 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const { target: publishable, blocker: publishBlocker } = publicationState(session);
   const approvedCurrent = publicationCurrent(publication, publishable);
   const publishStatus = running === "publication" ? { label: "Approving", tone: "info" as const } : approvedCurrent ? { label: "Approved", tone: "success" as const } : publication ? { label: "Changed since", tone: "warning" as const } : undefined;
-  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, spine: spineStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, review: reviewStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
+  // The draft's state is the opening run's on a v4 session (the draft is written as the Opening step); on another, whether the three parts stand.
+  const draftStatus = session?.pipeline === "v4" ? openingStatus : session?.opening && session.closing && session.deck ? { label: "Assembled", tone: "neutral" as const } : undefined;
+  const stepStatus: Partial<Record<string, { label: string; tone: StatusTone }>> = { facts: factsStatus, focus: focusStatus, spine: spineStatus, draft: draftStatus, opening: openingStatus, closing: closingStatus, deck: deckStatus, review: reviewStatus, inventory: inventoryStatus, visual: visualStatus, images: imagesStatus, caption: captionStatus, publish: publishStatus };
   // What each step took so far, this run's and earlier ones: time inside calls and the meter's cost.
   const metrics = stepMetrics(session?.trace ?? [], session?.images);
   const totals = sessionMetrics(session?.trace ?? [], session?.images);
@@ -1059,6 +1061,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     facts: text.length > 0,
     focus: factsVerified && inventory?.status === "ready",
     spine: factsVerified && focusReady,
+    draft: factsVerified && focusReady && spineReady,
     opening: factsVerified && focusReady && spineReady,
     closing: factsVerified && closingReady,
     deck: factsVerified && deckReady,
@@ -1080,6 +1083,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
     facts: session?.facts?.length ? `${session.facts.length} facts${factsVerified ? ", verified" : ", not verified yet"}` : undefined,
     focus: focus?.values ? [focus.values.line?.name, FRAMING_LABEL[focus.values.framing], STRUCTURE_LABEL[focus.values.structure.kind].split(":")[0], `goal: ${GOAL_LABEL[focus.values.goal].toLowerCase()}`].filter(Boolean).join(" · ") : undefined,
     spine: focus?.values?.spine ? `${focus.values.spine.beats.length} beats · lever: ${leverName(focus.values.levers?.primary).toLowerCase()}${focus.staleDirections ? " · changed since" : ""}` : undefined,
+    draft: openingChosen && closingChosen && deckChosen ? `${2 + deckChosen.candidate.slides.length + (closingChosen.candidate.penultimate ? 2 : 1)} slides${session?.pipeline === "v4" ? ", drafted at once" : ""}` : undefined,
     opening: openingChosen ? `“${openingChosen.candidate.cover.headline}”${scored(openingChosen)}` : undefined,
     closing: closingChosen ? `“${closingChosen.candidate.last.headline}”${scored(closingChosen)}` : undefined,
     deck: deckChosen ? `${deckChosen.candidate.slides.length} ${deckChosen.candidate.slides.length === 1 ? "slide" : "slides"} between slide 2 and the closing${scored(deckChosen)}` : undefined,
@@ -1112,7 +1116,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   const traceOf = (screen: Draft2StepKey) => (session?.trace ?? []).filter((entry) => entry.step === screen || (screen === "caption" && entry.step === "mentions"));
 
   // "Run to here": on a step's screen before the caption, the autopilot runs every step up to this one and stops; the server's run takes any step, the tab's stops at the images.
-  const runToHere = current && current !== "caption" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current as Draft2AutopilotStep : undefined;
+  const runToHere = current === "draft" ? "opening" : current && current !== "caption" && (AUTOPILOT_ORDER as readonly string[]).includes(current) ? current as Draft2AutopilotStep : undefined;
   // The pipeline, and a model other than the default chosen in the Models card, show beside the autopilot on every screen: the browser remembers the last choice for the next story.
   const chosenModels = session ? session.models : pendingModels;
   const pipeline: Draft2Pipeline = session ? session.pipeline ?? "v2" : pendingPipeline;
@@ -1220,6 +1224,32 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
           onReset={(field) => { void saveFocus(field, { reset: true }); }}
         /> : null}
         {focus?.values && !focus.values.spine && !spineRunning ? <EmptyState title="No spine yet">Write the spine: Claude plans the lever, the beats and the directions from the focus, and every beat stays yours to change.</EmptyState> : null}
+      </>,
+    },
+    draft: {
+      actions: session?.pipeline === "v4" ? <Button variant="primary" size="compact" busy={running === "opening"} disabled={!factsVerified || !focusReady || !spineReady || running !== undefined || savingFocus !== undefined} onClick={() => { void runStep("opening"); }}>
+        {running === "opening" ? "Drafting…" : session?.opening ? "Write the draft again" : "Write the draft"}
+      </Button> : undefined,
+      how: session?.pipeline === "v4"
+        ? <p>One call writes the whole carousel from the spine: three covers on three levers, slide 2, the middle slides and the closing, each slide with what its image shows, and the caption with its first comment. The program checks every part as its own step would and asks for one fix; the review reads the whole before any image. Here it is in order, to read and correct in one place: a change saved here is a change to that step.</p>
+        : <p>The carousel as its steps stand now, slide by slide, with each slide’s program findings and its texts editable in place: the opening, the deck and the closing are written on their own screens, and a change saved here is a change to that step.</p>,
+      body: <>
+        {!factsVerified && !running ? needs("facts", "The draft builds only on verified facts; verify them first.") : null}
+        {factsVerified && !focusReady && !running ? needs("focus", "The draft follows the story’s focus; decide it first.") : null}
+        {factsVerified && focusReady && !spineReady && !running ? needs("spine", "The draft follows the spine; write it first.") : null}
+        {running === "opening" ? <LoadingState>{following ? `${following} Following the run on the server…` : session?.pipeline === "v4" ? "Opus writes the whole carousel; the program checks it and asks for one fix. About three minutes." : `${today.opening.writer} writes the openings…`}</LoadingState> : null}
+        {runError?.step === "opening" ? <InlineNotice tone="error" title="The draft stopped">{runError.message}</InlineNotice> : null}
+        {session?.step === "opening" && session.error && running !== "opening" ? <InlineNotice tone={session.status === "failed" ? "error" : "warning"}>{session.error}</InlineNotice> : null}
+        {choiceError?.step === "opening" ? <InlineNotice tone="error" title="Your choice was not saved">{choiceError.message}</InlineNotice> : null}
+        {session?.opening && running !== "opening" && finishedRun(session.opening) ? <DraftView
+          session={session}
+          locked={running !== undefined}
+          choosing={choosing?.step === "opening" ? choosing.id : undefined}
+          onChooseCover={(candidateId) => { void choose("opening", candidateId); }}
+          onSave={(step, changes) => saveHandEdits(step, changes)}
+          onUndo={(step, editId) => { void undoHandEdit(step, editId); }}
+        /> : null}
+        {!session?.opening && available.draft && !running ? <EmptyState title={session?.pipeline === "v4" ? "No draft yet" : "Nothing assembled yet"}>{session?.pipeline === "v4" ? "Write the draft: the whole carousel in one call, from the spine." : "Write the opening, the closing and the deck on their screens; they are read here as one carousel."}</EmptyState> : null}
       </>,
     },
     opening: {
@@ -1819,6 +1849,92 @@ function publicationState(session: Draft2SessionView | null | undefined): { targ
 }
 
 /** A funnel step's run: every round's verdict, the version the next steps build on, and every other version to choose from. */
+/** The whole carousel as the steps stand: slide by slide, each with its words, its image intent (v4), the program's findings and its texts to edit; the covers to choose; the drafted caption. */
+function DraftView({ session, locked, choosing, onChooseCover, onSave, onUndo }: {
+  session: Draft2SessionView;
+  locked: boolean;
+  choosing?: string;
+  onChooseCover: (candidateId: string) => void;
+  onSave: (step: "opening" | "closing" | "deck", changes: HandEditChange[]) => Promise<boolean>;
+  onUndo: (step: "opening" | "closing" | "deck", editId: string) => void;
+}) {
+  const opening = session.opening ?? undefined;
+  const closing = session.closing ?? undefined;
+  const deck = session.deck ?? undefined;
+  const openingChosen = opening ? chosenCandidate(opening) : undefined;
+  const closingChosen = closing && finishedRun(closing) ? chosenCandidate(closing) : undefined;
+  const deckChosen = deck && finishedRun(deck) ? chosenCandidate(deck) : undefined;
+  const intents = Object.fromEntries((opening?.draft?.images ?? []).map((image) => [image.slide, image.intent]));
+  const caption = opening?.draft?.caption;
+  // What the program found on a run's chosen version, by slide; a finding on no slide goes with the owner's first slide.
+  const findingsOf = (run: { rounds: readonly { mechanical: readonly { candidateId?: string; part?: string; detail: string }[] }[] } | undefined, chosenId: string | undefined, slide: string, first: boolean) =>
+    (run?.rounds[run.rounds.length - 1]?.mechanical ?? []).filter((issue) => issue.candidateId === chosenId && (issue.part === slide || (!issue.part && first))).map((issue) => issue.detail);
+  type SlideBlock = { slide: string; label: string; headline: string; lines: string[]; owner: "opening" | "closing" | "deck"; fields: HandEditField[]; edits: Draft2Opening["edits"]; findings: string[] };
+  const slides: SlideBlock[] = [];
+  if (openingChosen) {
+    const fields = openingFields(openingChosen);
+    slides.push({ slide: "cover", label: "Cover", headline: openingChosen.cover.headline, lines: [openingChosen.cover.subheadline], owner: "opening", fields: fields.filter((field) => field.slide === "cover"), edits: opening?.edits, findings: findingsOf(opening, openingChosen.id, "cover", true) });
+    slides.push({ slide: "slide2", label: "Slide 2", headline: openingChosen.slide2.headline, lines: [openingChosen.slide2.body], owner: "opening", fields: fields.filter((field) => field.slide === "slide2"), edits: opening?.edits, findings: findingsOf(opening, openingChosen.id, "slide2", false) });
+  }
+  if (deckChosen) {
+    const fields = deckFields(deckChosen);
+    deckChosen.slides.forEach((slide, index) => {
+      const id = `s${index + 1}`;
+      slides.push({ slide: id, label: `Slide ${index + 3}`, headline: slide.headline, lines: [slide.body, ...(slide.practical ? [slide.practical] : [])], owner: "deck", fields: fields.filter((field) => field.slide === id), edits: deck?.edits, findings: findingsOf(deck, deckChosen.id, id, index === 0) });
+    });
+  }
+  if (closingChosen) {
+    const fields = closingFields(closingChosen);
+    const after = 2 + (deckChosen?.slides.length ?? 0);
+    if (closingChosen.penultimate) slides.push({ slide: "penultimate", label: `Slide ${after + 1}`, headline: closingChosen.penultimate.headline, lines: [closingChosen.penultimate.body], owner: "closing", fields: fields.filter((field) => field.slide === "penultimate"), edits: closing?.edits, findings: findingsOf(closing, closingChosen.id, "penultimate", true) });
+    slides.push({ slide: "last", label: `Slide ${after + (closingChosen.penultimate ? 2 : 1)}`, headline: closingChosen.last.headline, lines: [closingChosen.last.body, closingChosen.last.cta], owner: "closing", fields: fields.filter((field) => field.slide === "last"), edits: closing?.edits, findings: findingsOf(closing, closingChosen.id, "last", !closingChosen.penultimate) });
+  }
+  const covers = opening ? funnelVersions(opening.rounds).map((version) => version.candidate) : [];
+  const lastRound = opening?.rounds[opening.rounds.length - 1];
+  const coverChoices = lastRound ? covers.filter((candidate) => lastRound.candidates.some((entry) => entry.id === candidate.id)) : [];
+  return <>
+    {session.pipeline === "v4" && coverChoices.length > 1 && openingChosen ? <div className={styles.openingGroup}>
+      <SectionHeader level={3} title="Three covers" description="The same carousel under three covers, one lever each. The first is the writer's own pick; the one you choose is what the images, the review and the post build on." />
+      <ol className={styles.factList}>
+        {coverChoices.map((candidate) => <li key={candidate.id} className={styles.factItem}>
+          <div className={styles.factHead}>
+            <span className={styles.factId}>{candidate.id}</span>
+            {candidate.lever ? <StatusBadge tone="neutral">{leverName(candidate.lever)}</StatusBadge> : null}
+            {candidate.id === openingChosen.id ? <StatusBadge tone="success">{opening?.editorChoiceId === candidate.id ? "Your choice" : "Chosen"}</StatusBadge> : null}
+          </div>
+          <p className={styles.factClaim}>{candidate.cover.headline}</p>
+          <p className={styles.factMeta}>{candidate.cover.subheadline}</p>
+          {candidate.id !== openingChosen.id ? <div><Button variant="quiet" size="compact" busy={choosing === candidate.id} disabled={locked || choosing !== undefined} onClick={() => onChooseCover(candidate.id)}>Choose this cover</Button></div> : null}
+        </li>)}
+      </ol>
+    </div> : null}
+    <div className={styles.openingGroup}>
+      <SectionHeader level={3} title={`The carousel, ${slides.length} ${slides.length === 1 ? "slide" : "slides"}`} description={session.pipeline === "v4" ? "Each slide as the draft wrote it: its words, what its image shows, what the program found. Edit a text in place; the change goes to its step and to every copy the later steps keep." : "Each slide as its step stands now, with what the program found. Edit a text in place; the change goes to its step."} />
+      {!slides.length ? <EmptyState title="No slides yet">The opening, the deck and the closing are not written yet.</EmptyState> : null}
+      <ol className={styles.factList}>
+        {slides.map((block) => <li key={block.slide} className={styles.factItem}>
+          <div className={styles.factHead}>
+            <span className={styles.factId}>{block.label}</span>
+            <span className={styles.factMeta}>{block.owner === "opening" ? "Opening" : block.owner === "deck" ? "Deck" : "Closing"}</span>
+            {block.findings.length ? <StatusBadge tone="warning">{block.findings.length} program {block.findings.length === 1 ? "finding" : "findings"}</StatusBadge> : null}
+          </div>
+          <p className={styles.factClaim}>{block.headline}</p>
+          {block.lines.map((line, index) => <p key={index} className={styles.factMeta}>{line}</p>)}
+          {intents[block.slide] ? <p className={styles.factMeta}>Image: {intents[block.slide]}</p> : null}
+          {block.findings.map((finding, index) => <InlineNotice key={index} tone="warning">{finding}</InlineNotice>)}
+          <HandEdits key={`${block.owner}-${block.slide}`} fields={block.fields} edits={block.edits} locked={locked} busy={false} onSave={(changes) => onSave(block.owner, changes)} onUndo={(editId) => onUndo(block.owner, editId)} />
+        </li>)}
+      </ol>
+    </div>
+    {caption ? <div className={styles.openingGroup}>
+      <SectionHeader level={3} title="Caption and first comment, as drafted" description="Written with the carousel. The Caption step checks them against the finished images (the credits, the source line, the accounts you confirm) and fixes them once; edit them there." />
+      <p className={styles.factClaim} style={{ whiteSpace: "pre-wrap" }}>{caption.text}</p>
+      <p className={styles.factMeta}>{caption.hashtags.map((tag) => `#${tag}`).join(" ")}</p>
+      {caption.comment ? <p className={styles.factMeta}>First comment: {caption.comment}</p> : null}
+    </div> : null}
+  </>;
+}
+
 function FunnelRunView<C extends FunnelCandidate>({ run, display, choosing, locked, onChoose }: {
   run: FunnelRun<C, FunnelScore, FunnelIssue> & { writer?: Draft2Opening["writer"]; judge?: Draft2Opening["judge"] } & Partial<Pick<Draft2Deck, "opening" | "closing">> & Partial<Pick<Draft2Visual, "carousel" | "characters">>;
   display: FunnelDisplay<C>;

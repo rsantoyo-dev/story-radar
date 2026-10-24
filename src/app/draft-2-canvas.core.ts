@@ -102,6 +102,7 @@ export const DRAFT_2_STEPS = [
   { key: "inventory", title: "People and places", detail: "Who and where the story names, the verified photos and maps of them, and the brand's characters it may use." },
   { key: "focus", title: "Focus", detail: "What the story is for and how it is told: its line, audience, framing, structure, goal, voice, concept and narrative form." },
   { key: "spine", title: "Spine", detail: "The plan the words and the images follow, written from the focus: the hook’s lever and where it is paid, the misreadings the cover prevents, one beat per slide (what its words do, what its image adds, what it withholds) and the two directions." },
+  { key: "draft", title: "Draft", detail: "The whole carousel as it stands, slide by slide: each slide's words and image intent, the three covers to choose, the caption and the first comment, to read and correct in one place." },
   { key: "opening", title: "Opening", detail: "Cover and slide 2 judged as one unit: the promise and its first payoff." },
   { key: "closing", title: "Closing", detail: "The ending: the cover's promise paid in full, what it means for the reader, one call to action." },
   { key: "deck", title: "Deck", detail: "The slides between slide 2 and the closing, one idea each: the story from its promise to its end." },
@@ -125,7 +126,7 @@ export const draft2StepNumber = (step: Draft2StepKey) => STEP_KEYS.indexOf(step)
 /** The pipeline in four phases: what the story says, has and is for, its words, its images, and the post. */
 export const DRAFT_2_PHASES = [
   { key: "story", title: "Story", steps: ["facts", "inventory", "focus", "spine"] },
-  { key: "words", title: "Words", steps: ["opening", "closing", "deck", "review"] },
+  { key: "words", title: "Words", steps: ["draft", "opening", "closing", "deck", "review"] },
   { key: "visuals", title: "Visuals", steps: ["visual", "images"] },
   { key: "post", title: "Post", steps: ["caption", "publish"] },
 ] as const satisfies readonly { key: string; title: string; steps: readonly Draft2StepKey[] }[];
