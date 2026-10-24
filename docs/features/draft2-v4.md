@@ -95,3 +95,30 @@ returns to the funnels.
 - `DRAFT2_MODEL_REVIEW_JUDGE`: the review's editor, as before (default the
   Anthropic default, Sonnet 5.5); v4 runs it at high effort.
 - Migration 0120 lets a session's pipeline be "v4".
+
+## Addendum, 2026-10-24: the first whole-carousel run, and what it taught
+
+ART[O] (two free exhibitions, Saint-Jean), a fresh v4 session, server job to
+the caption: 7.5 model-minutes, US$1.32. The draft (136 s + a 50 s fix,
+US$0.55) wrote the words, each slide's image intent and the caption; the
+review (84) patched one text and one image direction before any image; five
+images of six passed at once; the drafted caption passed the program's nets
+with no call. The auditor read it at 7/10: the end of the exhibitions
+("jusqu'au 25 octobre") stood on the last slide alone two days before it; the
+cover gave a total of two exhibitions to one; slide 2 named the exhibition and
+the organization called after it in one line; a quote joined two sentences;
+the story's subject (faces made of waste) was never seen, since no verified
+photo exists. The rules that came out of it: `DEADLINE_OFF_COVER` and a
+scheduling refusal after the end date, `QUOTE_NOT_VERBATIM`,
+`NAME_COLLISION`, typography settled at parse, `subjectsUnseen` on the visual
+run, and the drafts (v3), review v4 (v2) and image-judge skill lines.
+
+The Draft screen (`/draft-2/draft`, between the Spine and the Opening) shows
+the whole carousel as the steps stand: each slide's words, its image intent
+on a v4 session, the program's findings and its texts editable in place (a
+change goes to the owning step); the three covers to choose; the caption and
+first comment as drafted. On a v4 session "Write the draft" writes the whole
+carousel; on any session the screen reads the parts as one carousel.
+
+Testing goes step by step from here (the editor's choice, 2026-10-24): each
+step run from its own button, read, and the code fixed before the next.
