@@ -10,7 +10,7 @@ import { draft2ModelName, draft2RevisionEffort, draft2RoleModel, draft2SolModel,
 import { traceCostMicros } from "./draft2-trace-cost";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
+  FUNNEL_ACCEPTABLE_SCORE, FUNNEL_EXTRA_ROUND, FUNNEL_MAX_EXTRA_ROUNDS, factsSnapshot, failedCall, funnelAcceptedWinner, funnelBestVersions, funnelExtendable, FUNNEL_FIX_INSTRUCTION, funnelFixedCandidates, funnelFreshWanted, funnelRegressions,
   funnelRenumberedProposals, funnelResumeRound, funnelSchemaWithoutArrayEnums, funnelReviewNote, funnelRoundImproved, funnelRunSummary, funnelTargets, funnelVersions, funnelWrittenCandidates,
   type FunnelCandidate, type FunnelEvaluation, type FunnelFixPass, type FunnelGate, type FunnelIssue, type FunnelPlanRound, type FunnelRegression, type FunnelRole,
   type FunnelRound, type FunnelRun, type FunnelScore, type FunnelVersion,
@@ -333,6 +333,19 @@ export async function runFunnelStep<C extends FunnelCandidate, S extends FunnelS
       const answered = await ask(roles.writer, round, `${def.operations.writer}_fix`, request, { effort: "medium", kind: "writer" });
       const fixedCandidates = funnelFixedCandidates(candidates, flagged, setup.parseCandidates(answered.text));
       const after = setup.mechanical(fixedCandidates);
+      // Still over a length alone: the writer's idea of a word is not the program's ("3 y 4" is three), so one more ask carries the program's count
+      // (2026-10-24, Fogón Lab's pineapple deck: 32 words before and after the fix, twice). Anything else left waits for the judge.
+      const lengthOnly = after.length > 0 && after.every((issue) => /_TOO_LONG$/u.test(String(issue.code)));
+      if (lengthOnly && Date.now() + FIX_ESTIMATE_MS + expectedJudgeMs(effortFor(round, "judge")) <= limitAt - 15_000) {
+        try {
+          const again = new Set(after.flatMap((issue) => issue.candidateId ? [issue.candidateId] : []));
+          const counted = { ...setup.fix(fixedCandidates.filter((candidate) => again.has(candidate.id)), after), instruction: `${FUNNEL_FIX_INSTRUCTION} The program counted again after your fix and these texts are still over their limit: it counts every group of characters between spaces that has a letter or a digit as a word ("3 y 4" is three words, "7" is one, "a.m." is one). Remove at least the words each finding names.` };
+          const answeredAgain = await ask(roles.writer, round, `${def.operations.writer}_fix`, { ...setup.writer, contents: withLimits(counted), schema: setup.schemas.writer }, { effort: "medium", kind: "writer" });
+          const fixedAgain = funnelFixedCandidates(fixedCandidates, again, setup.parseCandidates(answeredAgain.text));
+          const afterAgain = setup.mechanical(fixedAgain);
+          if (afterAgain.length < after.length) return { candidates: fixedAgain, mechanical: afterAgain, fix: { ...fix, findingsAfter: afterAgain.length, durationMs: Date.now() - begin } };
+        } catch { /* the first fix stands; the judge reads it */ }
+      }
       return { candidates: fixedCandidates, mechanical: after, fix: { ...fix, findingsAfter: after.length, durationMs: Date.now() - begin } };
     } catch (error) {
       return { candidates, mechanical, fix: { ...fix, durationMs: Date.now() - begin, skipped: error instanceof Error ? error.message.slice(0, 200) : "the fix pass failed" } };

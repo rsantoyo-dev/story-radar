@@ -814,3 +814,18 @@ test("the editor's models: a new run writes with the session's writer and judges
   assert.equal(plain.calls.map((call) => call.provider).join(","), "anthropic,openai", "no choice: today's cast");
   assert.match(JSON.stringify(plain.calls[1].input.schema), /"code":\{"type":"string","enum"/, "Sol's schema keeps its enums");
 });
+
+test("a fix pass that leaves a length finding alone asks the writer once more with the program's count; anything else left waits for the judge (2026-10-24)", async () => {
+  const long = "Product demos replace months of paperwork in a new buying program that the Pentagon runs for AI founders this year.";
+  // The first fix returns the subheadline as it is; the second, told the program's count, shortens it.
+  const fixes = (contents: FixContents) => ({ candidates: contents.openings.map((opening) => /counted again/.test(contents.instruction)
+    ? { ...opening, cover: { ...opening.cover, subheadline: "Product demos replace months of paperwork." } }
+    : opening) });
+  const h = harness({ writes: [(contents) => ({ candidates: candidates({}, contents.candidatesWanted).map((candidate, index) => index === 0 ? { ...candidate, cover: { ...candidate.cover, subheadline: long } } : candidate) })], fixes, judgments: [judge("accept", "c1", { c1: 96 })] });
+  const session = await h.run();
+  const fixCalls = h.calls.filter((call) => String(call.input.schemaName) === "draft2_opening_fix");
+  assert.equal(fixCalls.length, 2, "the fix, then the fix with the program's count");
+  assert.match(String((fixCalls[1].input.contents as { instruction: string }).instruction), /counted again after your fix/);
+  assert.deepEqual([session.opening?.rounds[0].fix?.findingsBefore, session.opening?.rounds[0].fix?.findingsAfter], [1, 0]);
+  assert.equal(session.opening?.status, "ready");
+});

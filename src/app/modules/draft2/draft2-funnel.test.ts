@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { tidyTypography, criterionFloor, lengthHint, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
+import { funnelRoundImproved, tidyTypography, criterionFloor, lengthHint, funnelEvaluationSchema, funnelParseEvaluation, funnelRefineRequest, funnelSchemaWithoutArrayEnums, funnelScorePasses, numbersIn, statedNumbers } from "./draft2-funnel";
 import { DECK_GATE } from "./draft2-deck.types";
 import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 
@@ -111,4 +111,15 @@ test("a slide's typography settled at parse: an opening single quote used as an 
   assert.equal(tidyTypography("L‘artiste et l’œuvre, «émerveilleurs» et « les Veilleurs »"), "L’artiste et l’œuvre, «\u202fémerveilleurs\u202f» et «\u202fles Veilleurs\u202f»");
   assert.equal(tidyTypography("The Pentagon's new shortcut"), "The Pentagon's new shortcut");
   assert.equal(tidyTypography("‘Quoted’ at the start"), "‘Quoted’ at the start", "a real opening quote at a word's start is kept");
+});
+
+test("a round improves the run when its best clean version beats the earlier ones; with no clean version anywhere, when its best score does (2026-10-24, the pineapple deck)", () => {
+  const version = (id: string, round: number, overall: number, extra: Partial<{ findings: unknown[]; issues: { material?: boolean }[] }> = {}) =>
+    ({ candidate: { id, angle: "" }, round, score: { candidateId: id, overall, note: "" }, findings: extra.findings ?? [], issues: extra.issues ?? [] }) as never;
+  assert.equal(funnelRoundImproved([version("c1", 1, 88), version("c1.2", 2, 89)], 2), true, "clean versions: the best clean rose");
+  assert.equal(funnelRoundImproved([version("c1", 1, 90), version("c1.2", 2, 89)], 2), false);
+  const material = { issues: [{ material: true }] };
+  assert.equal(funnelRoundImproved([version("c4", 1, 88, material), version("c4.2", 2, 89, material)], 2), true, "no clean version anywhere: the best score decides, so the fixing round is earned");
+  assert.equal(funnelRoundImproved([version("c4", 1, 89, material), version("c4.2", 2, 88, material)], 2), false);
+  assert.equal(funnelRoundImproved([version("c4", 1, 88, material), version("c4.2", 2, 89, material), version("c7", 2, 80)], 2), true, "a clean version in the round: the clean rule, 80 over nothing clean before");
 });

@@ -457,8 +457,14 @@ export function funnelFixedCandidates<C extends FunnelCandidate>(candidates: rea
  * took their extra rounds and ended, most often, on an earlier version).
  */
 export function funnelRoundImproved(versions: readonly AnyVersion[], round: number): boolean {
-  const best = (entries: readonly AnyVersion[]) => funnelBestVersions(entries)[0]?.score?.overall ?? 0;
-  return best(versions.filter((version) => version.round === round)) > best(versions.filter((version) => version.round < round));
+  const own = versions.filter((version) => version.round === round);
+  const earlier = versions.filter((version) => version.round < round);
+  const clean = (entries: readonly AnyVersion[]) => funnelBestVersions(entries)[0]?.score?.overall ?? 0;
+  if (funnelBestVersions(versions).length) return clean(own) > clean(earlier);
+  // No version of any round is clean (each one a finding or a material issue away): the best score decides, so the extra round that
+  // would fix the best is earned (2026-10-24, Fogón Lab's pineapple deck: c4 88 then c4.2 89, each one attribution short, and no extra round).
+  const scored = (entries: readonly AnyVersion[]) => Math.max(0, ...entries.map((version) => version.score?.overall ?? 0));
+  return scored(own) > scored(earlier);
 }
 
 /** A candidate tried so far, as a request lists it: its id, its label and its score. */
