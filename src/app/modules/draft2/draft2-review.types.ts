@@ -328,7 +328,8 @@ export function parseReviewAnswer(answer: string, carousel: readonly Draft2Carou
     return Math.min(100, Math.max(1, number));
   };
   const verdict = body.verdict === "ready" || body.verdict === "patch" ? body.verdict : undefined;
-  const summary = text(body.summary, REVIEW_SUMMARY_MAX_CHARACTERS);
+  // A summary over its length is cut at a word: the ART[O] v4 review was lost twice to a summary of a few words too many (2026-10-24).
+  const summary = clip(body.summary, REVIEW_SUMMARY_MAX_CHARACTERS);
   if (!verdict || !summary) throw new Draft2ResponseError("The review's verdict or summary is missing");
   const strengths = (Array.isArray(body.strengths) ? body.strengths : []).flatMap((entry) => { const line = text(entry, REVIEW_LINE_MAX_CHARACTERS); return line ? [line] : []; }).slice(0, REVIEW_MAX_STRENGTHS);
   const patches: Draft2ReviewAnswer["patches"] = [];

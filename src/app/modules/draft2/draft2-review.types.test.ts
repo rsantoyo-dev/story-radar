@@ -165,3 +165,10 @@ test("a v4 review's direction patches: the direction it quoted checked against t
   assert.equal(reviewTypes.reviewCurrent({ ...read, visualId: undefined }, { openingId: "c1", closingId: "k1", deckId: "d1", visualId: "v1" }), false, "a review that read no script is not current for one");
   assert.equal(reviewTypes.reviewCurrent({ ...read, visualId: undefined }, { openingId: "c1", closingId: "k1", deckId: "d1" }), true, "v2 and v3 name none");
 });
+
+test("a summary over its length is cut at a word, never a lost review (2026-10-24, the ART[O] v4 review)", () => {
+  const long = "Le carrousel est net et tient sa promesse. ".repeat(20).trim();
+  const parsed = parseReviewAnswer(JSON.stringify({ scores: Object.fromEntries([...REVIEW_CRITERIA, "overall"].map((key) => [key, 88])), verdict: "patch", summary: long, strengths: [], patches: [] }), carousel);
+  assert.ok(parsed.summary.length <= 600 && parsed.summary.endsWith("…"), `${parsed.summary.length} characters`);
+  assert.throws(() => parseReviewAnswer(JSON.stringify({ scores: Object.fromEntries([...REVIEW_CRITERIA, "overall"].map((key) => [key, 88])), verdict: "patch", summary: "  ", strengths: [], patches: [] }), carousel), /verdict or summary is missing/);
+});

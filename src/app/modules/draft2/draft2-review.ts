@@ -8,7 +8,7 @@ import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2S
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { traceCost } from "./draft2-trace-cost";
 import type { Draft2Reader } from "./draft2-address.types";
-import { Draft2BusyError, Draft2InputError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
+import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import { factsSnapshot, failedCall, funnelVersions, funnelWithCandidate, funnelWordCount, type FunnelCandidate, type FunnelRole, type FunnelRun } from "./draft2-funnel";
 import { focusForModels, focusItemCount, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { mechanicalOpeningIssues, type Draft2Opening, type Draft2OpeningCandidate } from "./draft2-opening.types";
@@ -212,14 +212,29 @@ export async function reviewDraft2Carousel({ topicId, storyId, sessionId }: Draf
       const editor = composeInstructions("carousel-editor", [REVIEW_SKILL, FAIRNESS_SKILL, READER_SKILL, ...creativeSkills(chosen.focus.values)], brief);
       const editorInstructions = `${editor.instructions}${script ? `\n\n${REVIEW_V4_SECTION}` : ""}\n\n# Verified facts\n${JSON.stringify(factsSnapshot(facts))}`;
       const editorSkills = script ? { ...editor.skillVersions, "review-v4": REVIEW_V4_VERSION } : editor.skillVersions;
+      let refusal = "";
       // The word limits each slide's text keeps, so a patch is written within them (the Saint-Jean review lost both its truth patches to a 30-word body, 2026-10-17).
       const limits = { patches: REVIEW_MAX_PATCHES, words: reviewWordLimits(carousel, { deck: chosen.deck.shape ?? undefined, closing: chosen.closing.shape ?? undefined }) };
-      const editorAnswer = await call(editorBy, "draft2_review", {
-        instructions: editorInstructions,
-        contents: { task: "review", slides, ...(script ? { images: script.images, ...(session.visual?.subjectsUnseen?.length ? { subjectsUnseen: session.visual.subjectsUnseen } : {}) } : {}), focus: focusForModels(chosen.focus.values), reader: read, limits },
-        schema: script ? DRAFT2_REVIEW_V4_SCHEMA : DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: script ? "high" : "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editorSkills,
-      });
-      const answer = parseReviewAnswer(editorAnswer, carousel);
+      // A review the program refuses (a verdict or a summary missing, a score that is no integer) is asked for again once, with the rule it broke; refused again, the step fails.
+      const editorContents = { task: "review", slides, ...(script ? { images: script.images, ...(session.visual?.subjectsUnseen?.length ? { subjectsUnseen: session.visual.subjectsUnseen } : {}) } : {}), focus: focusForModels(chosen.focus.values), reader: read, limits };
+      let editorAnswer = "";
+      let answer!: ReturnType<typeof parseReviewAnswer>;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        editorAnswer = await call(editorBy, "draft2_review", {
+          instructions: editorInstructions,
+          contents: attempt === 1 ? editorContents : { ...editorContents, correction: `${refusal}. Return the whole review again, every field, with this fixed and nothing else changed.` },
+          schema: script ? DRAFT2_REVIEW_V4_SCHEMA : DRAFT2_REVIEW_SCHEMA, maxOutputTokens: EDITOR_MAX_OUTPUT_TOKENS, reasoningEffort: script ? "high" : "medium", timeoutMs: EDITOR_TIMEOUT_MS, skillVersions: editorSkills,
+        });
+        try {
+          answer = parseReviewAnswer(editorAnswer, carousel);
+          break;
+        } catch (error) {
+          if (!(error instanceof Draft2ResponseError) || attempt === 2) throw error;
+          refusal = error.message;
+          const last = trace[trace.length - 1];
+          if (last) last.note = `Refused by the program: ${error.message}`.slice(0, 600);
+        }
+      }
       // 3. The program: a patch that breaks the review's own rules or the owning step's is refused with the rule, before anyone sees it as a choice; one over its slide's word limit alone is asked shorter once, the same change within the limit.
       const address = { address: profile.readerAddress, language: profile.language };
       const headlineOf = (slide: string) => carousel.find((entry) => entry.slide === slide)?.headline;

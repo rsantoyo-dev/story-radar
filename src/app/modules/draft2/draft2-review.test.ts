@@ -62,7 +62,7 @@ function harness({ session, reader = READER, editor = EDITOR, shorten = SHORTEN,
   /** The reader's, the editor's and the shortening answers, whichever provider is asked; each call is kept with its provider. */
   const respond = async (provider: string, input: Record<string, unknown>) => {
     calls.push({ ...input, provider });
-    const answer = input.schemaName === "draft2_review_read" ? reader : input.schemaName === "draft2_review_shorten" ? shorten : editor;
+    const answer = input.schemaName === "draft2_review_read" ? reader : input.schemaName === "draft2_review_shorten" ? shorten : Array.isArray(editor) ? editor.shift() : editor;
     if (answer instanceof Error) throw answer;
     return { text: JSON.stringify(answer), usage: { promptTokens: 300, outputTokens: 120, thoughtsTokens: 0, totalTokens: 420 }, cachedInputTokens: 0 };
   };
@@ -281,4 +281,18 @@ test("v4: the review reads the words beside the visual script's image directions
   const undone = await h.decide("undo", "p1");
   assert.equal(direction(undone), "The s1 image: a quiet room.");
   await assert.rejects(harness({ session: { pipeline: "v4" } }).review(), /Finish the visual script first/);
+});
+
+test("a review the program refuses is asked for again once with the rule; the second decides, and a second refusal fails the step (2026-10-24)", async () => {
+  const broken = { ...EDITOR, verdict: "maybe" };
+  const h = harness({ editor: [broken, EDITOR] });
+  const session = await h.review();
+  const editorCalls = h.calls.filter((call) => call.schemaName === "draft2_review");
+  assert.equal(editorCalls.length, 2);
+  assert.match(String((editorCalls[1].contents as { correction: string }).correction), /^The review's verdict or summary is missing\. Return the whole review again/);
+  assert.equal(json([session.review?.status, session.review?.editor?.verdict]), json(["ready", "patch"]));
+  assert.match(String(session.trace.filter((entry) => entry.operation === "draft2_review")[0]?.note), /^Refused by the program/);
+  const stubborn = harness({ editor: [broken, broken] });
+  await assert.rejects(stubborn.review(), /verdict or summary is missing/);
+  assert.equal(stubborn.row().review?.status, "failed");
 });
