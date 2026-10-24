@@ -82,6 +82,12 @@ test("a step that pauses for time is continued at once and logged once it ends; 
   const h = harness(["opening", "opening", "closing"], { paused: "opening" });
   const { end, steps } = await runAutopilotPass(h.deps);
   assert.deepEqual([end, steps.map((entry) => entry.step)], [{ kind: "done" }, ["opening", "closing"]], "the paused opening is not logged twice");
+  // A step that pauses again at once when continued has no time left in this pass: the pass ends out of time and the next continues it (2026-10-24).
+  let imagesRuns = 0;
+  const atOnce = harness([], { next: () => ({ step: "images", continuing: imagesRuns > 0 }) });
+  atOnce.deps.runStep = async () => { imagesRuns++; if (imagesRuns > 1) return { ...session(), images: { status: "paused" } } as never; atOnce.deps.now = () => Date.parse("2026-10-22T12:00:40Z"); return { ...session(), images: { status: "paused" } } as never; };
+  const outOfTime = await runAutopilotPass(atOnce.deps);
+  assert.deepEqual([outOfTime.end, imagesRuns], [{ kind: "out-of-time", next: "images" }, 2], "the first pause took its time; the second, at once, ends the pass");
   const broken = harness(["opening", "closing"], { fail: "closing" });
   const failed = await runAutopilotPass(broken.deps);
   assert.equal(failed.end.kind, "failed");

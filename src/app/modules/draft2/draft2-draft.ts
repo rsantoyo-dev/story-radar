@@ -32,8 +32,8 @@ const DRAFT_ATTEMPTS = 2;
 /** The draft writes every slide's words with high effort: one call does the work of three funnels. */
 const DRAFT_MAX_OUTPUT_TOKENS = 24_000;
 const CALL_TIMEOUT_MS = 240_000;
-/** A draft and its fix call take about two and a half minutes; a server pass with less left leaves it to the next. */
-export const DRAFT_ESTIMATE_MS = 150_000;
+/** A draft and its fix call took 187 s on a six-slide arc (2026-10-24); a server pass with less than this left leaves the draft to the next pass, whole. */
+export const DRAFT_ESTIMATE_MS = 210_000;
 const HEARTBEAT_MS = 20_000;
 
 /** The focus the draft follows: decided, not being decided, free of program findings (as the Opening's). */

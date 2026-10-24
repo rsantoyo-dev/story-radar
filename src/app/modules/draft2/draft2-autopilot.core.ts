@@ -244,6 +244,8 @@ export type AutopilotJobView = {
 export const AUTOPILOT_PASS_BUDGET_MS = 270_000;
 /** A budgeted step (the funnel's, the images', the facts') starts only with this much left: the funnel's shortest useful call is a minute. */
 export const AUTOPILOT_MIN_STEP_MS = 90_000;
+/** A step continued in the same pass that pauses again this fast paused for the pass's own time: the next pass continues it (2026-10-24: the images paused 17 times in 30 s and the job failed on its run count). */
+export const AUTOPILOT_PAUSE_AT_ONCE_MS = 5_000;
 /** What a step without its own budget is expected to take, so a pass never starts one it cannot finish. */
 export const AUTOPILOT_STEP_ESTIMATE_MS: Partial<Record<Draft2AutopilotStep, number>> = { inventory: 150_000, focus: 150_000, spine: 150_000, mentions: 120_000, review: 200_000 };
 /** Steps that read a deadline and pause themselves before it. */
@@ -375,6 +377,8 @@ export async function runAutopilotPass(deps: AutopilotPassDependencies): Promise
     if (next.step !== "facts" && (paused === "paused" || paused === "running")) {
       previous = undefined;
       await deps.progress({ currentStep: null, steps, sessionId: result.id });
+      // Paused at once: the step measures its time from the pass's end and has none left in this pass; a new pass, with a new request's time, continues it.
+      if (deps.now() - begin < AUTOPILOT_PAUSE_AT_ONCE_MS) return { end: { kind: "out-of-time", next: next.step }, steps };
       continue;
     }
     const status = stepOutcome(result, next.step);
