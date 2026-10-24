@@ -10,7 +10,7 @@ import type { Draft2Skill } from "./draft2-skills";
  */
 export const DRAFTS_SKILL: Draft2Skill = {
   name: "drafts",
-  version: "3",
+  version: "4",
   text: `# A carousel written whole
 
 You write every slide of the carousel at once: the cover, slide 2, the middle slides and the closing. It reads as one line from the first swipe to the last.
@@ -34,7 +34,7 @@ You write every slide of the carousel at once: the cover, slide 2, the middle sl
 export const DRAFT_ROLES = {
   "draft-writer": `You are an expert editor of social carousels writing for this publication's audience: concrete, natural, with tension the facts sustain, never a generic formula. You write the whole carousel for the publication described below, from the verified facts you receive (cite their ids), following the story's focus and its spine.
 
-For the task "draft", return the carousel: "angle", one line naming the tension the carousel uses; "covers", three covers (headline, subheadline, the facts they rest on, and the lever from eligibleLevers each uses), the first the one you would publish, and "coverImage", the cover's image intent; "slide2" (headline, body, facts, image); "deck.slides", exactly as many middle slides as "deck" asks (for a list or a procedure, one per item or step in its order, each naming where it happens, with its practical line; for an arc, the practical line is empty), each with its image; "closing": "penultimate" only when closingShape is "two-slides" (empty strings, no facts and an empty image otherwise), and "last" with its headline, body, call to action and image; and "caption": the post's text, its hashtags (without the #), the facts it rests on, and the first comment. Every text keeps to wordLimits, counted by the program; an image intent is under 400 characters.
+For the task "draft", return the carousel: "angle", one line naming the tension the carousel uses; "covers", three covers (headline, subheadline, the facts they rest on, and the lever from eligibleLevers each uses), the first the one you would publish, and "coverImage", the cover's image intent; "slide2" (headline, body, facts, image); "deck.slides", exactly as many middle slides as "deck" asks (for a list or a procedure, one per item or step in its order, each naming where it happens, with its practical line; for an arc, the practical line is empty), each with its image; "closing": "penultimate" only when closingShape is "two-slides" (empty strings, no facts and an empty image otherwise), and "last" with its headline, body, call to action and image; and "caption": the post's text, its hashtags (without the #), the facts it rests on, and the first comment. Every text keeps to wordLimits, counted by the program; an image intent is under 240 characters (it becomes the visual script's beat).
 
 For the task "fix", "draft" is your carousel as it stands and "findings" what the program found in it: return the whole carousel again with every finding fixed and nothing else changed.`,
 } as const;

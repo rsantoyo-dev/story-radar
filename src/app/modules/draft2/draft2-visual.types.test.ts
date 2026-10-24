@@ -3,7 +3,7 @@ import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import { editorCast,
   forbiddenElement,
-  VISUAL_CRITERIA, VISUAL_FIX_INSTRUCTION, VISUAL_JUDGE_CODES, VISUAL_LONG_PLAN, VISUAL_MECHANICAL_CODES, VISUAL_PLAN, VISUAL_PLAN_V3, avoidTerms, bindPanoramaShots, bindSpineBeats, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual, spineImageLines, spineStations,
+  VISUAL_CRITERIA, VISUAL_FIX_INSTRUCTION, VISUAL_JUDGE_CODES, VISUAL_LONG_PLAN, VISUAL_MECHANICAL_CODES, VISUAL_PLAN, VISUAL_PLAN_V3, VISUAL_BEAT_MAX_CHARACTERS, avoidTerms, bindPanoramaShots, beatWithinLimit, bindSpineBeats, carouselSlides, deckCarousel, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameCarouselWords, sameVisual, spineImageLines, spineStations,
   visualEvaluationSchema, visualExploreRequest, visualFixRequest, visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2VisualCandidate, type Draft2VisualIssue, type Draft2VisualRound, type Draft2VisualScore, type Draft2VisualSlide,
 } from "./draft2-visual.types";
@@ -363,4 +363,15 @@ test("room kept for the logo asks for no logo, in the publications' phrasings: t
     assert.equal(forbiddenElement(direction), undefined, direction);
   }
   assert.equal(forbiddenElement("A card with the logo drawn in the corner"), "logo");
+});
+
+test("a beat bound from the spine or the draft never exceeds the beat's limit: cut at a word (2026-10-24, the pineapple's v4 intents)", () => {
+  const long = "Rodaja de piña fresca a la izquierda soltando puntitos que flotan, y a la derecha el personaje de la marca con la cara arrugada por el hormigueo, sobre fondo terracota plano; el gesto cuenta la molestia antes que el titular. Ilustración plana serigráfica retro, trazo azul tinta, sin texto ni números.";
+  assert.ok(long.length > VISUAL_BEAT_MAX_CHARACTERS);
+  const cut = beatWithinLimit(long);
+  assert.ok(cut.length <= VISUAL_BEAT_MAX_CHARACTERS && long.startsWith(cut) && /[\p{L}]$/u.test(cut), cut);
+  assert.equal(beatWithinLimit("  Una capa  fina. "), "Una capa fina.");
+  const [bound] = bindSpineBeats([{ slides: [{ slide: "cover", beat: "x" }, { slide: "s1", beat: "y" }] as unknown as Draft2VisualSlide[] }], { cover: long });
+  assert.equal(bound.slides[0].beat, cut);
+  assert.equal(bound.slides[1].beat, "y", "a slide the lines do not name keeps the writer's beat");
 });

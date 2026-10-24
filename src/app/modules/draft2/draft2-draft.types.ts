@@ -18,8 +18,8 @@ import type { Draft2Reader } from "./draft2-address.types";
 
 /** Three covers: the writer's own, and two on other levers for a real choice. */
 export const DRAFT_COVERS = 3;
-/** A slide's image intent: what is seen and why, tied to the slide's words; the visual script writes the direction from it. */
-export const DRAFT_IMAGE_MAX_CHARACTERS = 400;
+/** A slide's image intent: what is seen and why, tied to the slide's words; it becomes the visual script's beat, so it takes the beat's length (VISUAL_BEAT_MAX_CHARACTERS). */
+export const DRAFT_IMAGE_MAX_CHARACTERS = 240;
 
 const text = { type: "string" };
 const factIds = { type: "array", items: { type: "string" } };

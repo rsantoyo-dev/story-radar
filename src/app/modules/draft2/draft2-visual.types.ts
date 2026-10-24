@@ -311,7 +311,16 @@ export function spineImageLines(spine: Draft2FocusSpine | undefined, carousel: r
 /** The scripts with each slide's beat bound to the spine's image line where the spine has one: the words and the images follow one plan, whatever the writer or the judge wrote there. */
 export function bindSpineBeats<C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[], lines: Record<string, string>): C[] {
   if (!Object.keys(lines).length) return [...candidates];
-  return candidates.map((candidate) => ({ ...candidate, slides: candidate.slides.map((slide) => lines[slide.slide] ? { ...slide, beat: lines[slide.slide] } : slide) }));
+  return candidates.map((candidate) => ({ ...candidate, slides: candidate.slides.map((slide) => lines[slide.slide] ? { ...slide, beat: beatWithinLimit(lines[slide.slide]) } : slide) }));
+}
+
+/** A bound beat within the beat's limit, cut at a word: a v4 draft's image intent ran to 400 characters and the program flagged the script it bound it to (2026-10-24, the pineapple). */
+export function beatWithinLimit(line: string): string {
+  const whole = line.replace(/\s+/g, " ").trim();
+  if (whole.length <= VISUAL_BEAT_MAX_CHARACTERS) return whole;
+  const cut = whole.slice(0, VISUAL_BEAT_MAX_CHARACTERS + 1);
+  const end = cut.lastIndexOf(" ");
+  return (end > VISUAL_BEAT_MAX_CHARACTERS / 2 ? cut.slice(0, end) : whole.slice(0, VISUAL_BEAT_MAX_CHARACTERS)).replace(/[\s,;:–-]+$/u, "");
 }
 
 /**
