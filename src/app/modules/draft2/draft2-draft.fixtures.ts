@@ -20,15 +20,18 @@ export const FOCUS: Draft2FocusSnapshot = { version: 3, values: {
 
 export const cover = (headline: string, lever = "free") => ({ headline, subheadline: "Product demos replace months of paperwork in a new buying program.", factIds: ["f1"], lever });
 /** Opus's draft: three covers, slide 2, one middle slide, the penultimate and the last. */
+export const CAPTION = { text: "A five-minute product video can now open a Pentagon contract.\n\nAwards came in under a week in several instances, a DOD official says.\n\nFollow for the next defence buying change.", hashtags: ["Pentagon", "DefenceTech", "Founders", "GovTech", "Procurement"], factIds: ["f1", "f2"], comment: "Five minutes of video instead of months of paperwork: the Pentagon is buying like a startup. Would you pitch your product this way?" };
 export const answer = (patch: Record<string, unknown> = {}) => JSON.stringify({
   angle: "Speed over paperwork",
   covers: [cover("Pentagon buyers now judge five-minute videos"), cover("Your demo video is now the bid"), cover("Five minutes of video replaces the paperwork")],
-  slide2: { headline: "Awards in under a week", body: "A DOD official says awards took less than a week in several instances.", factIds: ["f2"] },
-  deck: { slides: [{ headline: "Reviewers watch the demo", body: "The program reviews product videos no longer than five minutes instead of reading binders.", practical: "", factIds: ["f1"] }] },
+  coverImage: "A laptop playing a product demo, alone on a long empty table: the whole bid in one small screen.",
+  slide2: { headline: "Awards in under a week", body: "A DOD official says awards took less than a week in several instances.", factIds: ["f2"], image: "A wall calendar with six days crossed out and the seventh circled." },
+  deck: { slides: [{ headline: "Reviewers watch the demo", body: "The program reviews product videos no longer than five minutes instead of reading binders.", practical: "", factIds: ["f1"], image: "A thick binder closed beside a small screen showing a play button." }] },
   closing: {
-    penultimate: { headline: "Awards in days, not years", body: "Several awards came in under a week, a DOD official says.", factIds: ["f2"] },
-    last: { headline: "Your next pitch is a video", body: "Record five minutes that show the product working.", cta: "Follow for the next defence buying change.", factIds: ["f1"] },
+    penultimate: { headline: "Awards in days, not years", body: "Several awards came in under a week, a DOD official says.", factIds: ["f2"], image: "A signed award letter on the same table, the laptop closed beside it." },
+    last: { headline: "Your next pitch is a video", body: "Record five minutes that show the product working.", cta: "Follow for the next defence buying change.", factIds: ["f1"], image: "A phone on a small tripod filming a product on a desk." },
   },
+  caption: CAPTION,
   ...patch,
 });
 

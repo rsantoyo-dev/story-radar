@@ -38,19 +38,25 @@ that sent the dome's image outdoors).
 Facts → People and places → Focus → Spine → Accounts to tag, as in v3. Then:
 
 1. **Draft** (the Opening step of a v4 session, `draft2-draft.ts`). One call
-   to Opus 5.5 at high effort writes every slide's words: three covers on
+   to Opus 5.5 at high effort writes the whole carousel: three covers on
    three levers (the first its own pick), slide 2, the middle slides as the
-   deck's shape asks, and the closing. Skills: drafts (new), hooks, levers,
-   decks, closings, fairness, reader and the story's creative skills, with
-   what each tells the three writers it replaces. The program checks every
-   part as its funnel would; what it finds goes back to the writer once, and
-   the program keeps the draft with fewer findings. The cover the draft goes
-   on with is the first the program finds nothing on. The draft is stored as
-   the Opening, the Closing and the Deck (one version each, with the
-   snapshots the later steps read), so hand edits, the images, the caption
-   and the publication work unchanged; earlier runs stay as summaries. A
-   server pass with less than 150 s left pauses it for the next pass.
-2. **Visual script**: v3's, one round (the review below reads it).
+   deck's shape asks, the closing, **each slide's image intent** (what is
+   seen and why, tied to that slide's words) and **the caption with its first
+   comment**. Skills: drafts, hooks, levers, decks, closings, fairness,
+   reader and the story's creative skills, with what each tells the three
+   writers it replaces. The program checks every part as its funnel would;
+   what it finds goes back to the writer once, and the program keeps the
+   draft with fewer findings. The cover the draft goes on with is the first
+   the program finds nothing on. The words are stored as the Opening, the
+   Closing and the Deck (one version each, with the snapshots the later steps
+   read), the intents and the caption on the opening run (`draft`), so hand
+   edits, the images, the caption and the publication work unchanged; earlier
+   runs stay as summaries. A server pass with less than 150 s left pauses it
+   for the next pass.
+2. **Visual script**: v3's, one round. Each slide's beat is the draft's image
+   intent (over the spine's image line), so the script writes the direction
+   in the brand's style from a subject chosen with the words, instead of
+   reinterpreting them (the dome show's midday sky came from that).
 3. **Review of the whole carousel**, after the visual script and before any
    image: Sonnet 5.5 at high effort reads each slide's words beside its image
    direction, with the calibrated reading (skills/review.ts,
@@ -60,7 +66,17 @@ Facts → People and places → Focus → Spine → Accounts to tag, as in v3. T
    necessary kinds (truth, repetition, detail) as before; a direction patch
    changes the chosen script's slide, which the images then follow. A new
    script asks for a new reading (`reviewCurrent` with its `visualId`).
-4. Images and caption, as in v3.
+4. Images, as in v3.
+5. **Caption**: the caption the draft wrote, checked by the program against
+   the finished images (credits, source line, the accounts confirmed, the
+   rules); what it finds goes back to the caption writer once, and the
+   program keeps the version with fewer findings. No writer from scratch and
+   no judge: the whole-carousel review read it with the slides. Stored as a
+   caption run of one version, so the Caption screen, the first comment and
+   the publication work as they do.
+
+Next, in the same shape: the review reads the drafted caption beside the
+slides and may patch it (owner "caption"), as it patches image directions.
 
 Estimated: about 10–12 minutes and US$1.1–1.4 a run (to be measured).
 

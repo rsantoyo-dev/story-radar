@@ -30,6 +30,8 @@ type VisualSnapshot = {
   characterChoice: Draft2CharacterChoice;
   /** The publication's last covers, newest first: the script varies its cover from them. */
   recentCovers: Draft2RecentCover[];
+  /** v4: the draft's image intent per slide (docs/features/draft2-v4.md); the script's beats follow it. */
+  imageIntents?: Record<string, string>;
 };
 
 /**
@@ -43,10 +45,10 @@ type VisualSnapshot = {
 function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefined): Omit<VisualSnapshot, "recentCovers"> {
   const inventory = session.inventory;
   if (stopped) {
-    const { carousel, deckId, openingId, closingId, focus, characters, characterChoice } = stopped;
+    const { carousel, deckId, openingId, closingId, focus, characters, characterChoice, imageIntents } = stopped;
     if (!carousel || !deckId || !openingId || !closingId || !focus || !characters || !characterChoice) throw new Draft2InputError("This visual script run does not record what it pictures. Write the visual script again.");
     if (!inventory || inventory.version !== stopped.inventoryVersion) throw new Draft2InputError("The people and places changed since this run started. Write the visual script again.");
-    return { carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice };
+    return { carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, ...(imageIntents ? { imageIntents } : {}) };
   }
   const deck = session.deck;
   if (!deck || deck.status === "running" || deck.status === "paused") throw new Draft2InputError("The visual script pictures the whole carousel. Finish the deck first.");
@@ -60,10 +62,13 @@ function visualTarget(session: Draft2SessionRow, stopped: Draft2Visual | undefin
     throw new Draft2InputError(`The deck connects ${deck.opening.id} and ${deck.closing.id}; the opening and closing chosen now are ${openingNow} and ${closingNow}. Write the deck again first.`);
   }
   if (!inventory || inventory.status !== "ready") throw new Draft2InputError("Find the people and places first: the visual script shows only what is verified.");
+  // v4: the draft wrote each slide's image intent with its words; the script realizes it (the spine's image lines stand where the draft wrote none).
+  const drafted = session.pipeline === "v4" && session.opening?.draft?.images?.length ? Object.fromEntries(session.opening.draft.images.map(({ slide, intent }) => [slide, intent])) : undefined;
   return {
     carousel: carouselSlides(deck.opening, chosen.candidate, deck.closing),
     deckId: chosen.candidate.id, openingId: deck.opening.id, closingId: deck.closing.id, focus: visualFocus(deck.focus, session.focus),
     inventory, characters: inventory.roster, characterChoice: inventory.characters,
+    ...(drafted ? { imageIntents: drafted } : {}),
   };
 }
 
@@ -86,11 +91,12 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const [rows, profile] = await Promise.all([recentDraft2CoverRows(session.topicId, session.id), getCreativeProfile(session.topicId)]);
     return { ...target, recentCovers: recentCovers(rows, { palette: profile.brandPalette ?? [], roster: target.inventory.roster ?? [] }) };
   },
-  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, recentCovers: covers }, profile) => ({
+  newRun: ({ carousel, deckId, openingId, closingId, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents }, profile) => ({
     carousel, deckId, openingId, closingId, focus, inventoryVersion: inventory.version, characters, characterChoice, mode: profile.visualFidelityMode as Draft2VisualMode,
     ...(covers.length ? { recentCovers: covers } : {}),
+    ...(imageIntents ? { imageIntents } : {}),
   }),
-  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice, recentCovers: covers }, profile, plan }) => {
+  setup: ({ snapshot: { carousel, focus, inventory, characters, characterChoice, recentCovers: covers, imageIntents }, profile, plan }) => {
     const mode = profile.visualFidelityMode as Draft2VisualMode;
     // The identity in full (not v1's 1,400-character excerpt for text prompts): the script is where it is applied.
     const brief = [brandBrief(profile), `# Visual identity\n${resolveCreativeVisualGuidance(profile)}`, visualModeLine(mode)].join("\n\n");
@@ -99,7 +105,8 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
     const narrative = focusNarrative(focus.values);
     // Each slide's beat is the spine's image line, whatever the writer or the judge wrote there: the words and the images follow one plan.
     // In a panorama or a line every section has the scene's one view: its shot is wide, whatever was written, and its station travels beside its beat.
-    const beats = spineImageLines(focus.values.spine, carousel);
+    // v4: the draft's image intents, written with the words, stand over the spine's image lines where the draft wrote one.
+    const beats = { ...spineImageLines(focus.values.spine, carousel), ...(imageIntents ?? {}) };
     const stations = spineStations(focus.values.spine, carousel);
     const bind = <C extends Pick<Draft2VisualCandidate, "slides">>(candidates: readonly C[]): C[] => narrativeUsesMaster(narrative) ? bindPanoramaShots(bindSpineBeats(candidates, beats)) : bindSpineBeats(candidates, beats);
     // The skills the telling needs, with the narrative form as the script follows it: the editor's panorama (imageMode) is the panorama form even where the focus stored none, and the visuals skill points to the narratives skill for its anchor rules.

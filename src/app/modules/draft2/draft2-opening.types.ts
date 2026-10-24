@@ -149,12 +149,24 @@ export type Draft2OpeningRegression = FunnelRegression;
 /** A role of the run: which provider's model played it. */
 export type Draft2OpeningRole = FunnelRole;
 
+/**
+ * What a v4 draft wrote beside the carousel's words (docs/features/draft2-v4.md):
+ * each slide's image intent, which the visual script realizes, and the caption
+ * with its first comment, which the Caption step checks and fixes once.
+ */
+export type Draft2DraftExtras = {
+  images: { slide: string; intent: string }[];
+  caption: { text: string; hashtags: string[]; factIds: string[]; comment: string };
+};
+
 export type Draft2Opening = FunnelRun<Draft2OpeningCandidate, Draft2OpeningScore, Draft2OpeningIssue> & {
   /** Who wrote and who judged this run; a run stored before the swap has none (Sol wrote, Claude judged). */
   writer?: Draft2OpeningRole;
   judge?: Draft2OpeningRole;
   /** The focus this run followed; a run stored before the Focus step has none. */
   focus?: Draft2FocusSnapshot;
+  /** v4: the image intents and the caption the draft wrote with these words. */
+  draft?: Draft2DraftExtras;
   /** Earlier runs of the step on this session, oldest first, without their rounds. */
   previousRuns?: Draft2OpeningRun[];
 };

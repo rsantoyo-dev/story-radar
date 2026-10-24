@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Draft2ResponseError } from "./draft2-facts.types";
 import { draftFindings, draftFixRequest, draftPlan, draftRequest, draftRuns, findingCount, findingLines, parseDraft } from "./draft2-draft.types";
-import { FACTS, FOCUS, answer, cover } from "./draft2-draft.fixtures";
+import { CAPTION, FACTS, FOCUS, answer, cover } from "./draft2-draft.fixtures";
 
 const plan = draftPlan(FOCUS, ["free"], 0);
 
@@ -21,6 +21,13 @@ test("the draft becomes the steps' own candidates: three openings sharing slide 
   assert.throws(() => parseDraft("not json", plan.closingShape), Draft2ResponseError);
   assert.throws(() => parseDraft(answer({ covers: [] }), plan.closingShape), /covers/);
   assert.throws(() => parseDraft(answer({ deck: { slides: [{ headline: "No body" }] } }), plan.closingShape), Draft2ResponseError);
+  // What the draft wrote beside the words: each slide's image intent, by the carousel's slide ids, and the caption with its first comment.
+  assert.deepEqual(draft.extras.images.map((image) => image.slide), ["cover", "slide2", "s1", "penultimate", "last"]);
+  assert.equal(draft.extras.images[1].intent, "A wall calendar with six days crossed out and the seventh circled.");
+  assert.deepEqual(parseDraft(answer(), "one-slide").extras.images.map((image) => image.slide), ["cover", "slide2", "s1", "last"], "a list's closing has no penultimate intent");
+  assert.deepEqual(draft.extras.caption, CAPTION);
+  assert.throws(() => parseDraft(answer({ coverImage: "" }), plan.closingShape), /The cover needs its image intent/);
+  assert.throws(() => parseDraft(answer({ caption: { ...CAPTION, text: "" } }), plan.closingShape), /The draft needs its caption/);
 });
 
 test("the writer's request carries the deck it must fill, the closing's shape and every limit as numbers; a fix carries the draft and the findings", () => {
@@ -44,7 +51,7 @@ test("the program checks every part as its funnel would; the draft goes on with 
   const flagged = draftFindings(parseDraft(answer({ covers: [cover("Pentagon buyers now judge 90-second videos"), cover("Your demo video is now the bid"), cover("Five minutes of video replaces the paperwork")] }), plan.closingShape), plan, { facts: FACTS });
   assert.equal(flagged.chosenId, "c2");
   assert.equal(findingCount(flagged), 0, "the findings counted are the chosen cover's");
-  const all = draftFindings(parseDraft(answer({ covers: [cover("Pentagon buyers now judge 90-second videos")], closing: { penultimate: { headline: "Awards in days, not years", body: "Several awards came in under 30 days, a DOD official says.", factIds: ["f2"] }, last: { headline: "Your next pitch is a video", body: "Record five minutes that show the product working.", cta: "Follow for the next defence buying change.", factIds: ["f1"] } } }), plan.closingShape), plan, { facts: FACTS });
+  const all = draftFindings(parseDraft(answer({ covers: [cover("Pentagon buyers now judge 90-second videos")], closing: { penultimate: { headline: "Awards in days, not years", body: "Several awards came in under 30 days, a DOD official says.", factIds: ["f2"], image: "A signed award letter on the table." }, last: { headline: "Your next pitch is a video", body: "Record five minutes that show the product working.", cta: "Follow for the next defence buying change.", factIds: ["f1"], image: "A phone on a tripod filming a product." } } }), plan.closingShape), plan, { facts: FACTS });
   assert.equal(all.chosenId, "c1", "no clean cover: the writer's first");
   assert.ok(all.opening.length >= 1 && all.closing.length >= 1);
   assert.ok(findingLines(all).some((line) => line.startsWith("cover (c1):")) && findingLines(all).some((line) => line.startsWith("penultimate:")), JSON.stringify(findingLines(all)));
@@ -57,6 +64,7 @@ test("the draft is stored as the Opening, the Closing and the Deck the later ste
   const rounds = [{ draft: first, findings: draftFindings(first, plan, { facts: FACTS }) }, { draft: fixed, findings: draftFindings(fixed, plan, { facts: FACTS }) }];
   const { opening, closing, deck } = draftRuns({ rounds, plan, writer, at: "2026-10-23T20:00:00.000Z" });
   assert.deepEqual([opening.status, opening.winnerId, opening.pipeline, opening.rounds.length, opening.focus], ["ready", "c1.2", "v4", 2, FOCUS]);
+  assert.deepEqual([opening.draft?.images.length, opening.draft?.caption.hashtags], [5, CAPTION.hashtags], "the kept draft's image intents and caption travel on the opening run");
   assert.deepEqual([closing.status, closing.winnerId, closing.opening?.id, closing.shape, closing.focus], ["ready", "c1.2", "c1.2", "two-slides", FOCUS]);
   assert.deepEqual([deck.status, deck.winnerId, deck.opening?.id, deck.closing?.id, deck.shape?.kind], ["ready", "c1.2", "c1.2", "c1.2", "arc"]);
   assert.equal(opening.rounds[0].mechanical.length > 0, true, "the first draft's findings stay on its round");

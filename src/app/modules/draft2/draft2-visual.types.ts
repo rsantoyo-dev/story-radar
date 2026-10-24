@@ -200,6 +200,8 @@ export type Draft2Visual = FunnelRun<Draft2VisualCandidate, Draft2VisualScore, D
   mode?: Draft2VisualMode;
   /** The publication's last covers the run read, newest first, so a continued run checks the same ones (draft2-cover-variety.ts). */
   recentCovers?: Draft2RecentCover[];
+  /** v4: each slide's image intent as the draft wrote it with the words; the script's beats follow it over the spine's image lines. */
+  imageIntents?: Record<string, string>;
   previousRuns?: Draft2VisualRun[];
 };
 export type Draft2VisualRun = Omit<Draft2Visual, "rounds" | "previousRuns">;

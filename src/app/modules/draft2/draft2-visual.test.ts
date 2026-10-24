@@ -286,3 +286,18 @@ test("the script reads the publication's last covers, and the run keeps them", a
   assert.equal(json((h.calls[0].input.context as { recentCovers?: unknown }).recentCovers), json([{ background: "unknown", character: "none", subject: "an onion" }]), "the writer reads them; this profile's palette names no background");
   assert.equal(session.visual?.recentCovers?.length, 1);
 });
+
+test("v4: the draft's image intents, written with the words, are the script's beats; the spine's image lines stand where the draft wrote none (2026-10-23)", async () => {
+  const drafted = { images: [{ slide: "cover", intent: "A carved pumpkin, large, lit from inside." }, { slide: "s1", intent: "A closed book of tales on a plain plane." }], caption: { text: "x", hashtags: [], factIds: [], comment: "" } };
+  const h = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { pipeline: "v4", opening: { ...OPENING, draft: drafted } } });
+  const session = await h.run();
+  const context = h.calls[0].input.context as { spineBeats?: Record<string, string> };
+  assert.equal(context.spineBeats?.cover, "A carved pumpkin, large, lit from inside.", "the draft's intent for the cover");
+  assert.equal(context.spineBeats?.s1, "A closed book of tales on a plain plane.");
+  const chosen = funnel.funnelVersions(session.visual!.rounds).find((version) => version.candidate.id === "c1")!.candidate as visualTypes.Draft2VisualCandidate;
+  assert.equal(chosen.slides.find((slide) => slide.slide === "cover")?.beat, "A carved pumpkin, large, lit from inside.", "bound on the script, whatever the writer wrote");
+  assert.deepEqual(session.visual?.imageIntents, { cover: "A carved pumpkin, large, lit from inside.", s1: "A closed book of tales on a plain plane." }, "the run keeps them for a continued run");
+  const v3 = harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { pipeline: "v3", opening: { ...OPENING, draft: drafted } } });
+  await v3.run();
+  assert.equal((v3.calls[0].input.context as { spineBeats?: Record<string, string> }).spineBeats?.cover, undefined, "v3 reads no draft");
+});

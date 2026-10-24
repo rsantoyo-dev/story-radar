@@ -7,6 +7,7 @@ import * as openingTypes from "./draft2-opening.types";
 import * as closingTypes from "./draft2-closing.types";
 import * as deckTypes from "./draft2-deck.types";
 import * as draftTypes from "./draft2-draft.types";
+import * as captionTypes from "./draft2-caption.types";
 import * as models from "./draft2-models";
 import * as skills from "./skills/draft2-skills";
 import * as closingsSkill from "./skills/closings";
@@ -48,6 +49,7 @@ function harness({ answers, session = {}, busy = false }: { answers: string[]; s
     "./draft2-closing.types": closingTypes,
     "./draft2-deck.types": deckTypes,
     "./draft2-draft.types": draftTypes,
+    "./draft2-caption.types": captionTypes,
     "./draft2-models": models,
     "./draft2-levers.types": leverTypes,
     "./skills/draft2-skills": skills, "./skills/closings": closingsSkill, "./skills/decks": decksSkill, "./skills/drafts": draftsSkill,
@@ -88,6 +90,7 @@ test("v4: one call to Opus writes the whole carousel's words; it becomes the Ope
   assert.deepEqual(Object.keys(call.context as object), ["verifiedFacts", "focus", "eligibleLevers"], "the facts, the focus and its levers travel as Claude's cached context");
   assert.equal(json([row.step, row.status, row.error]), json(["deck", "ready", null]));
   assert.equal(json([row.opening?.status, row.opening?.winnerId, row.opening?.pipeline, row.opening?.candidates.length, row.opening?.focus?.version]), json(["ready", "c1", "v4", 3, FOCUS.version]));
+  assert.equal(json([row.opening?.draft?.images.map((image) => image.slide), row.opening?.draft?.caption.factIds]), json([["cover", "slide2", "s1", "penultimate", "last"], ["f1", "f2"]]), "the image intents and the caption, for the visual script and the Caption step");
   assert.equal(json([row.closing?.winnerId, row.closing?.opening?.id, row.closing?.shape]), json(["c1", "c1", "two-slides"]));
   assert.equal(json([row.deck?.winnerId, row.deck?.opening?.id, row.deck?.closing?.id, row.deck?.shape?.kind]), json(["c1", "c1", "c1", "arc"]));
   // The later steps read it as they read a funnel's: the closing follows the chosen opening, the deck both, so the autopilot goes on.

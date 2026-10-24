@@ -1,7 +1,16 @@
 import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_CAPTION_ROLES } from "./draft2-models";
-import { Draft2BusyError, Draft2InputError } from "./draft2-facts.types";
+import { withCreativeTextBudget } from "../stories/creative-text-meter";
+import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
+import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
+import { getCreativeProfile } from "../stories/creative-profile.repository";
+import { draft2DevTrace } from "./draft2-dev-trace";
+import { Draft2BusyError, Draft2InputError, type Draft2TraceEntry } from "./draft2-facts.types";
+import { failedCall, funnelRunSummary, type FunnelRole } from "./draft2-funnel";
+import { DEFAULT_DRAFT2_SOL_MODEL, draft2RoleModel } from "./draft2-models";
+import { openingFactsSnapshot, type Draft2DraftExtras } from "./draft2-opening.types";
+import { traceCost } from "./draft2-trace-cost";
 import { focusForModels, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import { imagesScript, shownAttempt, slideSettled, type Draft2ImagesRun } from "./draft2-images.types";
 import { confirmedMentions, sameMentions } from "./draft2-mentions.types";
@@ -19,7 +28,7 @@ import { READER_SKILL } from "./skills/reader";
 import { adaptationCreditLine, placePhotoAdaptationCreditLine, portraitCreditLine } from "../stories/creative-portrait-composite";
 import type { CreativeProfile } from "../stories/creative-content.types";
 import { storySourceCredits } from "../stories/story-content.repository";
-import { getDraft2Session, updateDraft2Session } from "./draft2-session.repository";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, touchDraft2Session, updateDraft2Session } from "./draft2-session.repository";
 import type { Draft2SessionRow } from "@/db/schema";
 
 /** What a caption run writes for: the images run, the carousel's words, the focus, the accounts confirmed, the credits and where the story was reported. */
@@ -167,8 +176,94 @@ const CAPTION_STEP: FunnelStep<Draft2CaptionCandidate, Draft2CaptionScore, Draft
  * revises the best and edits Sol's, which also competes as Sol wrote it, for
  * Sol's pick. Pausing, continuing and the heartbeat are the funnel's.
  */
-export function runDraft2Caption(input: FunnelStepInput): Promise<Draft2SessionRow> {
+export async function runDraft2Caption(input: FunnelStepInput): Promise<Draft2SessionRow> {
+  // v4 (docs/features/draft2-v4.md): the caption was drafted with the carousel; the program checks it and fixes it once, no writer and no judge again.
+  if (!input.more && !input.resume) {
+    const session = await getDraft2Session(input.topicId, input.sessionId);
+    if (session?.pipeline === "v4" && session.opening?.draft?.caption) return runDraft2CaptionFromDraft(input, session, session.opening.draft.caption);
+  }
   return runFunnelStep(CAPTION_STEP, input);
+}
+
+/** One fix call on the drafted caption: the caption's own writer at medium effort, within the route's time. */
+const DRAFT_CAPTION_FIX_MAX_OUTPUT_TOKENS = 6_000;
+const DRAFT_CAPTION_FIX_TIMEOUT_MS = 120_000;
+const HEARTBEAT_MS = 20_000;
+
+/**
+ * The v4 Caption step: the caption the draft wrote with the carousel's words
+ * (its text, hashtags, facts and first comment), checked by the program
+ * against the finished images (the credits and the source line the post
+ * owes, the accounts the editor confirmed, the publication's rules). What
+ * the program finds goes back to the caption writer once, with the findings;
+ * the program keeps the version with fewer. Stored as a caption run of one
+ * version (two when the fix stood), so the Caption screen, the hand edits,
+ * the first comment and the publication work as they do. A call lost leaves
+ * the drafted caption standing with its findings marked.
+ */
+async function runDraft2CaptionFromDraft(input: FunnelStepInput, session: Draft2SessionRow, drafted: Draft2DraftExtras["caption"]): Promise<Draft2SessionRow> {
+  if (session.storyId !== input.storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
+  if (await activeDraft2Session(input.topicId, input.storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const facts = session.facts ?? [];
+  if (!facts.length || (session.step === "facts" && session.status !== "ready")) throw new Draft2InputError("The caption rests on verified facts. Verify the facts first.");
+  const snapshot = await captionTarget(session, undefined);
+  const profile = await getCreativeProfile(input.topicId);
+  const rules = captionRules(profile, snapshot);
+  const source = sourceOf(snapshot, profile);
+  const reader = { address: profile.readerAddress, language: profile.language };
+  const check = (candidates: readonly Draft2CaptionCandidate[]) => mechanicalCaptionIssues(candidates, facts, { source, credits: snapshot.credits, mentions: snapshot.mentions, rules, reader });
+  const first: Draft2CaptionCandidate = { id: "d1", angle: "The caption drafted with the carousel", text: drafted.text, hashtags: drafted.hashtags, factIds: drafted.factIds, ...(drafted.comment ? { comment: drafted.comment } : {}) };
+  const writer: FunnelRole = { provider: "anthropic", model: draft2RoleModel("caption", "writer", "anthropic", process.env, { anthropic: getAnthropicRuntimeConfig().model, openai: DEFAULT_DRAFT2_SOL_MODEL }) };
+  const earlier = session.caption ?? undefined;
+  const base = { writer, pipeline: "v4" as const, ...snapshot, ...(source ? { source } : {}), rules, ...(earlier ? { previousRuns: [...(earlier.previousRuns ?? []), funnelRunSummary(earlier)] } : {}) };
+  const running = { ...base, status: "running", rounds: [], candidates: [], plannedRounds: 1 } as unknown as Draft2Caption;
+  const claimed = await claimDraft2Session(session.id, { step: "caption", caption: running, error: null });
+  if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const trace: Draft2TraceEntry[] = [...session.trace];
+  const heartbeat = setInterval(() => { void touchDraft2Session(session.id).catch(() => undefined); }, HEARTBEAT_MS);
+  try {
+    const at = new Date().toISOString();
+    const rounds: Draft2Caption["rounds"] = [{ round: 1, kind: "explore", candidates: [first], mechanical: check([first]), at }];
+    if (rounds[0].mechanical.length) {
+      // The caption's own writer fixes what the program named, once; the call is on the trace, lost or not.
+      const discovery = snapshot.focus.values.concept?.arc === "discovery" ? discoverySkills(snapshot.focus.values.concept) : [];
+      const composed = composeInstructions("caption-writer", [CAPTIONS_SKILL, FAIRNESS_SKILL, READER_SKILL, ...discovery], `${brandBrief(profile)}\n\n${captionRulesBrief(rules)}`);
+      const context = { focus: focusForModels(snapshot.focus.values), carousel: snapshot.carousel, mentions: snapshot.mentions, ...(source ? { source } : {}), credits: snapshot.credits, limits: { postCharacters: CAPTION_MAX_CHARACTERS, hashtags: { min: CAPTION_MIN_HASHTAGS, max: CAPTION_MAX_HASHTAGS } }, verifiedFacts: openingFactsSnapshot(facts) };
+      const contents = captionFixRequest([first], rounds[0].mechanical);
+      const operation = "draft2_caption_fix";
+      const begin = Date.now();
+      const started = new Date().toISOString();
+      draft2DevTrace({ step: "caption", round: 2, provider: "anthropic", model: writer.model, operation, phase: "request", detail: { contents } });
+      const fixed = await withCreativeTextBudget({ topicId: input.topicId, storyId: input.storyId, runId: session.id }, () => generateAnthropicStructuredResponse({
+        apiKey: requireAnthropicApiKey(), model: writer.model, instructions: composed.instructions, context, contents, schema: CAPTION_SCHEMA, schemaName: operation,
+        maxOutputTokens: DRAFT_CAPTION_FIX_MAX_OUTPUT_TOKENS, effort: "medium", timeoutMs: DRAFT_CAPTION_FIX_TIMEOUT_MS, auditContext: { runId: session.id, topicId: input.topicId, storyId: input.storyId },
+      })).then((answered) => {
+        trace.push({ at: started, step: "caption", round: 2, provider: "anthropic", model: writer.model, operation, durationMs: Date.now() - begin, usage: answered.usage, cachedInputTokens: answered.cachedInputTokens, ...(answered.cacheWriteTokens ? { cacheWriteTokens: answered.cacheWriteTokens } : {}), answerCharacters: answered.text.length, outcome: "ok", skillVersions: composed.skillVersions, effort: "medium", ...traceCost("anthropic", writer.model, answered.usage, answered.cachedInputTokens, answered.cacheWriteTokens) });
+        const candidate = parseCaptionCandidates(answered.text).find((entry) => entry.id === first.id) ?? parseCaptionCandidates(answered.text)[0];
+        return candidate ? { ...candidate, id: "d1.2" } : undefined;
+      }).catch((error) => {
+        trace.push({ at: started, step: "caption", round: 2, provider: "anthropic", model: writer.model, operation, durationMs: Date.now() - begin, outcome: "error", note: error instanceof Error ? error.message : "unknown error", ...failedCall(error), skillVersions: composed.skillVersions, effort: "medium" });
+        return undefined;
+      });
+      if (fixed) rounds.push({ round: 2, kind: "refine", candidates: [fixed], mechanical: check([fixed]), at: new Date().toISOString() });
+    }
+    const kept = rounds.reduce((best, round) => round.mechanical.length < best.mechanical.length ? round : best, rounds[0]);
+    const count = kept.mechanical.length;
+    const status = count ? "needs-review" : "ready";
+    const caption = {
+      ...base, status, rounds, candidates: kept.candidates, winnerId: kept.candidates[0].id, plannedRounds: rounds.length,
+      ...(count ? { error: `The program found ${count} issue${count === 1 ? "" : "s"} on the caption the draft wrote; edit it by hand, or write it again.` } : {}),
+    } as unknown as Draft2Caption;
+    const updated = await updateDraft2Session(session.id, { caption, trace, step: "caption", status, error: null });
+    if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+    return updated;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The caption step failed.";
+    await updateDraft2Session(session.id, { caption: { ...running, status: "failed", error: message } as Draft2Caption, trace, status: "failed", error: message }).catch(() => undefined);
+    throw error;
+  } finally {
+    clearInterval(heartbeat);
+  }
 }
 
 /** Records the editor's pick among every caption the run scored, beside the judge's scores. */

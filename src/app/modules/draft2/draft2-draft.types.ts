@@ -4,7 +4,8 @@ import { Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
 import { focusItemCount, spineBeatFactIds, spineMiddleFactIds, type Draft2FocusSnapshot } from "./draft2-focus.types";
 import type { FunnelRole } from "./draft2-funnel";
 import type { Draft2InventoryEntity } from "./draft2-inventory.types";
-import { mechanicalOpeningIssues, OPENING_WORD_LIMITS, parseOpeningCandidates, type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue } from "./draft2-opening.types";
+import { parseCaptionCandidates } from "./draft2-caption.types";
+import { mechanicalOpeningIssues, OPENING_WORD_LIMITS, parseOpeningCandidates, type Draft2DraftExtras, type Draft2Opening, type Draft2OpeningCandidate, type Draft2OpeningIssue } from "./draft2-opening.types";
 import type { Draft2Reader } from "./draft2-address.types";
 
 /**
@@ -16,20 +17,25 @@ import type { Draft2Reader } from "./draft2-address.types";
 
 /** Three covers: the writer's own, and two on other levers for a real choice. */
 export const DRAFT_COVERS = 3;
+/** A slide's image intent: what is seen and why, tied to the slide's words; the visual script writes the direction from it. */
+export const DRAFT_IMAGE_MAX_CHARACTERS = 400;
 
 const text = { type: "string" };
 const factIds = { type: "array", items: { type: "string" } };
-const part = (fields: readonly string[]) => ({ type: "object", additionalProperties: false, required: [...fields, "factIds"], properties: { ...Object.fromEntries(fields.map((field) => [field, text])), factIds } });
+/** A slide's words with its facts and, since the draft writes the whole carousel (2026-10-23), its image intent. */
+const part = (fields: readonly string[]) => ({ type: "object", additionalProperties: false, required: [...fields, "factIds", "image"], properties: { ...Object.fromEntries(fields.map((field) => [field, text])), factIds, image: text } });
 
-/** The writer's answer: the angle, three covers, slide 2, the middle slides and the closing. */
+/** The writer's answer: the angle, three covers and the cover's image, slide 2, the middle slides and the closing (each with its image intent), and the caption with its first comment. */
 export const DRAFT2_DRAFT_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["angle", "covers", "slide2", "deck", "closing"],
+  type: "object", additionalProperties: false, required: ["angle", "covers", "coverImage", "slide2", "deck", "closing", "caption"],
   properties: {
     angle: text,
     covers: { type: "array", items: { type: "object", additionalProperties: false, required: ["headline", "subheadline", "factIds", "lever"], properties: { headline: text, subheadline: text, factIds, lever: text } } },
+    coverImage: text,
     slide2: part(["headline", "body"]),
     deck: { type: "object", additionalProperties: false, required: ["slides"], properties: { slides: { type: "array", items: part(["headline", "body", "practical"]) } } },
     closing: { type: "object", additionalProperties: false, required: ["penultimate", "last"], properties: { penultimate: part(["headline", "body"]), last: part(["headline", "body", "cta"]) } },
+    caption: { type: "object", additionalProperties: false, required: ["text", "hashtags", "factIds", "comment"], properties: { text, hashtags: { type: "array", items: text }, factIds, comment: text } },
   },
 } as const;
 
@@ -73,13 +79,21 @@ export function draftFixRequest(plan: DraftPlan, draft: string, findings: readon
   return { ...draftRequest(plan), task: "fix", draft: parsed, findings };
 }
 
-/** The draft as the three steps store it. */
+/** The draft as the three steps store it, with what it wrote beside the words. */
 export type Draft = {
   angle: string;
   openings: Draft2OpeningCandidate[];
   closing: Draft2ClosingCandidate;
   deck: Draft2DeckCandidate;
+  extras: Draft2DraftExtras;
 };
+
+/** A slide's image intent as the draft wrote it; missing or over its length is a response error. */
+function imageIntent(value: unknown, slide: string): string {
+  const intent = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  if (!intent || intent.length > DRAFT_IMAGE_MAX_CHARACTERS) throw new Draft2ResponseError(`${slide} needs its image intent (what is seen and why), in 1 to ${DRAFT_IMAGE_MAX_CHARACTERS} characters`);
+  return intent;
+}
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -106,9 +120,21 @@ export function parseDraft(answer: string, shape: Draft2ClosingShape, ids: { rou
   if (!openings.length) throw new Draft2ResponseError("The draft's covers and slide 2 are incomplete");
   const closingBody = record(body.closing);
   const [closing] = parseClosingCandidates(JSON.stringify({ candidates: [{ id: `c1${suffix}`, angle, ...(shape === "two-slides" ? { penultimate: closingBody.penultimate } : {}), last: closingBody.last }] }), shape);
-  const [deck] = parseDeckCandidates(JSON.stringify({ candidates: [{ id: `c1${suffix}`, angle, slides: record(body.deck).slides }] }));
+  const deckSlides = Array.isArray(record(body.deck).slides) ? record(body.deck).slides as unknown[] : [];
+  const [deck] = parseDeckCandidates(JSON.stringify({ candidates: [{ id: `c1${suffix}`, angle, slides: deckSlides }] }));
   if (!closing || !deck) throw new Draft2ResponseError("The draft needs its closing and its middle slides");
-  return { angle, openings, closing, deck };
+  // Each slide's image intent, by the slide ids the carousel will have; the caption through the caption's own parser.
+  const images = [
+    { slide: "cover", intent: imageIntent(body.coverImage, "The cover") },
+    { slide: "slide2", intent: imageIntent(slide2.image, "Slide 2") },
+    ...deck.slides.map((_, index) => ({ slide: `s${index + 1}`, intent: imageIntent(record(deckSlides[index]).image, `Middle slide ${index + 1}`) })),
+    ...(shape === "two-slides" ? [{ slide: "penultimate", intent: imageIntent(record(closingBody.penultimate).image, "The penultimate slide") }] : []),
+    { slide: "last", intent: imageIntent(record(closingBody.last).image, "The last slide") },
+  ];
+  let caption: ReturnType<typeof parseCaptionCandidates>[number] | undefined;
+  try { [caption] = parseCaptionCandidates(JSON.stringify({ candidates: [{ id: "d1", angle, ...record(body.caption) }] })); } catch (error) { if (!(error instanceof Draft2ResponseError)) throw error; }
+  if (!caption) throw new Draft2ResponseError("The draft needs its caption: the text, 5 to 8 hashtags, the facts it rests on and the first comment");
+  return { angle, openings, closing, deck, extras: { images, caption: { text: caption.text, hashtags: caption.hashtags, factIds: caption.factIds, comment: caption.comment ?? "" } } };
 }
 
 /** The context the program checks the draft with, as each step's funnel checks its own part. */
@@ -185,6 +211,7 @@ export function draftRuns({ rounds, plan, writer, at }: {
     candidates: kept.draft.openings,
     winnerId: kept.findings.chosenId,
     focus: plan.focus,
+    draft: kept.draft.extras,
     ...(note(openingCount, "opening") ? { error: note(openingCount, "opening") } : {}),
   } as Draft2Opening;
   const closing: Draft2Closing = {

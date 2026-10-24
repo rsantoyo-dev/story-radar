@@ -286,3 +286,22 @@ test("the editor can choose any caption of the run", async () => {
   assert.equal((await h.choose("c3")).caption?.editorChoiceId, "c3");
   await assert.rejects(h.choose("c99"), /c99 is not one of this caption's versions/);
 });
+
+test("v4: the caption drafted with the carousel is checked by the program and fixed once by the caption writer, never written or judged again (2026-10-23)", async () => {
+  const clean = { text: caption("d", OPENINGS[0]).text, hashtags: TAGS, factIds: ["f1", "f2"], comment: COMMENT };
+  const h = harness({ session: { pipeline: "v4", opening: { status: "ready", rounds: [], candidates: [], pipeline: "v4", draft: { images: [], caption: clean } } } });
+  const session = await h.run();
+  assert.equal(h.calls.length, 0, "a clean drafted caption needs no call");
+  assert.equal(json([session.step, session.status, session.caption?.status, session.caption?.winnerId, session.caption?.pipeline, session.caption?.imagesRunId, session.caption?.rounds.length]), json(["caption", "ready", "ready", "d1", "v4", "run-1", 1]));
+  const chosen = funnel.funnelVersions(session.caption!.rounds)[0].candidate;
+  assert.equal(json([chosen.hashtags, chosen.comment]), json([TAGS, COMMENT]));
+  // A drafted caption the program flags (no confirmed account tagged): one fix call, the fixed version kept when it has fewer findings.
+  const untagged = { ...clean, text: `${OPENINGS[0]}\n\nDoors open at 10 a.m.\nFree for children under 12.\n\nSave this for Saturday.` };
+  const flagged = harness({ session: { pipeline: "v4", opening: { status: "ready", rounds: [], candidates: [], pipeline: "v4", draft: { images: [], caption: untagged } } } });
+  const fixed = await flagged.run();
+  const fixCalls = fixed.trace.filter((entry) => entry.operation === "draft2_caption_fix");
+  assert.equal(json([fixCalls.length, fixCalls[0]?.outcome, flagged.calls.length]), json([1, "ok", 0]), "the fix call alone, outside the funnel's writer and judge");
+  assert.equal(json([fixed.caption?.status, fixed.caption?.winnerId, fixed.caption?.rounds.length]), json(["needs-review", "d1", 2]), "this harness fixes nothing: the drafted caption stands with its finding, for the editor");
+  assert.match(String(fixed.caption?.error), /^The program found 1 issue on the caption the draft wrote/);
+  assert.equal(fixed.caption?.rounds[0].mechanical[0]?.code, "MENTION_MISSING");
+});
