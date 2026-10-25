@@ -8,6 +8,8 @@ import {
   buildCreativeCarouselChrome,
   buildCreativeCarouselChromeCopy,
   compositeCreativeCarouselChrome,
+  badgeColorsFor,
+  colorLuminance,
   CreativeCarouselChromeError,
   hasCreativeCarouselChromeContract,
   renderCreativeCarouselChromeSvg,
@@ -641,4 +643,26 @@ test("irregular shapes are reproducible per slide and vary between slides", () =
       `${style} does not vary between slides`,
     );
   }
+});
+
+test("the page number badge swaps its colours when the slide under it is as dark as its background (2026-10-24, the ART[O] navy slides)", async () => {
+  const colors = { background: "#102A43", text: "#F6F0E4", accent: "#E8A83E" };
+  assert.equal(badgeColorsFor(colors, colorLuminance("#F6F0E4")), colors, "on cream the navy badge stands");
+  assert.deepEqual(badgeColorsFor(colors, colorLuminance("#0B2A5B")), { background: "#F6F0E4", text: "#102A43", accent: "#E8A83E" }, "on navy the badge turns cream with navy copy");
+  assert.equal(badgeColorsFor(colors, colorLuminance("#7A7A7A")), colors, "a mid grey contrasts with neither better: the badge keeps its own colours");
+  const chrome = buildCreativeCarouselChrome({ aspectRatio: "4:5", unitOrder: 4, totalSlides: 6 });
+  const badge = chrome.geometry.badge!;
+  // The share of the badge's pixels that are light (its cream) or dark (its navy), the pill's own translucency allowed, whatever the copy and the accent draw inside it.
+  const shares = async (png: Buffer) => {
+    const { data, info } = await sharp(png).extract({ left: Math.round(badge.left), top: Math.round(badge.top), width: Math.round(badge.width), height: Math.round(badge.height) }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    let light = 0, dark = 0;
+    const pixels = info.width * info.height;
+    for (let at = 0; at < pixels; at++) { const [r, g, b] = [data[at * info.channels], data[at * info.channels + 1], data[at * info.channels + 2]]; if (r > 200 && g > 200 && b > 190) light++; else if (r < 60 && g < 80 && b < 110) dark++; }
+    return { light: light / pixels, dark: dark / pixels };
+  };
+  const over = async (background: string) => compositeCreativeCarouselChrome({ image: await sharp({ create: { width: 1080, height: 1350, channels: 4, background } }).png().toBuffer(), chrome });
+  const onNavy = await shares(await over("#0B2A5B"));
+  assert.ok(onNavy.light > 0.3, `the badge over navy is mostly cream: ${JSON.stringify(onNavy)}`);
+  const onCream = await shares(await over("#F6F0E4"));
+  assert.ok(onCream.dark > 0.3, `the badge over cream keeps its navy: ${JSON.stringify(onCream)}`);
 });

@@ -361,10 +361,57 @@ export async function compositeCreativeCarouselChrome({
     );
   }
 
+  // The badge's colours against what the slide paints under it: a navy badge on a navy slide disappeared on the ART[O] carousel
+  // (2026-10-24); when its background barely contrasts with the region, the badge swaps its two colours before it is painted.
+  const overlay = chrome.geometry.badge
+    ? await (async () => {
+      const luminance = await regionLuminance(input, chrome.geometry.badge!, metadata.width!, metadata.height!);
+      const colors = badgeColorsFor(chrome.colors, luminance);
+      return colors === chrome.colors ? chrome.overlay! : { ...chrome.overlay!, input: renderCreativeCarouselChromeSvg({ copy: chrome.copy, colors, style: chrome.style, geometry: chrome.geometry }) };
+    })()
+    : chrome.overlay;
+
   return sharp(input, { failOn: "error" })
-    .composite([chrome.overlay])
+    .composite([overlay])
     .png()
     .toBuffer();
+}
+
+/** Below this contrast ratio between the badge's background and the slide under it, the badge would not be seen. */
+export const BADGE_MIN_CONTRAST = 1.6;
+
+/** The relative luminance (WCAG) of a #RRGGBB colour. */
+export function colorLuminance(hex: string): number {
+  const channel = (at: number) => { const value = parseInt(hex.slice(at, at + 2), 16) / 255; return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+}
+
+const contrast = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+
+/**
+ * The badge's colours for the slide under it: its own when they contrast with
+ * the region, the two swapped (text on background) when the swap contrasts
+ * better and the original does not. Pure: the region's luminance comes in.
+ */
+export function badgeColorsFor(colors: CreativeCarouselChromeColors, regionLuminance: number): CreativeCarouselChromeColors {
+  const own = contrast(colorLuminance(colors.background), regionLuminance);
+  if (own >= BADGE_MIN_CONTRAST) return colors;
+  const swapped = contrast(colorLuminance(colors.text), regionLuminance);
+  return swapped > own ? { ...colors, background: colors.text, text: colors.background } : colors;
+}
+
+/** The mean relative luminance of a rectangle of a PNG, the rectangle clamped to the canvas. */
+async function regionLuminance(input: Buffer, rect: CreativeCarouselPixelRect, width: number, height: number): Promise<number> {
+  const left = Math.max(0, Math.min(width - 1, Math.round(rect.left)));
+  const top = Math.max(0, Math.min(height - 1, Math.round(rect.top)));
+  const regionWidth = Math.max(1, Math.min(width - left, Math.round(rect.width)));
+  const regionHeight = Math.max(1, Math.min(height - top, Math.round(rect.height)));
+  const { data, info } = await sharp(input, { failOn: "error" }).extract({ left, top, width: regionWidth, height: regionHeight }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const linear = (value: number) => { const v = value / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  let sum = 0;
+  const pixels = info.width * info.height;
+  for (let at = 0; at < pixels; at++) sum += 0.2126 * linear(data[at * info.channels]) + 0.7152 * linear(data[at * info.channels + 1]) + 0.0722 * linear(data[at * info.channels + 2]);
+  return pixels ? sum / pixels : 0;
 }
 
 function fitSingleLineFont(
