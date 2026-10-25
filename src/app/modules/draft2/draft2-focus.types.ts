@@ -610,7 +610,7 @@ export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, 
   return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values) || spineImagesChanged(script.values.spine, focus.values.spine);
 }
 
-export type Draft2FocusFindingCode = "PHOTOS_COUNT" | "PHOTOS_STRUCTURE" | "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED" | "SPINE_CAVEATS" | "SPINE_GUARD_ITEMS";
+export type Draft2FocusFindingCode = "PHOTOS_COUNT" | "PHOTOS_STRUCTURE" | "PHOTOS_NARRATIVE" | "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED" | "SPINE_CAVEATS" | "SPINE_GUARD_ITEMS";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -1656,6 +1656,8 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
   if (album) {
     if (album.length < PHOTO_CAROUSEL_MIN_PHOTOS || album.length > PHOTO_CAROUSEL_MAX_PHOTOS) findings.push({ field: "structure", code: "PHOTOS_COUNT", detail: `A photo carousel has one slide per photo and runs ${PHOTO_CAROUSEL_MIN_PHOTOS} to ${PHOTO_CAROUSEL_MAX_PHOTOS} slides; the story has ${album.length} publishable ${album.length === 1 ? "photo" : "photos"} (declared your own or licensed, and allowed to the models). Add or declare photos in People and places, or choose another way to make the images.` });
     if (kind !== "arc") findings.push({ field: "structure", code: "PHOTOS_STRUCTURE", detail: "A photo carousel is told as an arc, one slide per photo in their order: choose the arc structure, or another way to make the images." });
+    // Nothing is drawn: a telling that carries an anchor (a character, a figure, an object through the slides) cannot be honoured on real photos.
+    if (values.narrative && (values.narrative.anchorKind !== "none" || values.narrative.characterId)) findings.push({ field: "narrative", code: "PHOTOS_NARRATIVE", detail: "A photo carousel draws nothing, so its telling carries no anchor through the slides: choose the classic form without an anchor, or another way to make the images." });
   }
   const concept = focusConcept(values);
   if (concept.arc === "discovery") {

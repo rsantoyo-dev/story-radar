@@ -793,6 +793,8 @@ test("a photo carousel (2026-10-25): the story's own photos are the slides, one 
   assert.deepEqual(focusFindings(values, undefined, undefined, inventory(3)).map((finding) => [finding.field, finding.code]), [["structure", "PHOTOS_COUNT"], ["spine", "SPINE_SHAPE"]]);
   assert.match(focusFindings(values, undefined, undefined, inventory(3))[0].detail, /runs 5 to 9 slides; the story has 3 publishable photos/);
   assert.ok(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } }, undefined, undefined, inventory(6)).some((finding) => finding.code === "PHOTOS_STRUCTURE"), "a photo carousel is told as an arc");
+  assert.ok(focusFindings({ ...values, narrative: { ...CLASSIC_NARRATIVE, anchorKind: "object", anchor: "A pumpkin that travels the slides", anchorFactIds: ["f1"] } }, undefined, undefined, inventory(6)).some((finding) => finding.code === "PHOTOS_NARRATIVE"), "nothing is drawn: no anchor through the slides");
+  assert.equal(focusFindings({ ...values, narrative: { ...CLASSIC_NARRATIVE, anchorKind: "object", anchor: "A pumpkin that travels the slides", anchorFactIds: ["f1"] }, imageMode: "slides" }, undefined, undefined, inventory(6)).some((finding) => finding.code === "PHOTOS_NARRATIVE"), false);
   assert.deepEqual(focusFindings(values, undefined, undefined, undefined).filter((finding) => finding.code.startsWith("PHOTOS")), [], "without People and places there is nothing to count");
   assert.deepEqual(focusFindings({ ...values, imageMode: "slides" }, undefined, undefined, inventory(3)), [], "another way of making the images counts no photos");
 });
