@@ -15,6 +15,7 @@ import {
   PANORAMA_DEVICES, PANORAMA_STATION_SIZES, PANORAMA_WORLD_MAX_CHARACTERS, PANORAMA_AXIS_MAX_CHARACTERS, PANORAMA_FIELD_MAX_CHARACTERS, PANORAMA_CARRIER_MAX_CHARACTERS, PANORAMA_CROSSING_MAX_CHARACTERS,
   type Draft2SpinePanorama, type Draft2PanoramaStation,
 } from "@/app/modules/draft2/draft2-focus.types";
+import { photoAlbum } from "@/app/modules/draft2/draft2-inventory.types";
 import { TONE_KEYS, toneWords, type ToneKey } from "@/app/modules/draft2/skills/tone";
 import { DRAFT2_LEVER_GROUPS, DRAFT2_LEVERS, FREE_LEVER, LEVER_PAID_BY, MAX_LEVER_ALTERNATIVES, eligibleLevers, leverName, type Draft2FocusLevers, type Draft2LeverPaidBy } from "@/app/modules/draft2/draft2-levers.types";
 import {
@@ -881,6 +882,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // People and places as the focus reads them: the narrative's anchor is checked against them as they stand now.
   const focusInventory = session?.inventory ?? undefined;
   const material = focusInventory?.status === "ready" ? focusMaterial(focusInventory) : undefined;
+  const focusAlbum = focusInventory?.status === "ready" ? photoAlbum(focusInventory).map(({ id, name, description }) => ({ id, name, description })) : [];
   const focusProblems = focus?.values ? focusFindings(focus.values, material, session?.facts ?? undefined, focusInventory) : [];
   const focusLevers = focus?.values ? eligibleLevers(session?.facts ?? [], focus.values) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
@@ -1184,7 +1186,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
         {runError?.step === "focus" ? <InlineNotice tone="error" title="The focus step stopped">{runError.message}</InlineNotice> : null}
         {focus?.status === "failed" && focus.error && running !== "focus" ? <InlineNotice tone="error" title="The last decision failed">{focus.error}{focus.values ? " The focus below is the one from before it." : ""}</InlineNotice> : null}
         {focusError ? <InlineNotice tone="error" title="Your change was not saved">{focusError}</InlineNotice> : null}
-        {focus?.values && running !== "focus" ? <FocusView
+        {focus?.values && running !== "focus" ? <FocusView album={focusAlbum}
           focus={focus}
           findings={focusOwnProblems}
           material={material}
@@ -2622,7 +2624,9 @@ function focusValueText(field: Draft2FocusField, values: Draft2FocusValues): str
  * beside Claude's value. Selects save when they change, text when it loses
  * focus; the controls wait while a change is saved or a step runs.
  */
-function FocusView({ focus, findings, material, saving, locked, onSave, onReset }: {
+function FocusView({ focus, findings, material, album = [], saving, locked, onSave, onReset }: {
+  /** A photo carousel's album: the story's photos that become the slides, as People and places stands. */
+  album?: { id: string; name: string; description: string }[];
   focus: Draft2Focus;
   findings: readonly Draft2FocusFinding[];
   /** People and places' material as it stands: the brand's characters the editor allows, the story's people. */
@@ -2714,6 +2718,11 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
             {FOCUS_IMAGE_MODES.map((mode) => <option key={mode} value={mode}>{IMAGE_MODE_LABEL[mode]}</option>)}
           </select>
         </FormField>
+        {presentation.images === "photos" ? (
+          <InlineNotice tone={album.length ? "info" : "warning"} title={album.length ? `${album.length} photos become the ${album.length} slides` : "No photo for the slides yet"}>
+            {album.length ? `One slide per photo, each placed on a beat by the Spine (the cover takes the one that stops the thumb): ${album.map((photo) => photo.name).join(" · ")}.` : "People and places lists no photo declared your own or licensed and allowed to the models. Add or declare them there, or choose another way to make the images."}
+          </InlineNotice>
+        ) : null}
       </div>
       <div className={styles.focusField}>
         <FormField label="Words on the images" description={presentation.images === "panorama" ? "A panorama is made without words; the program sets each slide's words on it." : "Drawn in the image: the image model letters each slide's words. Set by the program: each image is made without words, with a calm band where the program sets them, so a word you change later is set again on the same image, never drawn again."}>

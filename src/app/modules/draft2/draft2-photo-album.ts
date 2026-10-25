@@ -14,7 +14,8 @@ export const ALBUM_PREVIEW_SIZE = 640;
  */
 export async function albumPreviews(topicId: string, storyId: string, album: readonly { id: string }[]): Promise<string[]> {
   if (!album.length) return [];
-  const references = await resolveStoryReferences(topicId, storyId, album.map((photo) => ({ id: photo.id, purpose: "documentary-portrait" })));
+  // One photo per resolution: a slide's references are three at most, and an album runs to nine.
+  const references = (await Promise.all(album.map((photo) => resolveStoryReferences(topicId, storyId, [{ id: photo.id, purpose: "documentary-portrait" }])))).flat();
   const files = await loadStoryReferenceImages(references);
   return Promise.all(files.map(async (file) => {
     const preview = await sharp(Buffer.from(await file.arrayBuffer()), { limitInputPixels: 40_000_000 }).rotate().resize({ width: ALBUM_PREVIEW_SIZE, height: ALBUM_PREVIEW_SIZE, fit: "inside", withoutEnlargement: true }).jpeg({ quality: 78 }).toBuffer();
