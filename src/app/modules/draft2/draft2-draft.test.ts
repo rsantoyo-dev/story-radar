@@ -55,6 +55,7 @@ function harness({ answers, session = {}, busy = false }: { answers: string[]; s
     "./skills/draft2-skills": skills, "./skills/closings": closingsSkill, "./skills/decks": decksSkill, "./skills/drafts": draftsSkill,
     "./skills/fairness": fairnessSkill, "./skills/hooks": hooksSkill, "./skills/levers": leversSkill, "./skills/reader": readerSkill,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
+    "./draft2-photo-album": { albumPreviews: async () => [] },
     "./draft2-trace-cost": { traceCost: () => ({ costMicros: 5000 }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { requireAnthropicApiKey: () => "k", getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }) },

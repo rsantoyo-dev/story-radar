@@ -116,7 +116,7 @@ export function nextAutopilotStep(session: AutopilotSession | null | undefined, 
   if (waiting && !focus?.values) return { blocked: `${waiting} ${waiting === 1 ? "person waits" : "people wait"} for you in People and places: confirm or reject ${waiting === 1 ? "them" : "each"}, then run the autopilot again.` };
   if (!focus?.values || (focus.status === "running" && stale)) return { step: "focus" };
   if (focus.status === "running") return { blocked: "The focus is being decided." };
-  const findings = focusFindings(focus.values, focusMaterial(inventory), session.facts ?? undefined);
+  const findings = focusFindings(focus.values, focusMaterial(inventory), session.facts ?? undefined, inventory);
   const focusOwn = findings.filter((finding) => finding.field !== "spine");
   if (focusOwn.length) return { blocked: `Fix the focus first: ${focusOwn.map((finding) => finding.detail).join(" ")}` };
   // The spine: the plan the words and the images follow, written from the focus; a focus decided or changed since needs it again.

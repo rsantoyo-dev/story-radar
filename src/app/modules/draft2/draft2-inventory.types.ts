@@ -503,6 +503,11 @@ export function referencePhotos(inventory: Pick<Draft2Inventory, "entities" | "s
   return inventory.storyPhotos.filter((photo) => photo.transmissionAllowed && publishablePhoto(photo.rights) && !portraits.has(photo.id));
 }
 
+/** The story's photos a photo carousel shows (docs/features/draft2-photo-carousel.md): every active photo declared the editor's own or licensed and allowed to the models, a person's portrait among them, in the order they were added. */
+export function photoAlbum(inventory: Pick<Draft2Inventory, "storyPhotos">): Draft2InventoryStoryPhoto[] {
+  return inventory.storyPhotos.filter((photo) => photo.transmissionAllowed && publishablePhoto(photo.rights));
+}
+
 /** The inventory as the visual script's models read it: who and where, what each may show, and the story's own photos. */
 export function inventoryForModels(inventory: Draft2Inventory) {
   return {

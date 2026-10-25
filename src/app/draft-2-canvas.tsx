@@ -195,7 +195,7 @@ const FRAMING_LABEL: Record<Draft2FocusValues["framing"], string> = { "reader-co
 const STRUCTURE_LABEL: Record<Draft2FocusValues["structure"]["kind"], string> = { arc: "Arc: one story, one tension", steps: "Steps: an ordered procedure", list: "List: “N things to…”" };
 const GOAL_LABEL: Record<Draft2FocusValues["goal"], string> = { followers: "Followers", discussion: "Discussion", saves: "Saves", shares: "Shares" };
 const TEXT_MODE_LABEL: Record<Draft2TextMode, string> = { image: "Drawn in the image", program: "Set by the program" };
-const IMAGE_MODE_LABEL: Record<Draft2ImageMode, string> = { slides: "One image per slide", panorama: `One panorama cut into the slides (up to ${FOCUS_PANORAMA_MAX_SLIDES})` };
+const IMAGE_MODE_LABEL: Record<Draft2ImageMode, string> = { slides: "One image per slide", panorama: `One panorama cut into the slides (up to ${FOCUS_PANORAMA_MAX_SLIDES})`, photos: "The story’s own photos, one per slide (5 to 9, in the order added)" };
 const CONCEPT_LABEL: Record<Draft2ConceptArc, string> = {
   classic: "Classic: the news, told straight",
   discovery: "Discovery: the reader discovers the news",
@@ -881,7 +881,7 @@ export function Draft2Canvas({ signedIn = false, topicId, topicName, themeStyle,
   // People and places as the focus reads them: the narrative's anchor is checked against them as they stand now.
   const focusInventory = session?.inventory ?? undefined;
   const material = focusInventory?.status === "ready" ? focusMaterial(focusInventory) : undefined;
-  const focusProblems = focus?.values ? focusFindings(focus.values, material, session?.facts ?? undefined) : [];
+  const focusProblems = focus?.values ? focusFindings(focus.values, material, session?.facts ?? undefined, focusInventory) : [];
   const focusLevers = focus?.values ? eligibleLevers(session?.facts ?? [], focus.values) : [];
   const focusStalled = !running && focus?.status === "running" && now > 0 && now - Date.parse(session?.updatedAt ?? "") > OPENING_STALL_MS;
   // The focus's own findings; the spine's are the Spine step's.
@@ -2717,7 +2717,7 @@ function FocusView({ focus, findings, material, saving, locked, onSave, onReset 
       </div>
       <div className={styles.focusField}>
         <FormField label="Words on the images" description={presentation.images === "panorama" ? "A panorama is made without words; the program sets each slide's words on it." : "Drawn in the image: the image model letters each slide's words. Set by the program: each image is made without words, with a calm band where the program sets them, so a word you change later is set again on the same image, never drawn again."}>
-          <select value={presentation.text} disabled={locked || presentation.images === "panorama"} onChange={(event) => onSave("textMode", event.target.value)}>
+          <select value={presentation.text} disabled={locked || presentation.images !== "slides"} onChange={(event) => onSave("textMode", event.target.value)}>
             {FOCUS_TEXT_MODES.map((mode) => <option key={mode} value={mode}>{TEXT_MODE_LABEL[mode]}</option>)}
           </select>
         </FormField>

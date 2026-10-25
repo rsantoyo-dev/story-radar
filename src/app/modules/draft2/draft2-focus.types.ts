@@ -1,6 +1,6 @@
 import { CREATIVE_CONVERSION_GOALS, CREATIVE_NARRATIVE_FORMS, type CreativeConversionGoal, type CreativeProfile } from "../stories/creative-content.types";
 import { Draft2InputError, Draft2ResponseError, type Draft2Fact } from "./draft2-facts.types";
-import { entityMaterial, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
+import { entityMaterial, photoAlbum, referencePhotos, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import { editedLevers, leversForModels, parsePlanLevers, type Draft2FocusLevers } from "./draft2-levers.types";
 import type { Draft2Provider } from "./draft2-models";
 import { TONE_KEYS, toneLine, toneValue, type ToneKey } from "./skills/tone";
@@ -52,15 +52,42 @@ export type Draft2TextMode = (typeof FOCUS_TEXT_MODES)[number];
  * and it runs at most FOCUS_PANORAMA_MAX_SLIDES slides (GPT Image draws at
  * most 3:1, so more slides would each be drawn too small).
  */
-export const FOCUS_IMAGE_MODES = ["slides", "panorama"] as const;
+export const FOCUS_IMAGE_MODES = ["slides", "panorama", "photos"] as const;
 export type Draft2ImageMode = (typeof FOCUS_IMAGE_MODES)[number];
 export const FOCUS_PANORAMA_MAX_SLIDES = 6;
+/**
+ * A photo carousel (2026-10-25, "todas las fotos deben salir"): the story's
+ * own publishable photos are the images, one slide per photo in the order
+ * they were added, the words set by the program on each. Told as an arc, so
+ * five to nine photos (cover, slide 2, one to five middle slides, the
+ * penultimate and the last).
+ */
+export const PHOTO_CAROUSEL_MIN_PHOTOS = 5;
+export const PHOTO_CAROUSEL_MAX_PHOTOS = 9;
 export type Draft2Presentation = { text: Draft2TextMode; images: Draft2ImageMode };
 
 /** How this carousel is made: the editor's choices, else one image per slide with the words drawn in it; a panorama always takes the program's words. */
 export function focusPresentation(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> | undefined | null): Draft2Presentation {
-  const images = values?.imageMode === "panorama" ? "panorama" : "slides";
-  return { images, text: images === "panorama" || values?.textMode === "program" ? "program" : "image" };
+  const images: Draft2ImageMode = values?.imageMode === "panorama" ? "panorama" : values?.imageMode === "photos" ? "photos" : "slides";
+  return { images, text: images !== "slides" || values?.textMode === "program" ? "program" : "image" };
+}
+
+export type Draft2AlbumPhoto = { id: string; name: string; description: string };
+
+/** The photos a photo carousel shows, one per slide: the story's own publishable photos as People and places lists them (a person's portrait among them), in the order they were added; nothing under another way of making the images. */
+export function photoCarouselPhotos(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> | undefined | null, inventory: Pick<Draft2Inventory, "storyPhotos"> | undefined | null): Draft2AlbumPhoto[] | undefined {
+  return focusPresentation(values).images === "photos" && inventory ? photoAlbum(inventory).map(({ id, name, description }) => ({ id, name, description })) : undefined;
+}
+
+/** A photo carousel's photos in the spine's order, each with the carousel slide its beat takes (cover, slide2, s1…, penultimate, last); a beat that names no photo of the album places none. */
+export function spinePhotos(spine: Pick<Draft2FocusSpine, "beats"> | undefined, album: readonly Draft2AlbumPhoto[]): (Draft2AlbumPhoto & { slide: string })[] {
+  if (!spine) return [];
+  let middle = 0;
+  return spine.beats.flatMap((beat) => {
+    const slide = beat.slide === "middle" ? `s${++middle}` : beat.slide;
+    const photo = album.find((entry) => entry.id === beat.photo);
+    return photo ? [{ slide, ...photo }] : [];
+  });
 }
 
 /** The most beats a spine may have under this presentation, when the presentation caps it (a panorama). */
@@ -259,6 +286,8 @@ export type Draft2SpineBeat = {
   withholds: string;
   /** The verified facts the beat rests on; a hook may rest on none. */
   factIds: string[];
+  /** A photo carousel: the id of the story photo this slide shows, placed by the planner; each photo on one beat. */
+  photo?: string;
 };
 /**
  * How a panorama's one scene is designed (spine v10, 2026-10-18, after the
@@ -581,7 +610,7 @@ export function visualDirectionChanged(script: Draft2FocusSnapshot | undefined, 
   return (script.values.visualDirection ?? "") !== (focus.values.visualDirection ?? "") || !samePresentation(script.values, focus.values) || spineImagesChanged(script.values.spine, focus.values.spine);
 }
 
-export type Draft2FocusFindingCode = "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED" | "SPINE_CAVEATS" | "SPINE_GUARD_ITEMS";
+export type Draft2FocusFindingCode = "PHOTOS_COUNT" | "PHOTOS_STRUCTURE" | "NO_READER_CONSEQUENCE" | "TOO_FEW_ITEMS" | "NARRATIVE_CHARACTER_UNAVAILABLE" | "NARRATIVE_REAL_PERSON" | "CONCEPT_GRAVITY" | "CONCEPT_REAL_PERSON" | "SPINE_SHAPE" | "SPINE_FACT_UNUSED" | "SPINE_CAVEATS" | "SPINE_GUARD_ITEMS";
 /** What the program finds wrong with a focus; any one keeps the Opening from starting. */
 export type Draft2FocusFinding = { field: Draft2FocusField; code: Draft2FocusFindingCode; detail: string };
 
@@ -763,12 +792,15 @@ const clipped = (value: unknown, max: number): string | undefined => {
  * the beats it may have, each field's characters, and for a list or a
  * procedure its items in order with the middle beats they take.
  */
-export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> & Partial<Pick<Draft2FocusValues, "structure">>) {
+export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" | "imageMode"> & Partial<Pick<Draft2FocusValues, "structure">>, photos?: readonly Draft2AlbumPhoto[]) {
   const panorama = focusPresentation(values).images === "panorama";
   const structure = values.structure;
   const items = structure && structure.kind !== "arc" ? structure.itemFactIds : [];
+  const album = photos?.length ? photos : undefined;
   return {
-    beats: { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS, ...(panorama ? { note: "a panorama: four or five read larger than six" } : {}) },
+    beats: album ? { min: album.length, max: album.length, note: "a photo carousel: one beat per photo" } : { min: FOCUS_SPINE_MIN_BEATS, max: presentationMaxBeats(values) ?? FOCUS_SPINE_MAX_BEATS, ...(panorama ? { note: "a panorama: four or five read larger than six" } : {}) },
+    // A photo carousel: the images are these photos, each on one beat; the planner places them (the cover takes the one that stops the thumb) and each beat's photo is its id.
+    ...(album ? { photos: { count: album.length, list: album, rule: "one beat per photo and each photo on one beat, in the order that tells the story best (the cover takes the photo that stops the thumb): the beat's photo is its id, its image says what that photo shows (nothing is drawn or added), its scene what happened there; the photos are attached as images, in this order" } } : {}),
     characters: { scene: FOCUS_BEAT_SCENE_MAX_CHARACTERS, words: FOCUS_BEAT_WORDS_MAX_CHARACTERS, image: FOCUS_BEAT_IMAGE_MAX_CHARACTERS, withholds: FOCUS_BEAT_WITHHOLDS_MAX_CHARACTERS, subject: FOCUS_BEAT_SUBJECT_MAX_CHARACTERS },
     // A list's items are the focus's choice: the planner told only a count dropped one of five, twice in a row (2026-10-23).
     ...(items.length ? { items: { factIds: [...items], middleBeats: { min: Math.max(1, items.length - 1), max: items.length }, rule: "one beat of its own per item, in this order, each citing its item's fact: the first on slide2 or on the first middle beat, every other on a middle beat; never two items on one beat, none left out" } } : {}),
@@ -783,7 +815,28 @@ export function spineLimitsForModels(values: Pick<Draft2FocusValues, "textMode" 
  * contract names every property it allows.
  */
 export function focusPlanSchema(values: Pick<Draft2FocusValues, "textMode" | "imageMode">): Record<string, unknown> {
-  if (focusPresentation(values).images !== "panorama") return DRAFT2_FOCUS_PLAN_SCHEMA;
+  const images = focusPresentation(values).images;
+  if (images === "panorama") return panoramaPlanSchema();
+  if (images === "photos") return photoPlanSchema();
+  return DRAFT2_FOCUS_PLAN_SCHEMA;
+}
+
+/** A photo carousel's plan: every beat carries the id of the photo its slide shows. */
+function photoPlanSchema(): Record<string, unknown> {
+  const properties = DRAFT2_FOCUS_PLAN_SCHEMA.properties as Record<string, Record<string, unknown>>;
+  const spine = properties.spine as { properties: { beats: { items: { properties: Record<string, unknown>; required: string[] } } } };
+  const items = spine.properties.beats.items;
+  return {
+    ...DRAFT2_FOCUS_PLAN_SCHEMA,
+    properties: {
+      ...properties,
+      spine: { ...spine, properties: { ...spine.properties, beats: { ...spine.properties.beats, items: { ...items, properties: { ...items.properties, photo: { type: "string" } }, required: [...items.required, "photo"] } } } },
+    },
+  };
+}
+
+/** A panorama's plan: the spine carries the scene the image model draws once. */
+function panoramaPlanSchema(): Record<string, unknown> {
   const properties = DRAFT2_FOCUS_PLAN_SCHEMA.properties as Record<string, Record<string, unknown>>;
   const spine = properties.spine as { properties: Record<string, unknown>; required: string[] };
   return {
@@ -977,8 +1030,16 @@ function itemBeatsProblem(beats: readonly Draft2SpineBeat[], structure: { kind: 
 }
 
 /** What is wrong with a spine's shape for a structure, if anything: its positions, its count of middle beats, its turn and its ending. */
-export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, { maxBeats }: { maxBeats?: number } = {}): string | undefined {
+export function spineShapeProblem(beats: readonly Draft2SpineBeat[], structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, { maxBeats, album }: { maxBeats?: number; /** A photo carousel: the ids of its photos, one beat each. */ album?: readonly string[] } = {}): string | undefined {
   if (beats.length < FOCUS_SPINE_MIN_BEATS || beats.length > FOCUS_SPINE_MAX_BEATS) return `The spine has ${FOCUS_SPINE_MIN_BEATS} to ${FOCUS_SPINE_MAX_BEATS} beats, one per slide; this one has ${beats.length}`;
+  if (album) {
+    if (beats.length !== album.length) return `A photo carousel has one beat per photo (${album.length}); this spine has ${beats.length}`;
+    const shown = beats.map((beat) => beat.photo ?? "");
+    const twice = shown.find((id, index) => id && shown.indexOf(id) !== index);
+    if (twice) return `A photo carousel shows each photo once; photo ${twice} is on two beats`;
+    const missing = album.filter((id) => !shown.includes(id));
+    if (missing.length) return `A photo carousel shows every photo; ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} on no beat`;
+  }
   if (maxBeats && beats.length > maxBeats) return `A panorama runs at most ${maxBeats} slides, one section of its scene each; this spine has ${beats.length}`;
   const positions = beats.map((beat) => beat.slide);
   const rank = (position: Draft2SpinePosition) => FOCUS_SPINE_POSITIONS.indexOf(position);
@@ -1019,7 +1080,7 @@ function beatFieldProblem(index: number, value: unknown, needs: string, name: st
  * slide and role, its scene, words and image within their limits, what it
  * withholds (empty on the last only) and the facts it rests on.
  */
-function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never, limits: { maxBeats?: number; /** The last answer: a text over its limit is cut at a word, not refused. */ clip?: boolean } = {}): Draft2FocusSpine {
+function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; itemFactIds: readonly string[] }, known: ReadonlySet<string> | undefined, fail: (message: string) => never, limits: { maxBeats?: number; album?: readonly string[]; /** The last answer: a text over its limit is cut at a word, not refused. */ clip?: boolean } = {}): Draft2FocusSpine {
   const field = limits.clip ? clipped : text;
   const raw = record(value).beats;
   if (!Array.isArray(raw)) fail("The spine is a list of beats, one per slide");
@@ -1041,7 +1102,10 @@ function spineFrom(value: unknown, structure: { kind: Draft2FocusStructureKind; 
       : (Array.isArray(body.factIds) ? body.factIds : []).filter((id): id is string => typeof id === "string" && id.trim().length > 0).map((id) => id.trim()).slice(0, MAX_BEAT_FACTS);
     // The subject is a short planning field: cut to its limit, never fatal; a spine written before it has none.
     const subject = typeof body.subject === "string" ? body.subject.replace(/\s+/g, " ").trim().slice(0, FOCUS_BEAT_SUBJECT_MAX_CHARACTERS) : "";
-    return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, ...(subject ? { subject } : {}), withholds, factIds };
+    // A photo carousel: the beat names the story photo its slide shows; a spine edited by hand keeps it.
+    const photo = typeof body.photo === "string" ? body.photo.trim() : "";
+    if (limits.album && !limits.album.includes(photo)) fail(`Beat ${index + 1}: photo is the id of the story photo this slide shows, one of ${limits.album.join(", ")}; a photo carousel shows each photo on one beat`);
+    return { slide: slide!, role: role!, scene: scene!, words: words!, image: image!, ...(subject ? { subject } : {}), withholds, factIds, ...(photo ? { photo } : {}) };
   });
   const problem = spineShapeProblem(beats, structure, limits);
   if (problem) fail(problem);
@@ -1102,8 +1166,10 @@ export const spineBeats = (spine: Draft2FocusSpine | undefined, position: Draft2
  * (editorChoices) is kept as given, whatever the answer says for it. A broken
  * rule is a response error, asked for again with the rule it broke.
  */
-export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats, clip = false, panorama = false }: {
+export function parseFocusPlan(answer: string, { known, structure, eligibleLevers = [], editorChoices = {}, imageCheck, coverage, maxBeats, album, clip = false, panorama = false }: {
   known: ReadonlySet<string>; structure: Draft2FocusValues["structure"]; eligibleLevers?: readonly string[]; editorChoices?: Record<string, unknown>;
+  /** A photo carousel: the ids of its photos; the spine has one beat per photo, each naming its photo. */
+  album?: readonly string[];
   /** The carousel is a panorama: the plan's spine must design its scene. */
   panorama?: boolean;
   /** Check Claude's image lines (spineImageProblems): a problem is a response error, asked for again with the rule. The second answer is not checked: its problems go to the editor as notes. */
@@ -1118,7 +1184,7 @@ export function parseFocusPlan(answer: string, { known, structure, eligibleLever
   let parsed: unknown;
   try { parsed = JSON.parse(answer); } catch { throw new Draft2ResponseError("The plan answer is not valid JSON"); }
   const body = record(parsed);
-  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats, clip });
+  const spine = editorChoices.spine ? editorChoices.spine as Draft2FocusSpine : spineFrom(body.spine, structure, known, (message) => { throw new Draft2ResponseError(message); }, { maxBeats, album, clip });
   if (panorama && !editorChoices.spine && !spine.panorama) throw new Draft2ResponseError("A panorama's spine designs its scene: spine.panorama with its world, device, axis, field, carrier, ending and one station per beat");
   if (imageCheck && !editorChoices.spine) {
     const problems = spineImageProblems(spine.beats, imageCheck);
@@ -1570,7 +1636,7 @@ export function resetFocusField(focus: Draft2Focus, field: Draft2FocusField, now
  * material, the narrative's anchor is checked too: a brand character that is
  * no longer available, or a real person of the story as the anchor.
  */
-export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusMaterial, facts?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[]): Draft2FocusFinding[] {
+export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusMaterial, facts?: readonly Pick<Draft2Fact, "id" | "importance" | "status" | "claim">[], /** People and places as they stand: a photo carousel's album is read from them. */ inventory?: Pick<Draft2Inventory, "storyPhotos"> | null): Draft2FocusFinding[] {
   const findings: Draft2FocusFinding[] = [];
   // Every fact the story depends on has a beat or a guard; the Opening waits until it does (the editor can add it to a beat by hand).
   if (values.spine && facts) {
@@ -1584,6 +1650,12 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
   const minimum = kind === "list" ? FOCUS_LIST_MIN_ITEMS : kind === "steps" ? FOCUS_STEPS_MIN_ITEMS : 0;
   if (itemFactIds.length < minimum) {
     findings.push({ field: "structure", code: "TOO_FEW_ITEMS", detail: `A ${kind === "list" ? "list" : "procedure"} needs at least ${minimum} ${kind === "list" ? "items" : "steps"} from the facts, and the focus names ${itemFactIds.length}: decide again for Claude to find them, or choose another structure.` });
+  }
+  // A photo carousel: five to nine publishable photos, told as an arc (one slide per photo, in their order).
+  const album = photoCarouselPhotos(values, inventory);
+  if (album) {
+    if (album.length < PHOTO_CAROUSEL_MIN_PHOTOS || album.length > PHOTO_CAROUSEL_MAX_PHOTOS) findings.push({ field: "structure", code: "PHOTOS_COUNT", detail: `A photo carousel has one slide per photo and runs ${PHOTO_CAROUSEL_MIN_PHOTOS} to ${PHOTO_CAROUSEL_MAX_PHOTOS} slides; the story has ${album.length} publishable ${album.length === 1 ? "photo" : "photos"} (declared your own or licensed, and allowed to the models). Add or declare photos in People and places, or choose another way to make the images.` });
+    if (kind !== "arc") findings.push({ field: "structure", code: "PHOTOS_STRUCTURE", detail: "A photo carousel is told as an arc, one slide per photo in their order: choose the arc structure, or another way to make the images." });
   }
   const concept = focusConcept(values);
   if (concept.arc === "discovery") {
@@ -1604,7 +1676,7 @@ export function focusFindings(values: Draft2FocusValues, material?: Draft2FocusM
     if (person) findings.push({ field: "narrative", code: "NARRATIVE_REAL_PERSON", detail: `${person} is a real person of the story: they appear only in a verified documentary photo, never drawn as the ${anchorNoun(narrative)}. Choose another anchor.` });
   }
   // A spine written for another structure (an arc's penultimate on a list, too few middle beats) no longer fits the slides the steps will write.
-  const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure, { maxBeats: presentationMaxBeats(values) }) : undefined;
+  const shape = values.spine ? spineShapeProblem(values.spine.beats, values.structure, { maxBeats: presentationMaxBeats(values), ...(album?.length ? { album: album.map((photo) => photo.id) } : {}) }) : undefined;
   if (shape) findings.push({ field: "spine", code: "SPINE_SHAPE", detail: `${shape}: decide again for Claude to rewrite the spine for this structure, or edit the beats.` });
   // Caveats are not content (2026-10-22): in a list or a procedure, a plan whose beats order conditions (a check, the box office, the weather, a purchase)
   // writes the slides the program then refuses; the Saint-Jean weekend spine ordered them on five beats of seven. The items' practical lines carry them:

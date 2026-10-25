@@ -110,6 +110,7 @@ function harness({ writes, judgments, session, coverRows = [] }: { coverRows?: u
     "./skills/visuals": visuals,
     "../stories/creative-visual-guidance": { resolveCreativeVisualGuidance: (value: { name: string }) => `${value.name.toUpperCase()} — CREATIVE IDENTITY\n\nAVOID (never include these):\nMarks: Polaroid.` },
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
+    "./draft2-photo-album": { albumPreviews: async () => [] },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },
     "../stories/anthropic.config": { getAnthropicRuntimeConfig: () => ({ apiKey: "k", model: "claude-sonnet-5-5" }), requireAnthropicApiKey: () => "k" },
     "../stories/creative-profile.repository": { getCreativeProfile: async () => profile },
@@ -312,4 +313,26 @@ test("the story's thing the words name and no verified photo shows is flagged fo
   const seen = { ...inventory, entities: inventory.entities.map((entity) => entity.id === "e2" ? { ...entity, storyPhoto: { id: "p1", name: "windows.jpg" } } : entity) } as unknown as Draft2Inventory;
   const withPhoto = await harness({ writes: [writer()], judgments: [judge("accept", "c1", { c1: 93 })], session: { inventory: seen } }).run();
   assert.equal(withPhoto.visual?.subjectsUnseen, undefined, "a photo exists: nothing to flag");
+});
+
+test("a photo carousel (2026-10-25): the program writes the script, one of the story's photos per slide as the spine placed them, and asks no model; a spine that leaves a slide without its photo is refused", async () => {
+  const album = ["p1", "p2", "p3", "p4", "p5", "p6"].map((id, index) => ({ id, name: `Photo ${index + 1}`, description: `What photo ${index + 1} shows`, provenance: "Editor", transmissionAllowed: true, rights: "own" as const }));
+  const beat = (slide: string, role: string, photo?: string) => ({ slide, role, scene: "What happened there.", words: "Tell it.", image: `What ${photo} shows.`, withholds: slide === "last" ? "" : "The next photo.", factIds: ["f1"], ...(photo ? { photo } : {}) });
+  const spine = (last?: string) => ({ beats: [beat("cover", "hook", "p3"), beat("slide2", "setup", "p1"), beat("middle", "inciting", "p2"), beat("middle", "rising", "p4"), beat("penultimate", "climax", "p5"), beat("last", "payoff", last)] });
+  const session = (last?: string) => {
+    const values = { ...VALUES, imageMode: "photos", textMode: "image", spine: spine(last) } as Draft2FocusValues;
+    const focus = { version: 3, values };
+    return { focus: { status: "ready", version: 3, values }, opening: { ...OPENING, focus }, closing: { ...CLOSING, focus }, deck: { ...deckRun(), focus }, inventory: { ...INVENTORY, storyPhotos: album } };
+  };
+  const h = harness({ writes: [], judgments: [], session: session("p6") });
+  const row = await h.run();
+  assert.equal(h.calls.length, 0, "no writer, no judge");
+  const visual = row.visual!;
+  assert.deepEqual([row.step, row.status, visual.status, visual.winnerId, visual.plannedRounds, visual.rounds.length], ["visual", "ready", "ready", "p1", 1, 1]);
+  const script = visual.candidates[0];
+  assert.deepEqual(script.slides.map((slide) => [slide.slide, slide.need, slide.references[0], slide.shot]), [["cover", "real-photo", "p3", "wide"], ["slide2", "real-photo", "p1", "wide"], ["s1", "real-photo", "p2", "wide"], ["s2", "real-photo", "p4", "wide"], ["penultimate", "real-photo", "p5", "wide"], ["last", "real-photo", "p6", "wide"]], "one photo per slide, as the spine placed them");
+  assert.equal(script.slides[0].beat, "What p3 shows.", "the beat is the spine's image line");
+  assert.match(script.slides[0].direction, /"Photo 3" \(What photo 3 shows\) fills the slide edge to edge/);
+  assert.deepEqual([visual.carousel?.length, visual.deckId, visual.openingId, visual.closingId, visual.inventoryVersion, visual.mode], [6, "c3", "c1", "c2", 4, "illustration-editorial"], "stored as any script's run");
+  await assert.rejects(harness({ writes: [], judgments: [], session: session() }).run(), /Slide 6 has no photo/);
 });

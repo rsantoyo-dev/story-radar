@@ -53,10 +53,13 @@ import type { Draft2Skill } from "./draft2-skills";
  * objects under an identity of objects on flat planes, never a photographic
  * place standing in for a named event), and a station's subject is one of
  * the facts' things, never a prop.
+ * Version 15 (2026-10-25), the photo carousel: the story's own photos are
+ * the slides, one beat per photo, and the planner places them (the beat's
+ * photo is its id) instead of designing an image.
  */
 export const SPINE_SKILL: Draft2Skill = {
   name: "spine",
-  version: "14",
+  version: "15",
   text: `# The spine
 
 The spine is the carousel's story in beats, one per slide, written before any
@@ -192,7 +195,20 @@ story takes the ones it needs, in this order, and may repeat rising:
   section below). text "program": the program sets each slide's words on a
   calm band of its image, along the top (below the logo where there is
   one); an image line keeps its subject out of that band and asks for no
-  word at all.
+  word at all. images "photos": the story's own photos are the slides, one
+  per beat (the section below).
+
+## A photo carousel
+With images "photos", nothing is drawn: spineLimits.photos lists the story's
+own photos (id, name, what it shows), and the carousel shows every one of
+them, one per slide, so the spine has exactly one beat per photo and each
+beat carries "photo": the id of the photo its slide shows. Place them in the
+order that tells the story best, never in the order given: the cover takes
+the photo that stops the thumb, the last the one that closes it. A beat's
+image says what its photo shows and what the eye lands on (it is not a
+request to draw, nothing is added); its scene is what happened there; its
+words carry the telling, since the photo cannot. The sequence rule above
+does not apply (two photos may show the same place); everything else does.
 
 ## A panorama's scene
 With images "panorama", the spine carries "panorama" beside its beats: one
@@ -263,7 +279,8 @@ above does not apply to them; everything else below does.
   ("the cover on terracotta") is the default of one post, not of every post.`,
   roleText: {
     "focus-planner": `## The numbers you are checked against
-spineLimits gives them: the fewest and the most beats (a panorama's six),
+spineLimits gives them: the fewest and the most beats (a panorama's six, a
+photo carousel's one per photo, each beat with its photo's id),
 each beat field's characters (scene, words, image, withholds, subject), and
 for a list or a procedure its items with the middle beats they take.
 Keep every field at least ten characters under its limit: the program

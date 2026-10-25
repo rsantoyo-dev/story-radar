@@ -8,7 +8,8 @@ import { callToActionBrief } from "./draft2-closing.types";
 import { DRAFT2_DRAFT_SCHEMA, draftFindings, draftFixRequest, draftPlan, draftRequest, draftRuns, findingCount, findingLines, parseDraft, type Draft, type DraftFindings } from "./draft2-draft.types";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2TraceEntry } from "./draft2-facts.types";
-import { focusFindings, focusForModels, focusMaterial, focusToday, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { focusFindings, focusForModels, focusMaterial, focusToday, photoCarouselPhotos, spinePhotos, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { albumPreviews } from "./draft2-photo-album";
 import { storyDeadline } from "./draft2-data-marks";
 import { failedCall, funnelRunSummary, type FunnelRole } from "./draft2-funnel";
 import type { FunnelStepInput } from "./draft2-funnel-run";
@@ -43,7 +44,7 @@ function draftFocus(session: Draft2SessionRow): Draft2FocusSnapshot {
   if (!focus?.values) throw new Draft2InputError("The draft follows the story's focus. Decide the focus first.");
   if (focus.status === "running") throw new Draft2InputError("The focus was still being decided when its request ended. Decide it again first.");
   if (!focus.values.spine) throw new Draft2InputError("The draft follows the spine. Write the spine first.");
-  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined);
+  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined, session.inventory);
   if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
   return { version: focus.version, values: focus.values };
 }
@@ -79,7 +80,9 @@ export async function runDraft2Draft(input: FunnelStepInput): Promise<Draft2Sess
   const profile = await getCreativeProfile(input.topicId);
   const emojis = profile.allowEmojis ? Math.max(0, profile.maxEmojis) : 0;
   const levers = eligibleLevers(facts, focus.values);
-  const plan = draftPlan(focus, levers, emojis, storyDeadline(facts, focusToday(undefined, new Date())));
+  const plan = draftPlan(focus, levers, emojis, storyDeadline(facts, focusToday(undefined, new Date())), spinePhotos(focus.values.spine, photoCarouselPhotos(focus.values, session.inventory) ?? []));
+  // A photo carousel: the writer sees the photos it writes under, as previews in the order the request lists them.
+  const images = plan.photos?.length ? await albumPreviews(input.topicId, input.storyId, plan.photos) : [];
   const reader = { address: profile.readerAddress, language: profile.language };
   const entities = (session.inventory?.entities ?? []).map(({ name, kind, factIds }) => ({ name, kind, factIds }));
   const brief = `${brandBrief(profile)}\n\n${callToActionBrief({ style: profile.callToActionStyle, emojis })}`;
@@ -103,7 +106,7 @@ export async function runDraft2Draft(input: FunnelStepInput): Promise<Draft2Sess
       const begin = Date.now();
       let answered: Awaited<ReturnType<typeof generateAnthropicStructuredResponse>>;
       try {
-        answered = await generateAnthropicStructuredResponse({ apiKey, model: writer.model, instructions: composed.instructions, context, contents: request, schema: DRAFT2_DRAFT_SCHEMA as unknown as Record<string, unknown>, schemaName: operation, maxOutputTokens: DRAFT_MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext });
+        answered = await generateAnthropicStructuredResponse({ apiKey, model: writer.model, instructions: composed.instructions, context, contents: request, ...(images.length ? { images } : {}), schema: DRAFT2_DRAFT_SCHEMA as unknown as Record<string, unknown>, schemaName: operation, maxOutputTokens: DRAFT_MAX_OUTPUT_TOKENS, effort: "high", timeoutMs: CALL_TIMEOUT_MS, auditContext });
       } catch (error) {
         const note = error instanceof Error ? error.message : "unknown error";
         trace.push({ at, step: "opening", round, provider: "anthropic", model: writer.model, operation, durationMs: Date.now() - begin, outcome: "error", note, ...failedCall(error), skillVersions: composed.skillVersions, effort: "high" });

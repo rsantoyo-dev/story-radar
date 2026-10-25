@@ -75,3 +75,12 @@ test("the draft is stored as the Opening, the Closing and the Deck the later ste
   assert.deepEqual([stuck.opening.status, stuck.opening.winnerId], ["needs-review", "c1"]);
   assert.match(String(stuck.opening.error), /The program found 1 issue on the drafted opening; the whole-carousel review reads it next/);
 });
+
+test("a photo carousel's request carries the photos with the slide the spine gave each, attached as images in that order (2026-10-25)", () => {
+  const photos = [{ slide: "cover", id: "p3", name: "The witch", description: "A witch at the mall's entrance" }, { slide: "last", id: "p4", name: "Candies", description: "A bag of candies" }];
+  const request = draftRequest(draftPlan(FOCUS, ["free"], 0, undefined, photos)) as { photos?: { slides: unknown[]; rule: string; attached: string } };
+  assert.deepEqual(request.photos?.slides, photos);
+  assert.match(request.photos?.rule ?? "", /nothing is drawn/);
+  assert.match(request.photos?.attached ?? "", /attached as images, in this order/);
+  assert.equal((draftRequest(plan) as { photos?: unknown }).photos, undefined, "no photos under another way of making the images");
+});

@@ -38,7 +38,7 @@ function openingFocus(session: Draft2SessionRow, stopped: Draft2Opening | undefi
   if (!focus?.values) throw new Draft2InputError("The opening follows the story's focus. Decide the focus first.");
   if (focus.status === "running") throw new Draft2InputError("The focus was still being decided when its request ended. Decide it again first.");
   // The narrative's anchor is checked against People and places as they stand now.
-  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined);
+  const findings = focusFindings(focus.values, session.inventory ? focusMaterial(session.inventory) : undefined, session.facts ?? undefined, session.inventory);
   if (findings.length) throw new Draft2InputError(`Fix the focus first: ${findings.map((finding) => finding.detail).join(" ")}`);
   return { version: focus.version, values: focus.values, entities: (session.inventory?.entities ?? []).map(({ name, kind }) => ({ name, kind })) };
 }

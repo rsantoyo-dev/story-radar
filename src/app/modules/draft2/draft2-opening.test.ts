@@ -155,6 +155,7 @@ function harness({ writes, judgments, fixes, failAt, session, busy = false, clai
     "./skills/hooks": hooks,
     "./skills/levers": leversSkill,
     "./draft2-dev-trace": { draft2DevTrace: () => undefined },
+    "./draft2-photo-album": { albumPreviews: async () => [] },
     // A fixed cost per call: the trace's arithmetic is the meter's (creative-text-cost.test.ts); here only that it is recorded.
     "./draft2-trace-cost": { traceCostMicros: () => 1234, traceCost: () => ({ costMicros: 1234 }) },
     "../stories/creative-text-meter": { withCreativeTextBudget: async (_context: unknown, work: () => Promise<unknown>) => work() },

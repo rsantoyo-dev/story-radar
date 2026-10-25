@@ -6,6 +6,7 @@ import {
   anchorNoun, beatFactsFinding, beatFactsMissing, focusMaterial, focusToday, focusWithPlan, focusWithSpineProblems, narrativeUsesMaster, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField, spineBeatFactIds, spineMiddleFactIds, spineShapeProblem,
   spineUnusedFacts, visualDirectionChanged, visualFocus, wordsFollowFocus, focusPresentation, FOCUS_DECISION_FIELDS,
   focusNarrative, spineLimitsForModels, focusPlanSchema, PANORAMA_DEFAULT_ANCHOR, PANORAMA_WORLD_MAX_CHARACTERS,
+  photoCarouselPhotos, spinePhotos,
   type Draft2Focus, type Draft2FocusLine, type Draft2FocusMaterial, type Draft2FocusNarrative, type Draft2FocusValues, type Draft2SpineBeat,
 } from "./draft2-focus.types";
 import type { Draft2Inventory } from "./draft2-inventory.types";
@@ -751,4 +752,47 @@ test("a list's spine that plans conditions, or a guard that generalizes over the
   assert.deepEqual(codes(guards), ["SPINE_GUARD_ITEMS"]);
   assert.match(focusFindings(guards).find((finding) => finding.code === "SPINE_GUARD_ITEMS")!.detail, /"Chaque sortie est offerte les trois jours du week-end" generalizes over the items/u);
   assert.deepEqual(codes({ ...values, spine: { beats: ARC_SPINE.beats.map((beat, index) => index === 2 ? { ...beat, words: "Vérifie à la billetterie." } : beat) }, guards: [{ misreading: "Tous ferment", factIds: ["f1"] }] } as unknown as Draft2FocusValues), [], "an arc's beats and guards are its own");
+});
+
+test("a photo carousel (2026-10-25): the story's own photos are the slides, one beat per photo placed by the planner; the program checks the count, the structure and that every photo is on one beat", () => {
+  const album = ["p1", "p2", "p3", "p4", "p5", "p6"].map((id, index) => ({ id, name: `Photo ${index + 1}`, description: `What photo ${index + 1} shows` }));
+  const inventory = (count: number): Pick<Draft2Inventory, "storyPhotos"> => ({ storyPhotos: [
+    ...album.slice(0, count).map((photo) => ({ ...photo, provenance: "Editor", transmissionAllowed: true, rights: "own" as const })),
+    { id: "p9", name: "Borrowed", description: "", provenance: "Web", transmissionAllowed: true, rights: "reference" as const },
+    { id: "p10", name: "Kept from the models", description: "", provenance: "Editor", transmissionAllowed: false, rights: "own" as const },
+  ] });
+  assert.deepEqual(focusPresentation({ imageMode: "photos", textMode: "image" }), { images: "photos", text: "program" }, "the program sets the words on the photos");
+  assert.deepEqual(photoCarouselPhotos({ imageMode: "photos" }, inventory(6))?.map((photo) => photo.id), ["p1", "p2", "p3", "p4", "p5", "p6"], "the editor's own or licensed photos the models may see, a portrait among them");
+  assert.equal(photoCarouselPhotos({ imageMode: "slides" }, inventory(6)), undefined, "nothing under another way of making the images");
+  const limits = spineLimitsForModels({ imageMode: "photos", textMode: "program", structure: { kind: "arc", itemFactIds: [] } }, album) as { beats: { min: number; max: number }; photos: { count: number; list: readonly unknown[]; rule: string } };
+  assert.deepEqual([limits.beats.min, limits.beats.max, limits.photos.count, limits.photos.list.length], [6, 6, 6, 6]);
+  assert.match(limits.photos.rule, /each photo on one beat/);
+  const beatSchema = ((focusPlanSchema({ imageMode: "photos" }).properties as Record<string, Record<string, Record<string, Record<string, { properties: Record<string, unknown>; required: string[] }>>>>).spine.properties.beats.items);
+  assert.deepEqual([Boolean(beatSchema.properties.photo), beatSchema.required.includes("photo")], [true, true], "the planner's answer may carry each beat's photo, and must");
+  assert.equal((focusPlanSchema({}).properties as Record<string, Record<string, Record<string, Record<string, { properties: Record<string, unknown> }>>>>).spine.properties.beats.items.properties.photo, undefined, "a drawn carousel's beats carry none");
+  // The planner's spine: one beat per photo, each naming its photo, in the order that tells the story.
+  const order = ["p3", "p1", "p2", "p4", "p5", "p6"];
+  const beats = [...ARC_SPINE.beats.slice(0, 4), ...ARC_SPINE.beats.slice(5)].map((beat, index) => ({ ...beat, photo: order[index] })) as Draft2SpineBeat[];
+  const ids = album.map((photo) => photo.id);
+  const arc = { kind: "arc" as const, itemFactIds: [] };
+  assert.equal(spineShapeProblem(beats, arc, { album: ids }), undefined);
+  assert.match(spineShapeProblem(beats.slice(0, 3).concat(beats.slice(4)), arc, { album: ids }) ?? "", /one beat per photo \(6\); this spine has 5/);
+  assert.match(spineShapeProblem(beats.map((beat, index) => index === 1 ? { ...beat, photo: "p3" } : beat), arc, { album: ids }) ?? "", /each photo once; photo p3 is on two beats/);
+  assert.match(spineShapeProblem(beats.map((beat, index) => index === 1 ? { ...beat, photo: undefined } : beat), arc, { album: ids }) ?? "", /p1 is on no beat/);
+  assert.deepEqual(spinePhotos({ beats }, album).map((photo) => [photo.slide, photo.id]), [["cover", "p3"], ["slide2", "p1"], ["s1", "p2"], ["s2", "p4"], ["penultimate", "p5"], ["last", "p6"]], "each photo with the carousel slide its beat takes");
+  const known = new Set(["f1", "f2", "f3"]);
+  const freeLevers = { primary: "free", alternatives: [], factIds: [], paidBy: "slide2" as const };
+  const plan = parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: { beats }, direction: "d", visualDirection: "v", reasons: {} }), { known, structure: arc, album: ids });
+  assert.deepEqual(plan.spine.beats.map((beat) => beat.photo), order, "the beats keep their photos");
+  assert.throws(() => parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: { beats: beats.map(({ photo, ...beat }) => { void photo; return beat; }) }, direction: "d", visualDirection: "v", reasons: {} }), { known, structure: arc, album: ids }),
+    (error: Error) => error instanceof Draft2ResponseError && /Beat 1: photo is the id of the story photo/.test(error.message));
+  assert.equal(parseFocusPlan(JSON.stringify({ levers: freeLevers, spine: { beats }, direction: "d", visualDirection: "v", reasons: {} }), { known, structure: arc }).spine.beats[0].photo, "p3", "a beat's photo is kept whatever the way of making the images: a spine edited by hand keeps its photos");
+  // The findings: five to nine photos, told as an arc, every photo on a beat.
+  const values = { ...decided().values!, imageMode: "photos" as const, spine: { beats } };
+  assert.deepEqual(focusFindings(values, undefined, undefined, inventory(6)), []);
+  assert.deepEqual(focusFindings(values, undefined, undefined, inventory(3)).map((finding) => [finding.field, finding.code]), [["structure", "PHOTOS_COUNT"], ["spine", "SPINE_SHAPE"]]);
+  assert.match(focusFindings(values, undefined, undefined, inventory(3))[0].detail, /runs 5 to 9 slides; the story has 3 publishable photos/);
+  assert.ok(focusFindings({ ...values, structure: { kind: "list", itemFactIds: ["f1", "f2", "f3"] } }, undefined, undefined, inventory(6)).some((finding) => finding.code === "PHOTOS_STRUCTURE"), "a photo carousel is told as an arc");
+  assert.deepEqual(focusFindings(values, undefined, undefined, undefined).filter((finding) => finding.code.startsWith("PHOTOS")), [], "without People and places there is nothing to count");
+  assert.deepEqual(focusFindings({ ...values, imageMode: "slides" }, undefined, undefined, inventory(3)), [], "another way of making the images counts no photos");
 });

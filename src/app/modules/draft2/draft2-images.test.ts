@@ -750,3 +750,18 @@ test("a panorama with the scene its spine designed (spine v10): the prompt is th
   await six.run();
   assert.match(six.calls.submits[0].prompt, /cut into 6 equal portrait columns side by side \(the cut lines at 17%, 33%, 50%, 67%, 83% of the width\)[\s\S]*THE AXIS\. The story advances from the left end to the right end[\s\S]*down to 47% of its height[\s\S]*at about 57% of the height[\s\S]*The strips above and below the columns' band \(the top 20% and the bottom 20% of the height\) are outside every slide/);
 });
+
+test("a photo carousel (2026-10-25): every slide is one of the story's photos as the script places them, fitted, lettered by the program, with the page number and the logo; no model, no review, no charge", async () => {
+  const ids: Record<string, string> = { cover: "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e10", s1: "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e11", last: "0f8e0c1e-5a8b-4b4e-9b52-0c9a1f3d2e12" };
+  const script: Draft2VisualCandidate = { ...SCRIPT, id: "p1", characterPlan: { use: false, characterIds: [], role: "" }, slides: carousel.map((slide) => scriptSlide(slide.slide, { need: "real-photo", references: [ids[slide.slide]], characterIds: [], shot: "wide" })) };
+  const visual: Draft2Visual = { ...VISUAL, status: "ready", winnerId: "p1", candidates: [script], rounds: [{ round: 1, candidates: [script], mechanical: [], at: "t" }], focus: { version: 1, values: { ...VISUAL.focus!.values, imageMode: "photos", textMode: "program" } } };
+  const h = harness({ session: { visual } });
+  const session = await h.run();
+  assert.equal(json([h.calls.submits.length, h.calls.reviews.length, h.calls.portraits.length, h.calls.charges.length]), json([0, 0, 0, 0]), "no model, no review, no portrait, no charge");
+  assert.deepEqual([session.status, session.images!.status, session.images!.error], ["ready", "ready", undefined]);
+  for (const [index, slide] of session.images!.slides.entries()) {
+    const own = imagesTypes.shownAttempt(slide)!;
+    assert.equal(json([own.version, own.kind, own.status, own.costMicros, own.review, own.own?.fill, own.own?.source, own.own?.storyPhotoId, own.own?.fit, Boolean(own.words)]), json([1, "own", "generated", 0, undefined, "slide", "story-photo", ids[slide.slide], "cover", true]), slide.slide);
+    assert.equal(stored(h, `${slide.slide}-v1.png`), `own cover|words|${index + 1}/3${index === 0 ? "|logo" : ""}`, "fitted edge to edge, then the words, the page number and the logo where the slide carries one");
+  }
+});

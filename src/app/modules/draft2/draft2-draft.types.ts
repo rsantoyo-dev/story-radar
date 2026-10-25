@@ -45,6 +45,8 @@ export type DraftPlan = {
   focus: Draft2FocusSnapshot;
   /** The end of the story's event, when the facts name one. */
   deadline?: Draft2Deadline;
+  /** A photo carousel: the story's own photos, each with the slide the spine gave it. */
+  photos?: readonly { slide: string; id: string; name: string; description: string }[];
   closingShape: Draft2ClosingShape;
   /** The deck's shape as the spine plans it (slide 2 covering the spine's slide 2 facts); the deck's own is computed from the answer's slide 2. */
   plannedDeck: Draft2DeckShape;
@@ -52,11 +54,12 @@ export type DraftPlan = {
   emojis: number;
 };
 
-export function draftPlan(focus: Draft2FocusSnapshot, levers: readonly string[], emojis: number, deadline?: Draft2Deadline): DraftPlan {
+export function draftPlan(focus: Draft2FocusSnapshot, levers: readonly string[], emojis: number, deadline?: Draft2Deadline, photos?: DraftPlan["photos"]): DraftPlan {
   const values = focus.values;
   return {
     focus,
     ...(deadline ? { deadline } : {}),
+    ...(photos?.length ? { photos } : {}),
     closingShape: closingShape(values.structure.kind),
     plannedDeck: deckShape(values.structure, spineBeatFactIds(values.spine, "slide2") ?? [], values.spine),
     levers,
@@ -73,6 +76,8 @@ export function draftRequest(plan: DraftPlan): Record<string, unknown> {
     closingShape: plan.closingShape,
     emojis: plan.emojis,
     wordLimits: { opening: OPENING_WORD_LIMITS, deck: deckWordLimits(plan.plannedDeck), closing: closingWordLimits(plan.closingShape) },
+    // A photo carousel: each slide's words tell what its photo shows and what happened there; the image intent names the photo, since nothing is drawn.
+    ...(plan.photos?.length ? { photos: { rule: "a photo carousel: the story's own photos are the slides, each on the slide given here; the slide's words tell what its photo shows and what happened there (the reader sees the photo under them), and its image intent names the photo and what it shows, since nothing is drawn", slides: plan.photos, attached: "the photos are attached as images, in this order" } } : {}),
     // The event's end within days: the cover carries it (DEADLINE_OFF_COVER), so the writer knows before the program checks.
     ...(plan.deadline && plan.deadline.daysLeft >= 0 && plan.deadline.daysLeft <= DEADLINE_URGENT_DAYS ? { eventEnd: { date: plan.deadline.date, daysLeft: plan.deadline.daysLeft, rule: "the cover names the last day or the time left" } } : {}),
   };

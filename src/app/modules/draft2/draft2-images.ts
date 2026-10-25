@@ -1020,6 +1020,8 @@ export async function runDraft2Images({ topicId, storyId, sessionId, resume = fa
   try {
     await withCreativeTextBudget({ topicId, storyId, runId: session.id }, async () => {
       const ctx = await imagesContext({ topicId, storyId, sessionId: session.id, run, target, facts, profile, fal, descriptor, signal: controller.signal, trace });
+      // A photo carousel: each slide is one of the story's own photos, composed here with its words, the page number and the logo; no model, no review, no charge.
+      if (ctx.presentation.images === "photos") { await composePhotoSlides(ctx, run, checkpoint); return; }
       const finished = new Map<Draft2ImageAttempt, Uint8Array>();
       const pollErrors = new Map<Draft2ImageAttempt, number>();
       const plateErrors = new Map<Draft2AnchorPlate, number>();
@@ -1421,29 +1423,56 @@ async function fittedOwnImage(bytes: Uint8Array, size: { width: number; height: 
  * model, no cost, the earlier ones kept. Sol does not review it; only a photo
  * declared own or licensed goes on a slide.
  */
-async function placeOwnImage({ topicId, session, images, slide: name, storyPhotoId, fit }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; slide: string; storyPhotoId: string; fit: Draft2OwnFit }): Promise<Draft2SessionRow> {
-  const slide = images.slides.find((entry) => entry.slide === name);
-  if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
-  if (!slideSettled(slide)) throw new Draft2InputError(`${slide.label} is still being made; wait for it to finish.`);
+/** The slides of a photo carousel, each composed from the photo its script slide references (docs/features/draft2-photo-carousel.md). */
+async function composePhotoSlides(ctx: Context, run: Draft2ImagesRun, checkpoint: (patch?: Draft2SessionPatch) => Promise<unknown>): Promise<void> {
+  for (const slide of run.slides) {
+    const attempt = latestAttempt(slide);
+    if (!attempt || attempt.status !== "queued") continue;
+    const photoId = ctx.script.slides.find((entry) => entry.slide === slide.slide)?.references[0];
+    try {
+      if (!photoId) throw new Draft2InputError("The script names no photo for this slide.");
+      const own = await ownPhotoAttempt(ctx, slide, photoId, "cover", attempt.version);
+      slide.attempts = slide.attempts.map((entry) => entry === attempt ? own : entry);
+    } catch (error) {
+      Object.assign(attempt, { status: "failed", error: error instanceof Error ? error.message.slice(0, 300) : "The photo could not be placed.", completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+    }
+    await checkpoint();
+  }
+  run.status = settledStatus(run.slides);
+  run.error = imagesNote(run.slides);
+  await checkpoint({ status: run.status === "ready" ? "ready" : "needs-review", error: run.error ?? null });
+}
+
+/** One of the story's photos as a slide's image: fitted, then the words, the page number and the logo; stored like a generated image, free and never reviewed. */
+async function ownPhotoAttempt(ctx: Context, slide: Draft2SlideImage, storyPhotoId: string, fit: Draft2OwnFit, version: number): Promise<Draft2ImageAttempt> {
   // Composed here and never sent to the image model, as a documentary portrait is.
-  const [photo] = await resolveStoryReferences(topicId, session.storyId, [{ id: storyPhotoId, purpose: "documentary-portrait" }]);
+  const [photo] = await resolveStoryReferences(ctx.topicId, ctx.storyId, [{ id: storyPhotoId, purpose: "documentary-portrait" }]);
   if (!photo || !publishablePhoto(photo.publicationRights)) throw new Draft2InputError(`${photo?.name ?? "That photo"} is reference only: declare it your own or licensed in the story's photos to put it on a slide.`);
   const [file] = await loadStoryReferenceImages([photo]);
   const original = new Uint8Array(await file.arrayBuffer());
   const size = await decodedImage(original);
-  const ctx = await editContext(topicId, session, withoutHistory(images));
   const base = await fittedOwnImage(original, size, fit, photo.focus, ctx.wordsPalette.paper);
   const own: Draft2OwnImage = {
     fill: "slide", source: "story-photo", name: photo.name, rights: photo.publicationRights === "licensed" ? "licensed" : "own",
     ...(photo.publicationRights === "licensed" && photo.provenance ? { provenance: photo.provenance } : {}), storyPhotoId: photo.id, sha256: hash(original), width: size.width, height: size.height, fit,
   };
   const now = new Date().toISOString();
-  const attempt: Draft2ImageAttempt = { version: Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1, kind: "own", status: "generated", own, queuedAt: now, costMicros: 0 };
+  const attempt: Draft2ImageAttempt = { version, kind: "own", status: "generated", own, queuedAt: now, costMicros: 0 };
   const final = await finish(ctx, slide, attempt, base);
   const sha256 = hash(final);
   await putPrivateR2Object({ objectKey: objectKey(ctx, imageFile(slide.slide, attempt.version)), body: final, contentType: "image/png", metadata: { sha256 } });
   await putPrivateR2Object({ objectKey: objectKey(ctx, imageBaseFile(slide.slide, attempt.version)), body: base, contentType: "image/png", metadata: { sha256: hash(base) } });
   Object.assign(attempt, { sha256, expectedText: creativeImageModelVisibleText(ctx.units[slide.order - 1]), completedAt: new Date().toISOString() } satisfies Partial<Draft2ImageAttempt>);
+  return attempt;
+}
+
+async function placeOwnImage({ topicId, session, images, slide: name, storyPhotoId, fit }: { topicId: string; session: Draft2SessionRow; images: Draft2Images; slide: string; storyPhotoId: string; fit: Draft2OwnFit }): Promise<Draft2SessionRow> {
+  const slide = images.slides.find((entry) => entry.slide === name);
+  if (!slide) throw new Draft2InputError(`${name} is not one of this carousel's slides.`);
+  if (!slideSettled(slide)) throw new Draft2InputError(`${slide.label} is still being made; wait for it to finish.`);
+  const ctx = await editContext(topicId, session, withoutHistory(images));
+  const attempt = await ownPhotoAttempt(ctx, slide, storyPhotoId, fit, Math.max(0, ...slide.attempts.map((entry) => entry.version)) + 1);
+  const now = attempt.queuedAt;
   const slides = images.slides.map((entry) => entry === slide ? { ...slide, attempts: [...slide.attempts, attempt], chosenVersion: undefined } : entry);
   const settled = slides.every(slideSettled);
   const status = settled ? settledStatus(slides) : "paused";

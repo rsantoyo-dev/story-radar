@@ -1,15 +1,15 @@
 import "server-only";
 import { recordFunnelChoice, runFunnelStep, type FunnelStep, type FunnelStepInput } from "./draft2-funnel-run";
 import { DRAFT2_VISUAL_ROLES } from "./draft2-models";
-import { Draft2InputError, comparableText } from "./draft2-facts.types";
-import { focusForModels, focusNarrative, focusPresentation, narrativeUsesMaster, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
-import { funnelVersions } from "./draft2-funnel";
-import { getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
+import { Draft2BusyError, Draft2InputError, comparableText } from "./draft2-facts.types";
+import { focusForModels, focusNarrative, focusPresentation, narrativeUsesMaster, photoCarouselPhotos, spinePhotos, visualFocus, type Draft2FocusSnapshot } from "./draft2-focus.types";
+import { funnelRunSummary, funnelVersions } from "./draft2-funnel";
+import { activeDraft2Session, claimDraft2Session, getDraft2Session, recentDraft2CoverRows, updateDraft2Session } from "./draft2-session.repository";
 import { coverVarietyIssues, recentCovers, recentCoversForModels, type Draft2RecentCover } from "./draft2-cover-variety";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { inventoryForModels, type Draft2CharacterChoice, type Draft2Inventory } from "./draft2-inventory.types";
 import {
-  VISUAL_GATE, avoidTerms, bindPanoramaShots, bindSpineBeats, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, spineStations, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
+  VISUAL_GATE, avoidTerms, bindPanoramaShots, bindSpineBeats, beatWithinLimit, carouselSlides, editorCast, mechanicalVisualIssues, parseVisualCandidates, parseVisualEvaluation, sameVisual, spineImageLines, spineStations, visualEvaluationSchema, visualExploreRequest, visualFixRequest,
   visualJudgeRequest, visualLayout, visualModeLine, visualPlan, visualRefineRequest, visualSchema,
   type Draft2CarouselSlide, type Draft2Visual, type Draft2VisualCandidate, type Draft2VisualCharacter, type Draft2VisualIssue, type Draft2VisualMode, type Draft2VisualScore,
 } from "./draft2-visual.types";
@@ -156,8 +156,62 @@ const VISUAL_STEP: FunnelStep<Draft2VisualCandidate, Draft2VisualScore, Draft2Vi
  * which also competes as written, for the judge's pick: two rounds. Pausing,
  * continuing and the heartbeat are the funnel's (draft2-funnel-run.ts).
  */
-export function runDraft2Visual(input: FunnelStepInput): Promise<Draft2SessionRow> {
+export async function runDraft2Visual(input: FunnelStepInput): Promise<Draft2SessionRow> {
+  // A photo carousel (docs/features/draft2-photo-carousel.md): the program writes the script, one of the story's photos per slide; no model.
+  if (!input.resume && !input.more) {
+    const session = await getDraft2Session(input.topicId, input.sessionId);
+    if (session && focusPresentation(session.focus?.values).images === "photos") return writePhotoScript(input, session);
+  }
   return runFunnelStep(VISUAL_STEP, input);
+}
+
+/**
+ * The visual script of a photo carousel, written by the program: each slide
+ * shows one of the story's own photos edge to edge, in the order the photos
+ * were added, with the slide's words set by the program; nothing is drawn.
+ * Stored as a run of one version (`p1`) the images, the review, the hand
+ * edits and the publication read as any script.
+ */
+async function writePhotoScript(input: FunnelStepInput, session: Draft2SessionRow): Promise<Draft2SessionRow> {
+  if (session.storyId !== input.storyId) throw new Draft2InputError("This Draft 2 session was not found for the story. Reload the canvas.");
+  if (await activeDraft2Session(input.topicId, input.storyId)) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const facts = session.facts ?? [];
+  if (!facts.length || (session.step === "facts" && session.status !== "ready")) throw new Draft2InputError("The visual script builds only on verified facts. Verify the facts first.");
+  const target = visualTarget(session, undefined);
+  const album = photoCarouselPhotos(target.focus.values, target.inventory) ?? [];
+  const photos = spinePhotos(target.focus.values.spine, album);
+  const missing = target.carousel.filter((slide) => !photos.some((photo) => photo.slide === slide.slide));
+  if (missing.length || photos.length !== target.carousel.length) {
+    const why = missing.length ? `${missing.map((slide) => slide.label).join(", ")} ${missing.length === 1 ? "has" : "have"} no photo` : `the spine places ${photos.length} and the carousel has ${target.carousel.length} slides`;
+    throw new Draft2InputError(`A photo carousel shows one of the story's photos per slide, as the spine places them: ${why}. Write the spine and the words again for the photos as they stand.`);
+  }
+  const profile = await getCreativeProfile(input.topicId);
+  const lines = spineImageLines(target.focus.values.spine, target.carousel);
+  const script: Draft2VisualCandidate = {
+    id: "p1", angle: "The story's own photos, one per slide", concept: "The story's own photos, one per slide in the order they were taken, the words set on each.", protagonist: "", motif: "", cast: "",
+    characterPlan: { use: false, characterIds: [], role: "" },
+    slides: target.carousel.map((slide) => {
+      const photo = photos.find((entry) => entry.slide === slide.slide)!;
+      return {
+        slide: slide.slide, beat: beatWithinLimit(lines[slide.slide] ?? `The photo "${photo.name}": ${photo.description}`), subject: photo.name, discovery: "", recurring: "none" as const, shot: "wide" as const, headlineLink: "",
+        direction: `The story's own photo "${photo.name}" (${photo.description}) fills the slide edge to edge, as taken; the program sets the slide's words on it. Nothing is drawn or added.`,
+        need: "real-photo" as const, characterIds: [], references: [photo.id],
+      };
+    }),
+  };
+  const at = new Date().toISOString();
+  const earlier = session.visual ?? undefined;
+  const run: Draft2Visual = {
+    status: "ready", rounds: [{ round: 1, kind: "explore", candidates: [script], mechanical: [], at }], candidates: [script], winnerId: script.id, plannedRounds: 1, pipeline: session.pipeline,
+    carousel: target.carousel, deckId: target.deckId, openingId: target.openingId, closingId: target.closingId, focus: target.focus, inventoryVersion: target.inventory.version,
+    characters: target.characters, characterChoice: target.characterChoice, mode: profile.visualFidelityMode as Draft2VisualMode,
+    ...(earlier ? { previousRuns: [...(earlier.previousRuns ?? []), funnelRunSummary(earlier)] } : {}),
+  };
+  const claimed = await claimDraft2Session(session.id, { step: "visual", visual: run, error: null });
+  if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
+  const updated = await updateDraft2Session(session.id, { visual: run, status: "ready", error: null });
+  if (!updated) throw new Draft2InputError("This Draft 2 session was not found. Reload the canvas.");
+  return updated;
 }
 
 /** Records the editor's pick among every script the run scored, beside the judge's scores. */

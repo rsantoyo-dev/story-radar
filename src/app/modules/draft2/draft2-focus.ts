@@ -3,6 +3,7 @@ import { withCreativeTextBudget } from "../stories/creative-text-meter";
 import { generateAnthropicStructuredResponse } from "../stories/anthropic-structured-response";
 import { generateOpenAiStructuredResponse } from "../stories/openai-structured-response";
 import { getAnthropicRuntimeConfig, requireAnthropicApiKey } from "../stories/anthropic.config";
+import { albumPreviews } from "./draft2-photo-album";
 import { getCreativeProfile } from "../stories/creative-profile.repository";
 import { getStoryContent } from "../stories/story-content.repository";
 import { activeEditorialLines, storyCollectionContexts } from "../editorial-lines/editorial-lines.repository";
@@ -14,7 +15,7 @@ import { traceCost } from "./draft2-trace-cost";
 import { draft2DevTrace } from "./draft2-dev-trace";
 import { Draft2BusyError, Draft2InputError, Draft2ResponseError, type Draft2Fact, type Draft2TraceEntry } from "./draft2-facts.types";
 import {
-  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, focusPlanSchema, focusNarrative, focusWithSpineProblems, focusPresentation, presentationMaxBeats, spineFactsToCover, spineLimitsForModels, spineRecurring, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
+  CLASSIC_CONCEPT, CLASSIC_NARRATIVE, focusPlanSchema, focusNarrative, focusWithSpineProblems, focusPresentation, photoCarouselPhotos, presentationMaxBeats, spineFactsToCover, spineLimitsForModels, spineRecurring, DRAFT2_FOCUS_SCHEMA, DRAFT2_NARRATIVE_REVIEW_SCHEMA, FOCUS_PLAN_FIELDS, applyFocusEdit, conceptReviewRequest, decidedFocus, editorChoicesOf, focusDecisionRequest, focusForModels, focusLine, focusMaterial, focusToday,
   focusWithPlan, narrativeReviewRequest, parseFocusDecision, parseFocusPlan, parseNarrativeReview, resetFocusField,
   type Draft2CreativeReview, type Draft2Focus, type Draft2FocusField, type Draft2FocusMaterial, type Draft2FocusPlan,
 } from "./draft2-focus.types";
@@ -218,8 +219,10 @@ export async function editDraft2Focus({ topicId, sessionId, field, value, reset 
  * answer breaks a rule (the parse says which, as a response error); both calls
  * stay on the trace, since both were paid.
  */
-async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext, operation, instructions, skillVersions, contents, schema, effort, maxOutputTokens, parse, again, rescue }: {
+async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext, operation, instructions, skillVersions, contents, schema, effort, maxOutputTokens, parse, again, rescue, images = [] }: {
   apiKey: string; model: string; trace: Draft2TraceEntry[]; verifiedFacts: unknown; auditContext: { runId: string; topicId: string; storyId: string };
+  /** A photo carousel's album, as previews the model sees beside the contents. */
+  images?: string[];
   operation: string; instructions: string; skillVersions: Record<string, string>; contents: Record<string, unknown>; schema: Record<string, unknown>;
   effort: "medium" | "high"; maxOutputTokens: number; parse: (answer: string, attempt: number) => T; again: string;
   /** The program's decision when the last answer is refused or its call is lost: an earlier answer that stands under the last answer's rules, with what it says of it. */
@@ -233,7 +236,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
     const begin = Date.now();
     let answered: Awaited<ReturnType<typeof generateAnthropicStructuredResponse>>;
     try {
-      answered = await generateAnthropicStructuredResponse({ apiKey, model, instructions, context: { verifiedFacts }, contents: request, schema, schemaName: operation, maxOutputTokens, effort, timeoutMs: CALL_TIMEOUT_MS, auditContext });
+      answered = await generateAnthropicStructuredResponse({ apiKey, model, instructions, context: { verifiedFacts }, contents: request, ...(images.length ? { images } : {}), schema, schemaName: operation, maxOutputTokens, effort, timeoutMs: CALL_TIMEOUT_MS, auditContext });
     } catch (error) {
       const note = error instanceof Error ? error.message : "unknown error";
       // The last call lost (cut at its ceiling, timed out, refused by the provider): an earlier answer that stands is the program's answer.
@@ -271,7 +274,7 @@ async function focusCall<T>({ apiKey, model, trace, verifiedFacts, auditContext,
  * focus and spine skills, and the skills its telling needs), its request and
  * its parse, honoring the parts of the plan the editor owns.
  */
-function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, recentLevers, avoid = [], covers = [], notes }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; recentLevers: readonly string[]; avoid?: readonly string[]; covers?: readonly Draft2RecentCover[]; notes?: string }) {
+function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, material, album, recentLevers, avoid = [], covers = [], notes }: { facts: readonly Draft2Fact[]; title: string; brief: string; editorChoices: Record<string, unknown>; material?: Draft2FocusMaterial; /** A photo carousel's photos, each to be placed on one beat. */ album?: readonly { id: string; name: string; description: string }[]; recentLevers: readonly string[]; avoid?: readonly string[]; covers?: readonly Draft2RecentCover[]; notes?: string }) {
   const values = focus.values!;
   // The spine's words are what the writers say: the reader's words, never the source's abbreviations.
   const planner = composeInstructions("focus-planner", [FOCUS_SKILL, LEVERS_SKILL, SPINE_SKILL, READER_SKILL, ...creativeSkills(values)], brief);
@@ -282,7 +285,8 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
   const told = Object.fromEntries(Object.entries(focusForModels(values)).filter(([, value]) => value !== ""));
   const panorama = focusPresentation(values).images === "panorama";
   // An answer read for the step (the first: its image lines and its coverage checked, nothing cut) or as the last one is read.
-  const parseAs = (answer: string, last: boolean) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), clip: last, panorama, ...(last ? {} : { imageCheck: { avoid, recurring: spineRecurring(focusNarrative(values)), panorama }, coverage: facts }) });
+  // A photo carousel: the story's own photos are the slides, one beat each, placed by the planner.
+  const parseAs = (answer: string, last: boolean) => parseFocusPlan(answer, { known: new Set(facts.map((fact) => fact.id)), structure: values.structure, eligibleLevers: eligible, editorChoices: owned, maxBeats: presentationMaxBeats(values), ...(album?.length ? { album: album.map((photo) => photo.id) } : {}), clip: last, panorama, ...(last ? {} : { imageCheck: { avoid, recurring: spineRecurring(focusNarrative(values)), panorama }, coverage: facts }) });
   let kept: Draft2FocusPlan | undefined;
   return {
     instructions: planner.instructions,
@@ -290,7 +294,7 @@ function planCall(focus: Draft2Focus, { facts, title, brief, editorChoices, mate
     // People and places' material: the visual direction shows the people with a verified portrait through it, never anyone else.
     // The editor's notes on the plan the focus already carries: the planner revises it to follow them (the spine skill's "editor's notes").
     // The numbers the program checks the spine against, in the request itself: a first answer that keeps them is never asked again for them.
-    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), spineLimits: spineLimitsForModels(values), factsToCover: spineFactsToCover(facts), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
+    contents: { task: "plan", title, focus: told, ...(material ? { material } : {}), eligibleLevers: eligible, recentLevers, ...(covers.length ? { recentCovers: recentCoversForModels(covers) } : {}), spineLimits: spineLimitsForModels(values, album), factsToCover: spineFactsToCover(facts), editorChoices: owned, ...(notes ? { notes } : {}) } as Record<string, unknown>,
     // The first answer's image lines are checked and asked for again with what they break; the second's problems go to the editor as notes.
     // A panorama caps the slides and is one scene: its sections are not compared for their subjects.
     // A refused first answer is also read as a last one would be: what else it breaks joins the correction, so the second answer fixes all of
@@ -341,6 +345,9 @@ export async function planDraft2Spine({ topicId, storyId, sessionId, notes }: Dr
   const avoid = avoidTerms(profile.creativeIdentity);
   // The publication's last covers: the plan's visual direction and cover beat vary from them.
   const covers = recentCovers(coverRows, { palette: profile.brandPalette ?? [], roster: session.inventory?.roster ?? [] });
+  // A photo carousel: the planner places the story's own photos, seen as previews beside their names (docs/features/draft2-photo-carousel.md).
+  const album = photoCarouselPhotos(focus.values, session.inventory);
+  const albumImages = album?.length ? await albumPreviews(topicId, storyId, album) : [];
   const claimed = await claimDraft2Session(session.id, { step: "spine", error: null });
   if (!claimed) throw new Draft2BusyError("A Draft 2 run is already in progress for this story.");
   const trace: Draft2TraceEntry[] = [...session.trace];
@@ -349,7 +356,7 @@ export async function planDraft2Spine({ topicId, storyId, sessionId, notes }: Dr
   let plan;
   try {
     plan = await withCreativeTextBudget({ topicId, storyId, runId: session.id }, () => focusCall({
-      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", ...planCall(focus, { facts, title: content.title, brief, editorChoices: notes ? {} : editorChoicesOf(focus), recentLevers, avoid, covers, notes, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
+      apiKey, model, trace, verifiedFacts: openingFactsSnapshot(facts), auditContext, operation: "draft2_focus_plan", images: albumImages, ...planCall(focus, { facts, album, title: content.title, brief, editorChoices: notes ? {} : editorChoicesOf(focus), recentLevers, avoid, covers, notes, ...(session.inventory?.status === "ready" ? { material: focusMaterial(session.inventory) } : {}) }),
       // A panorama's plan carries its scene: the schema requires it there.
       schema: focusPlanSchema(focus.values!), effort: "high", maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS, again: PLAN_AGAIN,
     }));
