@@ -2,7 +2,7 @@ import "server-only";
 import { latestContentRevision } from "./story-materials.repository";
 import type { StoryContentEdition } from "./story-materials.types";
 
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -308,6 +308,16 @@ export async function completeStoryContentEnrichment({
         ),
       ),
   ]);
+}
+
+/** When each story's article was last fetched or tried, for the enrichment before an evaluation: a recent attempt is not repeated. */
+export async function storyContentEnrichmentAttempts(storyIds: readonly string[]): Promise<Map<string, { status: StoryContentEnrichmentStatus; updatedAt: Date }>> {
+  if (!storyIds.length) return new Map();
+  const rows = await db
+    .select({ storyId: storyContentEnrichments.storyId, status: storyContentEnrichments.status, updatedAt: storyContentEnrichments.updatedAt })
+    .from(storyContentEnrichments)
+    .where(inArray(storyContentEnrichments.storyId, [...storyIds]));
+  return new Map(rows.map((row) => [row.storyId, { status: row.status, updatedAt: row.updatedAt }]));
 }
 
 export async function failStoryContentEnrichment(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CANDIDATE_VIEWS, CANDIDATE_VIEW_LABELS, candidateStage, candidateViewCounts, isReadyToSelectCandidate, matchesCandidateView, parseCandidateView, type CandidateStory } from "./discover-candidates.core";
+import { CANDIDATE_VIEWS, CANDIDATE_VIEW_LABELS, candidateStage, candidateViewCounts, isGoodButReviewCandidate, isReadyToSelectCandidate, matchesCandidateView, parseCandidateView, type CandidateStory } from "./discover-candidates.core";
 
 const FLOOR = 25;
 const story = (patch: Partial<CandidateStory> = {}): CandidateStory => ({ processingStatus: "new", localScore: 40, ...patch });
@@ -34,6 +34,12 @@ test("the views: the four candidate views read the open stories only; set aside 
   assert.deepEqual(stories.map((entry) => matchesCandidateView(entry, "shortlist", FLOOR)), [false, false, true, true, false, false, false, false], "a shortlisted duplicate or a selected story is not ready to select");
   assert.equal(isReadyToSelectCandidate(ready), true);
   assert.equal(isReadyToSelectCandidate(story({ evaluationDecision: "shortlist", reviewable: false })), false);
+  // A good story the AI left for review (2026-10-27, Brossard's Jardin céleste at 80 with its title alone): shown with the shortlist, marked, never ready to approve in a batch.
+  const goodReview = story({ evaluationDecision: "review", editorialScore: 80 });
+  assert.deepEqual([isGoodButReviewCandidate(goodReview), isReadyToSelectCandidate(goodReview), matchesCandidateView(goodReview, "shortlist", FLOOR)], [true, false, true]);
+  assert.equal(matchesCandidateView(story({ evaluationDecision: "review", editorialScore: 60 }), "shortlist", FLOOR), false, "under the score it is only evaluated");
+  assert.equal(matchesCandidateView(story({ evaluationDecision: "review", editorialScore: 80, duplicateOfStoryId: "s1" }), "shortlist", FLOOR), false);
+  assert.equal(matchesCandidateView(story({ evaluationDecision: "review", editorialScore: 80, reviewDecision: "rejected", processingStatus: "rejected" }), "shortlist", FLOOR), false);
   assert.deepEqual(CANDIDATE_VIEWS.map((view) => CANDIDATE_VIEW_LABELS[view].label), ["All", "Needs evaluation", "Ready to select", "Evaluated", "Set aside", "Decided"]);
 });
 

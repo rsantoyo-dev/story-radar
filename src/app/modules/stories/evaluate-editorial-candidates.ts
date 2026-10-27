@@ -31,6 +31,7 @@ import {
   getCachedEditorialEvaluationKeys,
   getEditorialDailyUsage,
 } from "./story-editorial.repository";
+import { enrichCandidatesBeforeEvaluation } from "./enrich-candidates-before-evaluation";
 
 export async function evaluateEditorialCandidates(
   topicId: string,
@@ -51,59 +52,69 @@ export async function evaluateEditorialCandidates(
     getEditorialProfile(topicId),
     getEditorialDailyUsage(topicId, now),
   ]);
-  const storedCandidates = await findEditorialEvaluationCandidates(topicId, {
-    freshness: editorialProfile.freshness,
-    minLocalScore: editorialProfile.localCandidateMinScore,
-    maxContentCharacters: configuration.maxContentCharacters,
-    useLegacySourceFallback: editorialProfile.isDefault,
-    includeAutoRejected: force,
-    now,
-  });
-  const baseCandidates = storedCandidates.map((candidate) => ({
-    ...candidate,
-    inputHash: createEditorialInputHash(
+  // The pool, hashed and checked against the cache; read again after the articles are fetched, since content changes the hash.
+  const loadCandidates = async () => {
+    const storedCandidates = await findEditorialEvaluationCandidates(topicId, {
+      freshness: editorialProfile.freshness,
+      minLocalScore: editorialProfile.localCandidateMinScore,
+      maxContentCharacters: configuration.maxContentCharacters,
+      useLegacySourceFallback: editorialProfile.isDefault,
+      includeAutoRejected: force,
+      now,
+    });
+    const baseCandidates = storedCandidates.map((candidate) => ({
+      ...candidate,
+      inputHash: createEditorialInputHash(
+        topicId,
+        candidate,
+        preferences,
+        editorialProfile,
+        {
+          name: topic.name,
+          description: topic.description,
+        },
+      ),
+    }));
+    const cachedKeys = await getCachedEditorialEvaluationKeys(
       topicId,
-      candidate,
-      preferences,
-      editorialProfile,
-      {
-        name: topic.name,
-        description: topic.description,
-      },
-    ),
-  }));
-  const cachedKeys = await getCachedEditorialEvaluationKeys(
-    topicId,
-    baseCandidates,
-    configuredProviderIdentities(configuration),
-    configuration.promptVersion,
-  );
-  // The cache key is unique in storage. A forced evaluation therefore gets a
-  // one-off hash only when an exact cached evaluation already exists, which
-  // preserves both the old result and the newly requested re-evaluation.
-  const candidates = force
-    ? baseCandidates.map((candidate) =>
-        cachedKeys.has(
-          editorialCacheKey(candidate.storyId, candidate.inputHash),
-        )
-          ? {
-              ...candidate,
-              inputHash: createHash("sha256")
-                .update(`${candidate.inputHash}:forced:${now.toISOString()}`)
-                .digest("hex"),
-            }
-          : candidate,
-      )
-    : baseCandidates;
-  const uncachedCandidates = force
-    ? candidates
-    : candidates.filter(
-        (candidate) =>
-          !cachedKeys.has(
+      baseCandidates,
+      configuredProviderIdentities(configuration),
+      configuration.promptVersion,
+    );
+    // The cache key is unique in storage. A forced evaluation therefore gets a
+    // one-off hash only when an exact cached evaluation already exists, which
+    // preserves both the old result and the newly requested re-evaluation.
+    const candidates = force
+      ? baseCandidates.map((candidate) =>
+          cachedKeys.has(
             editorialCacheKey(candidate.storyId, candidate.inputHash),
-          ),
-      );
-  const cachedStories = candidates.length - uncachedCandidates.length;
+          )
+            ? {
+                ...candidate,
+                inputHash: createHash("sha256")
+                  .update(`${candidate.inputHash}:forced:${now.toISOString()}`)
+                  .digest("hex"),
+              }
+            : candidate,
+        )
+      : baseCandidates;
+    const uncachedCandidates = force
+      ? candidates
+      : candidates.filter(
+          (candidate) =>
+            !cachedKeys.has(
+              editorialCacheKey(candidate.storyId, candidate.inputHash),
+            ),
+        );
+    const cachedStories = candidates.length - uncachedCandidates.length;
+    return { candidates, uncachedCandidates, cachedStories };
+  };
+  let { candidates, uncachedCandidates, cachedStories } = await loadCandidates();
+  // The full article before the judgment (docs/features/full-articles-before-evaluation.md): a candidate with only its feed excerpt is fetched from its publisher within a budget; what gains content is read again, its input hash having changed.
+  if (configuration.enrichBeforeEvaluationMs > 0 && candidates.length) {
+    const enriched = await enrichCandidatesBeforeEvaluation(topicId, candidates, { now, budgetMs: configuration.enrichBeforeEvaluationMs });
+    if (enriched.prepared > 0) ({ candidates, uncachedCandidates, cachedStories } = await loadCandidates());
+  }
 
   if (uncachedCandidates.length === 0) {
     return {

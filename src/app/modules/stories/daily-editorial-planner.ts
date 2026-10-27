@@ -8,7 +8,7 @@ import type { StoryKeywordPreferences } from "./story-relevance.config";
 import { getEditorialEvaluationPublicConfig, getEditorialEvaluationRuntimeConfig } from "./editorial-evaluation.config";
 import { evaluateStoriesWithFallback } from "./gemini-story-editorial-evaluator";
 import { finishDailyPlan, latestDailyPlan, plannerInputs, reserveDailyPlan, cachedDailyPlan } from "./daily-editorial-planner.repository";
-import { EXTENDED_LOOKBACK_HOURS, MIN_CANDIDATES_BEFORE_TOPUP, PLANNER_PROMPT_VERSION, plannerDay, type PlannerView } from "./daily-editorial-planner.types";
+import { EXTENDED_LOOKBACK_HOURS, MIN_CANDIDATES_BEFORE_TOPUP, PLANNER_PROMPT_VERSION, plannerDay, withoutReviewPicks, type PlannerView } from "./daily-editorial-planner.types";
 import { collectionContext, resolveLineResearch } from "../editorial-lines/editorial-lines";
 import { ensureDefaultEditorialLine, reserveCollection, finishCollection } from "../editorial-lines/editorial-lines.repository";
 import { listTopicRssSourceConfigs } from "../topics/topic-catalog.repository";
@@ -130,7 +130,7 @@ export async function recommendForToday(topicId: string, timezone: string, force
     } else {
       const result=await withUsageAttribution({topicId},()=>evaluateStoriesWithFallback({...config,topic:context.topic,editorialProfile:profile,preferences,candidates:[],planningContext:context}));
       if (!result.dailyPlan) throw new Error("Planner response missing");
-      await finishDailyPlan(topicId,id,{status:"completed",result:result.dailyPlan,provider:result.provider,model:result.model,usage:result.usage});
+      await finishDailyPlan(topicId,id,{status:"completed",result:withoutReviewPicks(result.dailyPlan,context.candidates),provider:result.provider,model:result.model,usage:result.usage});
     }
   } catch (error) {
     console.error("Daily planner recommendation failed:", error);

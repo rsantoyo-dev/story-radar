@@ -361,3 +361,19 @@ test("the angle distribution window is wider than the repetition window",()=>{
   assert.equal(types.recentPlannerPublications(rows).length,10);
   assert.equal(types.recentPlannerPublications(rows,types.RECENT_ANGLE_WINDOW).length,30);
 });
+test("a candidate the evaluation left for review is never the day's pick (2026-10-27): the program moves it to the deferred with its reason and the first shortlisted alternative stands in; with none left, nothing is picked on its own",()=>{
+  const plan={outcome:"recommendation" as const,recommendation:{storyId:"r1",reason:"Strong municipal notice"},alternatives:[{storyId:"s1",reason:"Solid second"},{storyId:"r2",reason:"Also thin"}],deferred:[{storyId:"d1",reason:"Later"}],summary:"Today's pick.",uncertainty:"Little."};
+  const candidates=[{storyId:"r1",decision:"review" as const},{storyId:"s1",decision:"shortlist" as const},{storyId:"r2",decision:"review" as const},{storyId:"d1",decision:"shortlist" as const}];
+  const kept=types.withoutReviewPicks(plan,candidates);
+  assert.equal(kept.recommendation?.storyId,"s1","the shortlisted alternative stands in");
+  assert.deepEqual(kept.alternatives,[]);
+  assert.deepEqual(kept.deferred.map(c=>c.storyId),["r1","r2","d1"],"the review picks lead the deferred, the planner's own deferred after them");
+  assert.match(kept.deferred[0].reason,/^Needs a human's look before selection: the evaluation left it for review\. Strong municipal notice$/);
+  assert.equal(kept.summary,plan.summary);
+  const alone=types.withoutReviewPicks({...plan,alternatives:[]},candidates);
+  assert.deepEqual([alone.outcome,alone.recommendation,alone.alternatives.length,alone.deferred.map(c=>c.storyId)],["no-strong-candidate",null,0,["r1","d1"]]);
+  assert.match(alone.summary,/nothing is picked on its own today/);
+  assert.equal(types.withoutReviewPicks(plan,candidates.map(c=>({...c,decision:"shortlist" as const}))),plan,"a plan without a review pick is returned as it is");
+  assert.equal(types.PLANNER_PROMPT_VERSION,"daily-planner-v4");
+  assert.match(types.PLANNER_INSTRUCTION,/whose decision is review is not ready to be the pick/);
+});

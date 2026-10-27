@@ -13,7 +13,7 @@ import type { StoryContentEdition } from "./modules/stories/story-materials.type
 
 import { ActivityPanel } from "./activity-panel";
 import { EditorialLinesPanel, type EditorialLinesData, type EditorialLineSelection } from "./editorial-lines-panel";
-import { CANDIDATE_VIEWS, CANDIDATE_VIEW_LABELS, candidateViewCounts, isReadyToSelectCandidate, matchesCandidateView, parseCandidateView, type CandidateView } from "./discover-candidates.core";
+import { CANDIDATE_VIEWS, CANDIDATE_VIEW_LABELS, candidateViewCounts, isReadyToSelectCandidate, matchesCandidateView, parseCandidateView, type CandidateView, isGoodButReviewCandidate } from "./discover-candidates.core";
 import { periodError } from "./editorial-period-controls";
 import { CreativeProfilePanel } from "./creative-profile-panel";
 import { InstagramGalleryPanel } from "./instagram-gallery-panel";
@@ -3350,7 +3350,7 @@ function CandidateCards({
       const decisionLabel = story.reviewDecision === "approved" ? "Selected" :
         story.reviewDecision === "rejected" ? "Rejected by editor" :
         isReadyToSelectCandidate(story) ? "Ready to select" :
-        story.evaluationDecision === "review" ? "AI review" :
+        story.evaluationDecision === "review" ? (isGoodButReviewCandidate(story) ? "Good, needs review" : "AI review") :
         story.evaluationDecision === "reject" ? "AI did not shortlist" :
         story.evaluationDecision === "shortlist" ? "Shortlisted" : "Needs evaluation";
       const decisionTone = story.reviewDecision === "approved" || isReadyToSelectCandidate(story) ? "positive" :

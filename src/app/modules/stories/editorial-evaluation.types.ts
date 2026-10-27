@@ -31,6 +31,9 @@ export type EditorialEvaluationDecision =
   | "review"
   | "shortlist";
 
+/** A story the evaluation left for review but scored at least this well is listed with the shortlist, marked, so a good story short of text or of a check is seen; it is never picked on its own. */
+export const GOOD_BUT_REVIEW_MIN_SCORE = 70;
+
 export type EditorialEvaluationCandidate = {
   collectionContexts?: import("../editorial-lines/editorial-lines").EditorialCollectionContext[];
   storyId: string;

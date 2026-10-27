@@ -19,6 +19,7 @@ import {
   fetchArticleHtml,
   PublisherArticleAccessBlockedError,
 } from "./fetch-article-html";
+import { GoogleNewsLinkError, googleNewsArticleId, resolveGoogleNewsLink } from "../sources/rss/google-news-link";
 import {
   beginStoryContentEnrichment,
   completeStoryContentEnrichment,
@@ -111,9 +112,11 @@ async function fetchPreparedArticle(
   method: "direct" | "reader";
 }> {
   let directError: unknown;
+  // A Google News feed links to Google; the article lives at the publisher's address behind Google's signed redirect.
+  const articleUrl = googleNewsArticleId(sourceUrl) ? await publisherUrlOf(sourceUrl) : sourceUrl;
 
   try {
-    const fetched = await fetchArticleHtml(sourceUrl);
+    const fetched = await fetchArticleHtml(articleUrl);
     const extracted = extractArticleContent(fetched.html, fetched.resolvedUrl);
     assertContentImproved(existingText, extracted.text);
 
@@ -131,7 +134,7 @@ async function fetchPreparedArticle(
   }
 
   try {
-    const reader = await fetchArticleWithReader(sourceUrl);
+    const reader = await fetchArticleWithReader(articleUrl);
     const extracted = extractReaderArticleContent({
       markdown: reader.markdown,
       ...(reader.title ? { title: reader.title } : {}),
@@ -149,6 +152,16 @@ async function fetchPreparedArticle(
       `Direct extraction failed (${articleErrorSummary(directError)}); Reader fallback failed (${articleErrorSummary(readerError)})`,
       { cause: readerError },
     );
+  }
+}
+
+/** The publisher's address behind a Google News link; a link Google will not resolve is a failed fetch, never a blocked one. */
+async function publisherUrlOf(googleNewsUrl: string): Promise<string> {
+  try {
+    return await resolveGoogleNewsLink(googleNewsUrl);
+  } catch (error) {
+    const why = error instanceof GoogleNewsLinkError ? error.message : error instanceof Error && error.name === "TimeoutError" ? "Google News did not answer in time" : "unknown error";
+    throw new ArticleFetchError(`The Google News link could not be resolved to the publisher's address (${why})`, { cause: error });
   }
 }
 

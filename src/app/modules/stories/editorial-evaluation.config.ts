@@ -13,6 +13,8 @@ const DEFAULT_MAX_STORIES_PER_DAY = 60;
 const DEFAULT_MAX_CONTENT_CHARACTERS = 500;
 const DEFAULT_MAX_AGE_HOURS = 72;
 const DEFAULT_MIN_LOCAL_SCORE = 25;
+/** 2026-10-27: in 21 days 713 of 761 evaluated Brossard stories carried only their feed excerpt, and the evaluator left the good ones "for review" for want of text. Four fetches at a time, this covers about 20 stories. */
+const DEFAULT_ENRICH_BEFORE_EVALUATION_MS = 45_000;
 
 export type EditorialEvaluationLimits = {
   maxRunsPerDay: number;
@@ -21,6 +23,8 @@ export type EditorialEvaluationLimits = {
   maxContentCharacters: number;
   maxAgeHours: number;
   minLocalScore: number;
+  /** Time an evaluation run spends fetching the full article of candidates that have only an excerpt, before judging them; 0 turns it off. */
+  enrichBeforeEvaluationMs: number;
 };
 
 export type EditorialEvaluationPublicConfig =
@@ -71,6 +75,12 @@ export function getEditorialEvaluationPublicConfig(): EditorialEvaluationPublicC
       DEFAULT_MIN_LOCAL_SCORE,
       0,
       100,
+    ),
+    enrichBeforeEvaluationMs: readBoundedInteger(
+      "AI_ENRICH_BEFORE_EVALUATION_MS",
+      DEFAULT_ENRICH_BEFORE_EVALUATION_MS,
+      0,
+      600_000,
     ),
   };
 }

@@ -10,6 +10,8 @@
  * under the floor (findEditorialEvaluationCandidates). The dashboard reads
  * these; nothing here touches the saved evaluations or decisions.
  */
+import { GOOD_BUT_REVIEW_MIN_SCORE } from "@/app/modules/stories/editorial-evaluation.types";
+
 export type CandidateStage = "open" | "set-aside" | "decided";
 
 export const CANDIDATE_VIEWS = ["all", "unevaluated", "shortlist", "evaluated", "set-aside", "decided"] as const;
@@ -24,13 +26,14 @@ export type CandidateStory = {
   reviewable?: boolean;
   isOwnedContent?: boolean;
   localScore: number;
+  editorialScore?: number;
 };
 
 /** The view buttons, their heading over the list and the line under it. */
 export const CANDIDATE_VIEW_LABELS: Record<CandidateView, { label: string; heading: string; note: string }> = {
   all: { label: "All", heading: "Open candidates", note: "Every story the collection kept and the editor has not decided. Approve AI shortlist Stories in a batch, or select original content individually after review." },
   unevaluated: { label: "Needs evaluation", heading: "Awaiting evaluation", note: "Open candidates the AI has not read yet. Evaluate with AI reads them against the Topic's criteria, newest and best scored first." },
-  shortlist: { label: "Ready to select", heading: "Ready to select", note: "AI shortlist Stories without a decision, and original content ready for review. Approve them here to move them into Production." },
+  shortlist: { label: "Ready to select", heading: "Ready to select", note: "AI shortlist Stories without a decision, original content ready for review, and good Stories the AI left for review (marked). Approve shortlisted ones here to move them into Production; a Story left for review is promoted by hand after a look." },
   evaluated: { label: "Evaluated", heading: "Evaluated candidates", note: "Open candidates with an AI evaluation. A Story the AI did not shortlist can still be promoted after review." },
   "set-aside": { label: "Set aside", heading: "Set aside at collection", note: "Below the Topic's local floor, the same news as another candidate, or failed in processing: the AI evaluation skips them. A duplicate can be cleared; the floor is set in the editorial profile." },
   decided: { label: "Decided", heading: "Decided by the editor", note: "Selected Stories continue in Production; rejected ones stay here for the record." },
@@ -40,6 +43,11 @@ export const CANDIDATE_VIEW_LABELS: Record<CandidateView, { label: string; headi
 export function isReadyToSelectCandidate(story: CandidateStory): boolean {
   return (story.reviewable === true && story.evaluationDecision === "shortlist") ||
     (story.isOwnedContent === true && story.processingStatus === "ready" && !story.reviewDecision);
+}
+
+/** A good story the AI left for review (GOOD_BUT_REVIEW_MIN_SCORE), undecided: listed with the shortlist and marked, never approved in a batch nor picked on its own. */
+export function isGoodButReviewCandidate(story: CandidateStory): boolean {
+  return story.evaluationDecision === "review" && !story.reviewDecision && !story.duplicateOfStoryId && (story.editorialScore ?? 0) >= GOOD_BUT_REVIEW_MIN_SCORE;
 }
 
 /**
@@ -65,7 +73,7 @@ export function matchesCandidateView(story: CandidateStory, view: CandidateView,
     case "decided": return stage === "decided";
     case "all": return stage === "open";
     case "unevaluated": return stage === "open" && story.evaluationDecision === undefined;
-    case "shortlist": return stage === "open" && isReadyToSelectCandidate(story);
+    case "shortlist": return stage === "open" && (isReadyToSelectCandidate(story) || isGoodButReviewCandidate(story));
     case "evaluated": return stage === "open" && story.evaluationDecision !== undefined;
   }
 }

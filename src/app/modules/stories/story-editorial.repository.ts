@@ -1,19 +1,8 @@
+import { GOOD_BUT_REVIEW_MIN_SCORE } from "./editorial-evaluation.types";
 import { inEditorialEvaluationWindow } from "../editorial-lines/editorial-lines";
 import "server-only";
 
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import { db } from "@/db/client";
 import {
@@ -1173,7 +1162,11 @@ export async function getEditorialDashboardStats(
       .leftJoin(latestSource, eq(latestSource.storyId, stories.id))
       .where(
         and(
-          eq(latestEvaluation.decision, "shortlist"),
+          // The shortlist, and the good stories left for review (GOOD_BUT_REVIEW_MIN_SCORE): listed and marked, never picked on their own.
+          or(
+            eq(latestEvaluation.decision, "shortlist"),
+            and(eq(latestEvaluation.decision, "review"), gte(latestEvaluation.editorialScore, GOOD_BUT_REVIEW_MIN_SCORE)),
+          ),
           isNull(topicStories.reviewDecision),
           isNull(topicStories.duplicateOfStoryId),
         ),
