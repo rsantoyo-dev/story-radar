@@ -1,8 +1,11 @@
-# Scheduled reader (per-Topic automatic collection and scoop preparation).
+# The reader's worker (per-Topic automatic collection and scoop preparation).
 #
-# Every 15 minutes this calls one bounded worker pass. The app decides which
-# Topics are due (their own interval and active hours), flags scoops and
-# prepares them ahead. It never approves a script or publishes anything.
+# Run by hand only (workflow_dispatch). Its schedule was removed on
+# 2026-11-02: the editor wants news looked for only when they decide, and
+# every brand's automatic reader is switched off in the app as well. One run
+# calls one bounded worker pass; the app decides which Topics are due (their
+# own interval and active hours), flags scoops and prepares them ahead. It
+# never approves a script or publishes anything.
 #
 # Configure in the repository settings:
 #   Variables → AUTO_COLLECTION_WORKER_URL     e.g. https://story-radar.vercel.app
@@ -11,8 +14,6 @@
 name: Auto collection worker
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 concurrency:
